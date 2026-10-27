@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rohrbiege-Assistent</title>
+<meta name="description" content="Rohrleitungen im Achsmaß aufmessen, 3D ansehen und mit der Handbiegezange biegen.">
+<meta name="theme-color" content="#1d5fd1">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Biegen">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">⟆ Rohrbiegen</div>
+  <select id="projSel" aria-label="Projekt wählen"></select>
+  <button id="undoBtn" class="hbtn" title="Rückgängig (⌘Z)" aria-label="Rückgängig" disabled>↶</button>
+  <button id="redoBtn" class="hbtn" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen" disabled>↷</button>
+</header>
+
+<div class="layout">
+  <main>
+    <section class="tab active" id="tab-input">
+      <div class="card">
+        <div class="row2">
+          <label>Projekt<input id="pName" autocomplete="off"></label>
+          <label>Zange / Rohr<select id="pProf"></select></label>
+        </div>
+        <div class="row2">
+          <label>Zugabe Anfang (mm)<input id="pZugA" inputmode="decimal" placeholder="0"></label>
+          <label>Zugabe Ende (mm)<input id="pZugE" inputmode="decimal" placeholder="0"></label>
+        </div>
+        <div class="btnrow">
+          <button id="pNew">Neues Projekt</button>
+          <button id="pDup">Duplizieren</button>
+          <button id="pDel" class="danger">Löschen</button>
+        </div>
+      </div>
+
+      <div class="seg" id="modeSeg">
+        <button data-mode="deltas">Richtungen X/Y/Z</button>
+        <button data-mode="angles">Winkel &amp; Drehung</button>
+      </div>
+      <p class="hint" id="modeHint"></p>
+      <div id="legList"></div>
+      <button id="addLeg" class="wide">+ Schenkel hinzufügen</button>
+      <div class="tpl">
+        <span>Vorlagen</span>
+        <button data-tpl="w90">90°-Winkel</button>
+        <button data-tpl="etage">Etage 45°</button>
+        <button data-tpl="u">U-Bogen</button>
+        <button data-tpl="d3">3D-Bogen</button>
+      </div>
+      <div class="card" id="summary"></div>
+    </section>
+
+    <section class="tab" id="tab-guide"></section>
+    <section class="tab" id="tab-tools"></section>
+  </main>
+
+  <aside class="tab" id="tab-view">
+    <div class="viewwrap" id="viewwrap">
+      <canvas id="cvBg" aria-hidden="true"></canvas>
+      <canvas id="cvGL" aria-hidden="true"></canvas>
+      <canvas id="cv" aria-label="3D-Ansicht des gebogenen Rohrs"></canvas>
+      <div class="viewbtns">
+        <button data-view="iso" title="3D drehen">3D</button>
+        <button data-view="front" title="Ansicht von vorne">Vorne</button>
+        <button data-view="back" title="Ansicht von hinten">Hinten</button>
+        <button data-view="top" title="Ansicht von oben">Oben</button>
+        <button data-view="bottom" title="Ansicht von unten">Unten</button>
+        <button data-view="left" title="Ansicht von links">Links</button>
+        <button data-view="right" title="Ansicht von rechts">Rechts</button>
+      </div>
+      <div class="viewhint" id="viewHint"></div>
+      <button class="viewadd" id="addLegView" hidden>✎ Maße</button>
+      <div class="legpanel" id="legPanel" hidden>
+        <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Schließen">Fertig</button></div>
+        <div class="row2">
+          <label>Achsmaß (mm)<input id="lpLen" inputmode="decimal"></label>
+          <label>Richtung in Ansicht<select id="lpDir"></select></label>
+        </div>
+        <p class="hint" id="lpNote"></p>
+        <div class="btnrow"><button id="lpIns">+ Danach einfügen</button><button id="lpDel" class="danger">Löschen</button></div>
+      </div>
+      <div class="legend"><span class="lg-mark"></span>Markierung <span class="lg-dim"></span>Achsmaß</div>
+    </div>
+  </aside>
+</div>
+
+<nav class="tabbar">
+  <button data-tab="input" class="active"><span>✎</span>Eingabe</button>
+  <button data-tab="view" class="only-mobile"><span>◈</span>3D</button>
+  <button data-tab="guide"><span>☰</span>Anleitung</button>
+  <button data-tab="tools"><span>⚙</span>Zangen</button>
+</nav>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
