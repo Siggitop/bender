@@ -92,7 +92,6 @@ function toLegs(deltas) {
 
 const TEMPLATES = {
   w90: [{ len: 150, angle: 90, rot: 0 }, { len: 150 }],
-  etage: [{ len: 100, angle: 45, rot: 0 }, { len: 141.4, angle: 45, rot: 180 }, { len: 100 }],
   u: [{ len: 150, angle: 90, rot: 0 }, { len: 80, angle: 90, rot: 0 }, { len: 150 }],
   d3: [{ len: 150, angle: 90, rot: 0 }, { len: 200, angle: 90, rot: 90 }, { len: 150 }],
 };
@@ -181,6 +180,7 @@ function renderInputs() {
   if (p.mode === 'deltas') {
     p.deltas.forEach((d, i) => {
       h += `<div class="leg"><div class="leghead">Schenkel ${i + 1} <span class="meta" data-len="${i}"></span>` +
+        `<button data-off="${i}" title="Versatz einfügen" aria-label="Versatz einfügen">⤳</button>` +
         `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
         `<div class="row3">` +
         `<label>X <small>rechts + / links −</small>${signed(`deltas.${i}.x`, d.x)}</label>` +
@@ -192,6 +192,7 @@ function renderInputs() {
   } else {
     p.legs.forEach((l, i) => {
       h += `<div class="leg"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName(i)}</span>` +
+        `<button data-off="${i}" title="Versatz einfügen" aria-label="Versatz einfügen">⤳</button>` +
         `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
         `<label>Achsmaß (mm)<input inputmode="decimal" data-p="legs.${i}.len" value="${fin(l.len)}" placeholder="0"></label></div>`;
       if (i < n - 1) {
@@ -231,6 +232,8 @@ $('#legList').addEventListener('click', e => {
     commit();
     setPath(p, b.dataset.sign, num(b.nextElementSibling.value) * (b.textContent === '−' ? -1 : 1));
     recompute();
+  } else if (b.dataset.off != null) {
+    openOffset('insert', +b.dataset.off);
   } else if (b.dataset.del != null) {
     const arr = p.mode === 'deltas' ? p.deltas : p.legs;
     commit();
@@ -779,7 +782,7 @@ function render3d() {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     [...pr, ...fp].forEach(q => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
     // Rand für Gimbal-Pfeile (~70 px) und oben für die Ansichtsbuttons
-    const side = 90, top = 120, bottom = 80;
+    const side = Math.min(90, W * 0.12), top = Math.min(120, H * 0.18), bottom = Math.min(80, H * 0.12);
     base = { sc: Math.min((W - 2 * side) / Math.max(x1 - x0, 1), (H - top - bottom) / Math.max(y1 - y0, 1)), mx: (x0 + x1) / 2, my: (y0 + y1) / 2, dy: (top - bottom) / 2 };
     if (ortho) fit = base; // in Bearbeitungsansichten Maßstab festhalten
   }
@@ -990,7 +993,7 @@ const DIR_OPTS = Array.from({ length: 360 / ANGLE_STEP }, (_, k) => k * ANGLE_ST
 function selectLeg(i, openPanel = false) {
   sel = i;
   $('#legPanel').hidden = !(openPanel && i >= 0);
-  $('#addLegView').hidden = i < 0 || openPanel;
+  $('#addLegView').hidden = $('#offLegView').hidden = i < 0 || openPanel;
   if (openPanel && i >= 0) fillPanel();
   draw();
 }
@@ -1210,7 +1213,7 @@ function segDist(x, y, x0, y0, x1, y1) {
   return Math.hypot(x - x0 - t * dx, y - y0 - t * dy);
 }
 function hitGizmo(x, y) {
-  let best = null, bd = 16;
+  let best = null, bd = hitTol(16);
   for (const g of gizmo) {
     let d = Infinity;
     if (g.at) d = Math.hypot(x - g.at[0], y - g.at[1]) - g.r + 6; // Griff hat Vorrang
@@ -1334,6 +1337,8 @@ function gzEnd() {
 // Schenkel antippen = auswählen.
 // Überall: zwei Finger / Shift / Rechtsklick = verschieben, Pinch/Rad = zoomen zum Zeiger.
 const ptrs = new Map();
+let touchUI = false; // letzter Zeiger war Finger/Stift → größere Trefferflächen
+const hitTol = px => (touchUI ? px * 1.6 : px);
 function zoomAt(clientX, clientY, ratio) {
   const r = cv.getBoundingClientRect(), z = Math.max(0.3, Math.min(20, cam.zoom * ratio));
   ratio = z / cam.zoom;
@@ -1344,12 +1349,12 @@ function zoomAt(clientX, clientY, ratio) {
 const local = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 function hitVertex(x, y) {
   const pts = points(proj());
-  for (let i = pts.length - 1; i >= 1; i--) { const [px, py] = view.P3(pts[i]); if (Math.hypot(px - x, py - y) < 22) return i - 1; }
+  for (let i = pts.length - 1; i >= 1; i--) { const [px, py] = view.P3(pts[i]); if (Math.hypot(px - x, py - y) < hitTol(22)) return i - 1; }
   return -1;
 }
 function hitLeg(x, y) {
   const pts = points(proj());
-  let best = -1, bd = 18;
+  let best = -1, bd = hitTol(18);
   for (let i = 0; i < pts.length - 1; i++) {
     const d = segDist(x, y, ...view.P3(pts[i]), ...view.P3(pts[i + 1]));
     if (d < bd) { bd = d; best = i; }
@@ -1360,6 +1365,7 @@ function hitLeg(x, y) {
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('lostpointercapture', e => ptrs.delete(e.pointerId));
 cv.addEventListener('pointerdown', e => {
+  touchUI = e.pointerType !== 'mouse';
   if (e.pointerType === 'mouse') ptrs.clear(); // Maus hat nur einen Zeiger – hängengebliebene Einträge verwerfen
   try { cv.setPointerCapture(e.pointerId); } catch {} // synthetische Testereignisse haben keinen echten Zeiger
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.shiftKey || e.button === 2 || isOrtho() });
@@ -1422,12 +1428,139 @@ $('.tabbar').addEventListener('click', e => {
   draw();
 });
 
+// ---------- Versatz / Etage ----------
+// Winkel + Versatz eingeben; Schräge (Achsmaß) = Versatz / sin α, Länge in Laufrichtung = Versatz / tan α.
+// „Neu“ legt ein Rohr gerade – schräg – gerade an, „Einfügen“ ersetzt einen geraden Schenkel durch dieselbe Form
+// (die Länge in Laufrichtung bleibt, der Rest des Rohrs wandert um den Versatz mit).
+const DIR_NAMES = [['rechts', 'links'], ['hinten', 'vorne'], ['oben', 'unten']];
+const dirName = v => {
+  const k = [0, 1, 2].reduce((m, j) => (Math.abs(v[j]) > Math.abs(v[m]) ? j : m), 0);
+  return DIR_NAMES[k][v[k] > 0 ? 0 : 1] + (Math.abs(Math.abs(v[k]) - 1) < 1e-6 ? '' : ' (schräg)');
+};
+const off = { ang: 45, V: 100, mode: 'new', i: -1, d: [1, 0, 0], dirs: [], L: 0, userPos: false }; // userPos: Lage selbst eingegeben
+
+function openOffset(mode, i = -1) {
+  off.mode = mode; off.i = i; off.userPos = false;
+  off.d = [1, 0, 0];
+  if (mode === 'insert') {
+    const v = legVec(i);
+    off.L = V.len(v);
+    if (off.L < 1) return;
+    off.d = V.norm(v);
+  }
+  off.dirs = extDirs(off.d).filter(a => Math.abs(V.dot(a, off.d)) < 0.999);
+  const up = Math.max(0, off.dirs.findIndex(a => a[2] > 0.9));
+  $('#offDir').innerHTML = off.dirs.map((a, k) => `<option value="${k}"${k === up ? ' selected' : ''}>${dirName(a)}</option>`).join('');
+  $('#offTitle').textContent = mode === 'insert' ? `Versatz in Schenkel ${i + 1} (${fmt(off.L)} mm)` : 'Neues Rohr mit Versatz';
+  $('#offALbl').textContent = mode === 'insert' ? 'Abstand bis Versatz (mm)' : 'Gerade davor (mm)';
+  $('#offBLbl').textContent = mode === 'insert' ? 'Rest danach (mm)' : 'Gerade danach (mm)';
+  $('#offV').value = fin(off.V);
+  $$('#offAng button').forEach(b => b.classList.toggle('on', +b.dataset.a === off.ang));
+  if (mode === 'insert') {
+    const A = Math.max(0, (off.L - offValues().run) / 2);
+    $('#offA').value = String(r1(A)).replace('.', ',');
+  } else {
+    $('#offA').value = '150'; $('#offB').value = '150';
+  }
+  $('#offDlg').hidden = false;
+  updateOffset('A');
+}
+
+function offValues() {
+  const a = off.ang * Math.PI / 180, v = num($('#offV').value);
+  const run = off.ang >= 90 ? 0 : v / Math.tan(a);
+  return { a, v, S: v / Math.sin(a), run, A: num($('#offA').value), B: num($('#offB').value) };
+}
+
+// changed = welches Feld zuletzt geändert wurde; beim Einfügen ergibt sich das andere aus der Schenkellänge
+function updateOffset(changed) {
+  if (off.mode === 'insert') {
+    const v = offValues();
+    const show = n => String(r1(n)).replace('.', ',');
+    if (changed === 'B') $('#offA').value = show(off.L - v.B - v.run);
+    else $('#offB').value = show(off.L - v.A - v.run);
+  }
+  const v = offValues(), f = prof(), T = f.R * Math.tan(v.a / 2), errs = [], warns = [];
+  if (!(v.v > 0)) errs.push('Versatz eingeben.');
+  else if (v.A < -0.05 || v.B < -0.05) {
+    errs.push(off.mode === 'insert' ? `Passt nicht in den Schenkel – braucht ${fmt(v.run)} mm in Laufrichtung. Kleineren Versatz oder größeren Winkel wählen.` : 'Längen dürfen nicht negativ sein.');
+  } else {
+    if (v.S - 2 * T < f.minStraight) warns.push(`Schräge hat nur ${fmt(v.S - 2 * T)} mm gerade – die Zange braucht ${fmt(f.minStraight)} mm. Größeren Versatz oder kleineren Winkel wählen.`);
+    // gerade Reste davor/danach abzüglich der Bögen (Versatz + vorhandene Nachbarbiegungen)
+    const tPrev = off.mode === 'insert' && off.i > 0 ? layout.bends[off.i - 1]?.T || 0 : 0;
+    const tNext = off.mode === 'insert' ? layout.bends[off.i]?.T || 0 : 0;
+    const gA = v.A - T - tPrev, gB = v.B - T - tNext;
+    if (v.A > 0.05 && gA < f.minStraight) warns.push(`Vor dem Versatz bleiben nur ${fmt(gA)} mm gerade (Zange: ${fmt(f.minStraight)} mm).`);
+    if (v.B > 0.05 && gB < f.minStraight) warns.push(`Nach dem Versatz bleiben nur ${fmt(gB)} mm gerade (Zange: ${fmt(f.minStraight)} mm).`);
+  }
+  $('#offInfo').innerHTML =
+    `<div class="kv"><span>Schräge (Achsmaß) <b>${fmt(v.S)} mm</b></span><span>In Laufrichtung <b>${fmt(v.run)} mm</b></span><span>2 × <b>${off.ang}°</b></span></div>` +
+    errs.map(m => `<div class="msg err">✕ ${esc(m)}</div>`).join('') + warns.map(m => `<div class="msg warn">⚠ ${esc(m)}</div>`).join('');
+  $('#offOk').disabled = errs.length > 0;
+  $('#offSketch').innerHTML = offSketch(v);
+}
+
+// Skizze: gerade – schräg – gerade mit Versatz, Winkel und Schräge
+function offSketch(v) {
+  const A = Math.max(v.A, 0), B = Math.max(v.B, 0), tot = Math.max(A + v.run + B, 1), H = Math.max(v.v, 1);
+  const s = Math.min(240 / tot, 80 / H), x0 = 30 + (240 - tot * s) / 2, y0 = 100;
+  const p1 = [x0 + A * s, y0], p2 = [p1[0] + v.run * s, y0 - v.v * s], p3 = [p2[0] + B * s, p2[1]];
+  const mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2], dx = Math.max(p3[0], p1[0] + 20) + 14;
+  const arcR = 22, ea = [p1[0] + arcR * Math.cos(v.a), p1[1] - arcR * Math.sin(v.a)];
+  return `<polyline points="${x0},${y0} ${p1} ${p2} ${p3}" fill="none" stroke="var(--tube)" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="${p1[0]}" y1="${y0}" x2="${p1[0] + 40}" y2="${y0}" stroke="var(--muted)" stroke-dasharray="3 3"/>
+    ${off.ang < 90 ? `<path d="M${p1[0] + arcR},${y0} A${arcR},${arcR} 0 0 0 ${ea}" fill="none" stroke="var(--mark)" stroke-width="2"/>
+    <text x="${p1[0] + arcR + 4}" y="${y0 - 6}" fill="var(--mark)">${off.ang}°</text>` : ''}
+    <line x1="${dx}" y1="${y0}" x2="${dx}" y2="${p2[1]}" stroke="var(--accent)" stroke-width="1.5"/>
+    <line x1="${dx - 5}" y1="${y0}" x2="${dx + 5}" y2="${y0}" stroke="var(--accent)" stroke-width="1.5"/>
+    <line x1="${dx - 5}" y1="${p2[1]}" x2="${dx + 5}" y2="${p2[1]}" stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="${dx + 6}" y="${(y0 + p2[1]) / 2 + 4}" fill="var(--accent)" style="font-weight:600">${fmt(v.v)}</text>
+    <text x="${mid[0] - 8}" y="${mid[1] - 6}" text-anchor="end">${fmt(v.S)}</text>`;
+}
+
+function applyOffset() {
+  const v = offValues(), p = proj(), u = off.dirs[+$('#offDir').value] || off.dirs[0];
+  const legs = [V.mul(off.d, v.A), V.add(V.mul(off.d, v.run), V.mul(u, v.v)), V.mul(off.d, v.B)]
+    .filter(x => V.len(x) > 0.01)
+    .map(x => ({ x: x[0], y: x[1], z: x[2] }));
+  commit();
+  if (off.mode === 'insert') { ensureDeltas(); p.deltas.splice(off.i, 1, ...legs); }
+  else { p.mode = 'deltas'; p.deltas = legs; p.done = {}; }
+  off.V = v.v;
+  $('#offDlg').hidden = true;
+  if (!isOrtho()) fit = null;
+  renderInputs(); recompute(); selectLeg(-1);
+}
+
+$('#offAng').addEventListener('click', e => {
+  const a = e.target.closest('button')?.dataset.a;
+  if (!a) return;
+  off.ang = +a;
+  $$('#offAng button').forEach(b => b.classList.toggle('on', b === e.target.closest('button')));
+  centerOffset();
+  updateOffset('A');
+});
+// Beim Einfügen mittig setzen, solange die Lage nicht selbst eingegeben wurde
+function centerOffset() {
+  if (off.mode === 'insert' && !off.userPos) $('#offA').value = String(r1(Math.max(0, (off.L - offValues().run) / 2))).replace('.', ',');
+}
+$('#offV').addEventListener('input', () => { centerOffset(); updateOffset('A'); });
+$('#offA').addEventListener('input', () => { off.userPos = true; updateOffset('A'); });
+$('#offB').addEventListener('input', () => { off.userPos = true; updateOffset('B'); });
+$('#offOk').addEventListener('click', applyOffset);
+$('#offCancel').addEventListener('click', () => { $('#offDlg').hidden = true; });
+$('#offDlg').addEventListener('click', e => { if (e.target.id === 'offDlg') $('#offDlg').hidden = true; });
+$('#offNew').addEventListener('click', () => openOffset('new'));
+$('#offLegView').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
+$('#lpOff').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#offDlg').hidden = true; });
+
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
   window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, proj, points, resetView };
 }
 
-function fullRender() { sel = -1; lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { sel = -1; lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 
