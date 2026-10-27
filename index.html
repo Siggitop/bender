@@ -15,10 +15,12 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<button class="update-bar" id="updateBar" hidden></button>
 <header class="top">
   <div class="brand">⟆ Rohrbiegen</div>
   <select id="projSel" aria-label="Projekt wählen"></select>
   <button id="undoBtn" class="hbtn" title="Rückgängig (⌘Z)" aria-label="Rückgängig" disabled>↶</button>
+  <span class="ver" id="verTag"></span>
   <button id="redoBtn" class="hbtn" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen" disabled>↷</button>
 </header>
 
@@ -123,6 +125,7 @@
   </div>
 </div>
 
+<script src="version.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

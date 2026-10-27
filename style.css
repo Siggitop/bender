@@ -177,7 +177,8 @@ table.marks td:last-child { width: 1%; white-space: nowrap; }
 .tabbar button span { font-size: 20px; line-height: 1; }
 .tabbar button.active { color: var(--accent); }
 
-@media (min-width: 900px) {
+/* Zweispaltig nur mit genug Höhe; Handys quer (auch über 900 px breit) nutzen Reiter + volle 3D-Fläche */
+@media (min-width: 900px) and (min-height: 521px) {
   .layout { display: grid; grid-template-columns: minmax(380px, 520px) 1fr; }
   #tab-view { display: block; }
   .viewwrap { position: sticky; top: 72px; height: calc(100dvh - 160px); }
@@ -247,4 +248,16 @@ button { touch-action: manipulation; }
   .sheet { width: min(760px, 94%); padding-top: 10px; }
   .sheet-body { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
   .sheet .row2 { margin-bottom: 6px; }
+}
+
+/* Versionsanzeige und Update-Hinweis */
+.ver { font-size: 11px; color: var(--muted); white-space: nowrap; order: 10; }
+.update-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(8px + env(safe-area-inset-top)); z-index: 40;
+  background: var(--accent); color: #fff; border: 0; border-radius: 99px; padding: 8px 16px; font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+.appinfo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+@media (max-width: 600px), (orientation: landscape) and (max-height: 520px) {
+  .ver { display: none; } /* auf dem Handy steht die Version im Reiter „Zangen“ */
 }

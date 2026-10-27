@@ -29,7 +29,8 @@ Dann `http://localhost:8765` öffnen. Im selben WLAN geht auch `http://<IP-des-M
 Einstellungen → Pages → „Deploy from a branch“ → Branch `main`, Ordner `/ (root)`.
 Die App ist danach unter `https://<benutzername>.github.io/<repository>/` erreichbar.
 
-Nach Änderungen in `sw.js` die Versionsnummer in `CACHE` erhöhen, damit installierte Apps sicher die neue Version laden.
+Bei jeder Änderung die Versionsnummer in `version.js` um 1 erhöhen. Die App zeigt sie an (oben rechts bzw. im Reiter
+„Zangen“), vergleicht sie beim Öffnen mit dem Server und blendet bei einer neueren Version „Neue Version … – tippen zum Laden“ ein.
 
 ## Daten
 

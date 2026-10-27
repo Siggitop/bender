@@ -502,6 +502,10 @@ function renderTools() {
     <div id="calRes" class="hint"></div>
     <button id="calApply" class="primary" style="width:100%" disabled>Werte übernehmen</button>
     <p class="hint">Noch nicht kalibrierte Marken werden aus dem Ergebnis abgeschätzt (L/R liegen um den Radius neben „0“). Am genauesten ist eine Probebiegung pro Marke.</p>
+  </div>
+  <div class="card">
+    <h3>App</h3>
+    <div class="appinfo"><span>Version <b>${APP_VERSION}</b> vom ${APP_DATE}</span><span id="appStatus">${updateStatus()}</span><button id="reloadBtn">Neu laden</button></div>
   </div>`;
 }
 
@@ -548,6 +552,7 @@ $('#tab-tools').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   const f = curTool();
+  if (b.id === 'reloadBtn') { reloadApp(); return; }
   if (b.id === 'tNew') {
     const n = { ...structuredClone(f), id: uid(), name: 'Neue Zange' };
     n.marks.forEach(m => { m.cal = false; });
@@ -1555,6 +1560,33 @@ $('#offLegView').addEventListener('click', () => { if (sel >= 0) openOffset('ins
 $('#lpOff').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#offDlg').hidden = true; });
 
+// ---------- Version / Update ----------
+// Eigene Version aus version.js; beim Öffnen und beim Zurückkehren in die App mit dem Server vergleichen.
+const APP_VERSION = self.APP_VERSION ?? '?', APP_DATE = self.APP_DATE ?? '';
+let serverVersion; // undefined = noch nicht geprüft, null = Server nicht erreichbar
+const updateStatus = () => serverVersion === undefined ? 'wird geprüft …'
+  : serverVersion === null ? 'Server nicht erreichbar (offline)'
+  : serverVersion === APP_VERSION ? '✓ aktuell' : `Neue Version ${serverVersion} verfügbar`;
+async function checkUpdate() {
+  try {
+    const t = await (await fetch('version.js', { cache: 'no-store' })).text();
+    const m = t.match(/APP_VERSION\s*=\s*(\d+)/);
+    serverVersion = m ? +m[1] : null;
+  } catch { serverVersion = null; }
+  const newer = typeof serverVersion === 'number' && serverVersion !== APP_VERSION;
+  $('#updateBar').hidden = !newer;
+  if (newer) $('#updateBar').textContent = `Neue Version ${serverVersion} – tippen zum Laden`;
+  const st = $('#appStatus');
+  if (st) st.textContent = updateStatus();
+}
+async function reloadApp() {
+  try { await (await navigator.serviceWorker?.getRegistration())?.update(); } catch {}
+  location.reload();
+}
+$('#verTag').textContent = `v${APP_VERSION}`;
+$('#updateBar').addEventListener('click', reloadApp);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
   window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, proj, points, resetView };
@@ -1563,7 +1595,9 @@ if (new URLSearchParams(location.search).has('debug')) {
 function fullRender() { sel = -1; lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
+checkUpdate();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // updateViaCache: 'none' – auch version.js (per importScripts) immer frisch prüfen
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 }
