@@ -21,18 +21,18 @@ export function rotAbout(v, k, a) {
 }
 
 // Eingabe "Richtungen": jeder Schenkel als Weg dx/dy/dz (X rechts, Y hinten, Z oben)
-export function pointsFromDeltas(deltas) {
-  let p = [0, 0, 0];
+export function pointsFromDeltas(deltas, origin = [0, 0, 0]) {
+  let p = [...origin];
   const pts = [p];
   for (const d of deltas) { p = V.add(p, [d.x || 0, d.y || 0, d.z || 0]); pts.push(p); }
   return pts;
 }
 
-// Eingabe "Winkel & Drehung": Schenkel startet in +X, erste Biegung nach oben.
+// Eingabe "Winkel & Drehung": Schenkel startet in frame.d (Standard +X), Bezug der ersten Biegung frame.b (Standard oben).
 // rot = Drehung der Biegerichtung um die Rohrachse gegenüber der vorigen Biegung
 // (rechtshändig, d. h. im Uhrzeigersinn beim Blick in Rohrrichtung).
-export function pointsFromAngles(legs) {
-  let p = [0, 0, 0], d = [1, 0, 0], b = [0, 0, 1];
+export function pointsFromAngles(legs, frame = null, origin = [0, 0, 0]) {
+  let p = [...origin], d = frame?.d || [1, 0, 0], b = frame?.b || [0, 0, 1];
   const pts = [p];
   legs.forEach((leg, i) => {
     p = V.add(p, V.mul(d, leg.len || 0));
@@ -48,7 +48,7 @@ export function pointsFromAngles(legs) {
   return pts;
 }
 
-function refPerp(d) {
+export function refPerp(d) {
   let r = [0, 0, 1];
   if (Math.abs(V.dot(r, d)) > 0.999) r = [0, -1, 0];
   return V.norm(V.sub(r, V.mul(d, V.dot(r, d))));

@@ -108,6 +108,7 @@ main { padding: 12px 16px; min-width: 0; }
 .msg { border-radius: 8px; padding: 8px 10px; font-size: 14px; margin-top: 8px; }
 .msg.err { background: var(--err-soft); color: var(--err); }
 .msg.warn { background: var(--warn-soft); color: var(--warn); }
+.msg.ok { background: var(--accent-soft); color: var(--ok); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { font-size: 13px; background: var(--accent-soft); color: var(--accent); padding: 3px 8px; border-radius: 99px; }
 
@@ -138,7 +139,7 @@ table.det th:first-child, table.det td:first-child { text-align: left; }
 .scroll-x { overflow-x: auto; }
 
 /* 3D */
-.viewwrap { position: relative; height: calc(100dvh - 150px); min-height: 320px; background: var(--canvas); border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; margin: 12px 16px; }
+.viewwrap { position: relative; height: calc(100dvh - 150px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: 320px; background: var(--canvas); border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; margin: 12px 16px; }
 #cv, #cvBg, #cvGL { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #cv { touch-action: none; cursor: grab; }
 table.marks { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
@@ -203,7 +204,7 @@ button { touch-action: manipulation; }
   .viewbtns::-webkit-scrollbar { display: none; }
   .viewbtns button { flex: none; padding: 4px 9px; font-size: 13px; }
   .viewhint { display: none; }
-  .viewwrap { margin: 8px; height: calc(100dvh - 140px - env(safe-area-inset-bottom)); }
+  .viewwrap { margin: 8px; height: calc(100dvh - 140px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
   .legend { display: none; }
 }
 
@@ -218,7 +219,7 @@ button { touch-action: manipulation; }
     border-top: 0; border-right: 1px solid var(--line); padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   .tabbar button { flex: none; min-height: 62px; }
-  .viewwrap { margin: 6px 8px; height: calc(100dvh - 82px - env(safe-area-inset-bottom)); min-height: 0; }
+  .viewwrap { margin: 6px 8px; height: calc(100dvh - 66px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: 0; }
   .viewhint, .legend { display: none; }
   .viewbtns { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .viewbtns button { flex: none; min-height: 30px; padding: 2px 8px; font-size: 12px; }
@@ -261,3 +262,44 @@ button { touch-action: manipulation; }
 @media (max-width: 600px), (orientation: landscape) and (max-height: 520px) {
   .ver { display: none; } /* auf dem Handy steht die Version im Reiter „Zangen“ */
 }
+
+/* Raum / Schellen */
+.envrow { display: grid; grid-template-columns: 1.3fr 1fr auto auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.envrow button { min-height: 40px; padding: 2px 10px; border: 0; background: transparent; color: var(--muted); }
+.chk { flex-direction: row; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+.chk input { width: 20px; min-height: 20px; height: 20px; }
+@media (max-width: 420px) { .envrow { grid-template-columns: 1fr 1fr auto; } .envrow .chk { grid-column: 1 / 3; } }
+
+.viewacts button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.popover { position: absolute; left: 10px; bottom: 112px; z-index: 3; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; display: grid; gap: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.popover .chk { font-size: 14px; color: var(--text); }
+.toast { position: absolute; left: 50%; transform: translateX(-50%); top: 52px; z-index: 4; background: var(--text); color: var(--card); padding: 8px 14px; border-radius: 99px; font-size: 13px; max-width: 90%; text-align: center; }
+@media (orientation: landscape) and (max-height: 520px) { .popover { bottom: 56px; left: 60px; } }
+
+/* Anleitung: Werkzeugleiste, Kontrolle, große Schrift */
+.guidebar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.guidebar button { flex: 1; font-size: 14px; }
+.guidebar button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.inst li.check { color: var(--ok); list-style: none; margin-left: -18px; }
+table.mont td { text-align: left !important; }
+.printonly { display: none; }
+body.bigtext .step, body.bigtext #tab-guide .card { font-size: 19px; }
+body.bigtext .inst li b.hl { font-size: 24px; }
+body.bigtext .marklist { font-size: 22px; }
+body.bigtext table.det { font-size: 15px; }
+#tab-view.offscreen { display: block !important; position: fixed; left: -10000px; top: 0; width: 900px; }
+#tab-view.offscreen .viewwrap { height: 600px; }
+
+@media print {
+  .top, .tabbar, .noprint, #tab-input, #tab-view, #tab-tools, .update-bar, .modal, .done-box { display: none !important; }
+  #tab-guide { display: block !important; }
+  body { padding: 0 !important; background: #fff; color: #000; }
+  main { padding: 0; }
+  .printonly { display: block; }
+  #printHead img { width: 100%; max-height: 320px; object-fit: contain; border: 1px solid #ccc; border-radius: 8px; margin: 8px 0 12px; }
+  .card, .step { break-inside: avoid; border-color: #bbb; box-shadow: none; }
+  .step.done { opacity: 1; }
+}
+
+/* Ist nur die 3D-Ansicht sichtbar (Handy/Tablet), braucht der leere Inhaltsbereich keinen Rand */
+main:not(:has(> .tab.active)) { padding: 0; }

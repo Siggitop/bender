@@ -11,6 +11,8 @@ Läuft im Browser, auch offline, und lässt sich auf dem iPhone über „Zum Hom
 | `index.html`, `style.css` | Oberfläche |
 | `app.js` | Eingabe, 3D-Ansicht, Gimbal, Anleitung, Zangen |
 | `geometry.js` | Biegerechnung (Tangente, Bogen, Zuschnitt, Strichpositionen, Kollisionen) |
+| `site.js` | Baustelle: Wände/Boden/Decke, Schellen nach Abstandsregeln, Bohrpunkte, Parallelrohre, Zuschnitt aus Stangen |
+| `version.js` | Versionsnummer (bei jeder Änderung erhöhen) |
 | `sw.js`, `manifest.webmanifest`, `icon-*.png` | Offline-Betrieb und Installation als App |
 
 Es gibt keinen Build-Schritt und keine Abhängigkeiten – die Dateien werden direkt ausgeliefert.

@@ -1,4 +1,5 @@
-import { pointsFromDeltas, pointsFromAngles, anglesFromPoints, cleanPoints, computeLayout, calibrate, pointAt, V, rotAbout, selfCollisions } from './geometry.js';
+import { PLANE_KINDS, planeAxis, planeDist, planeHits, autoClamps, clampInfo, drillCoords, parallelPoints, cutPlan } from './site.js';
+import { pointsFromDeltas, pointsFromAngles, anglesFromPoints, cleanPoints, computeLayout, calibrate, pointAt, V, rotAbout, selfCollisions, refPerp } from './geometry.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -21,19 +22,30 @@ const defaultMarks = R => [
   { name: 'R', k: R, side: 'rechts', cal: false },
 ];
 function defaultProfiles() {
-  const base = { springback: 0, pref: 'auto' };
+  const base = { springback: 0, pref: 'auto', ...CLAMP_DEFAULTS };
   return [
     { ...base, id: 'es6', name: 'Edelstahl 6 mm', D: 6, R: 15, minStraight: 20, marks: defaultMarks(15) },
     { ...base, id: 'es8', name: 'Edelstahl 8 mm', D: 8, R: 24, minStraight: 25, marks: defaultMarks(24) },
   ];
 }
-// Profile aus der ersten Version (eine Marke mit k) übernehmen
+// Schellen-Regeln je Profil: größter Abstand, Abstand zum Bogen bzw. Rohrende, Schellenhöhe (Untergrund → Rohrmitte), Stangenlänge
+const CLAMP_DEFAULTS = { clampMax: 600, clampBend: 80, clampEnd: 80, clampH: 20, stock: 6000 };
+// Felder, die spätere Versionen ergänzt haben
+const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, planes: [], target: null, clamps: [], clampMode: 'auto', group: null };
+
+// Ältere Daten auf den aktuellen Stand bringen
 function migrate(d) {
+  d.projects.forEach(p => { for (const [k, v] of Object.entries(PROJECT_DEFAULTS)) if (p[k] === undefined) p[k] = structuredClone(v); });
+  d.profiles.forEach(f => { for (const [k, v] of Object.entries(CLAMP_DEFAULTS)) if (f[k] === undefined) f[k] = v; });
   d.profiles.forEach(f => {
     if (f.marks) return;
     f.marks = defaultMarks(f.R);
     const m = f.marks.find(x => x.name === f.mark) || f.marks[0];
     m.k = f.k || 0; m.cal = !!f.calibrated;
+    // übrige Marken wie bei der Kalibrierung abschätzen: L/R liegen um den Radius neben „0“
+    const isVertex = n => ['L', 'R'].includes(n);
+    const k0 = isVertex(m.name) ? m.k - f.R : m.k;
+    f.marks.forEach(o => { if (o !== m) o.k = isVertex(o.name) ? k0 + f.R : k0; });
     f.pref = 'auto';
     delete f.k; delete f.mark; delete f.insert; delete f.calibrated;
   });
@@ -51,7 +63,7 @@ function pickMark(f, angle) {
 }
 function newProject(profileId, name) {
   return {
-    id: uid(), name, profileId, mode: 'deltas', zugA: 0, zugE: 0, done: {},
+    id: uid(), name, profileId, mode: 'deltas', zugA: 0, zugE: 0, done: {}, ...structuredClone(PROJECT_DEFAULTS),
     deltas: [{ x: 200, y: 0, z: 0 }, { x: 0, y: 0, z: 150 }],
     legs: [{ len: 200, angle: 90, rot: 0 }, { len: 150 }],
   };
@@ -70,7 +82,8 @@ let db = load();
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(db)); } catch {} };
 const proj = () => db.projects.find(p => p.id === db.currentId) || db.projects[0];
 const prof = (p = proj()) => db.profiles.find(x => x.id === p.profileId) || db.profiles[0];
-const points = p => (p.mode === 'deltas' ? pointsFromDeltas(p.deltas) : pointsFromAngles(p.legs));
+// Achs-Schnittpunkte in Raumkoordinaten; origin = Lage des Rohranfangs, frame = Ausrichtung im Winkel-Modus
+const points = p => (p.mode === 'deltas' ? pointsFromDeltas(p.deltas, p.origin) : pointsFromAngles(p.legs, p.frame, p.origin));
 
 function setPath(obj, path, val) {
   const ks = path.split('.');
@@ -80,14 +93,17 @@ function setPath(obj, path, val) {
 }
 
 // Modus wechseln: Geometrie in die andere Darstellung umrechnen
-function toDeltas(legs) {
-  const pts = pointsFromAngles(legs);
-  return pts.slice(1).map((q, i) => ({ x: q[0] - pts[i][0], y: q[1] - pts[i][1], z: q[2] - pts[i][2] }));
+function toDeltas(legs, frame = null) {
+  const pts = pointsFromAngles(legs, frame);
+  const z = v => (Math.abs(v) < 1e-9 ? 0 : v); // Rundungsreste der Winkelrechnung entfernen
+  return pts.slice(1).map((q, i) => ({ x: z(q[0] - pts[i][0]), y: z(q[1] - pts[i][1]), z: z(q[2] - pts[i][2]) }));
 }
+// Winkel-Darstellung samt Ausrichtung (frame), damit die Lage im Raum beim Moduswechsel erhalten bleibt
 function toLegs(deltas) {
   const pts = cleanPoints(pointsFromDeltas(deltas));
-  if (pts.length < 2) return [{ len: 100 }];
-  return anglesFromPoints(pts).map(l => ({ len: r1(l.len), angle: r1(l.angle), rot: r1(normRot(l.rot)) }));
+  if (pts.length < 2) return { legs: [{ len: 100 }], frame: null };
+  const d = V.norm(V.sub(pts[1], pts[0]));
+  return { legs: anglesFromPoints(pts).map(l => ({ len: l.len, angle: l.angle, rot: normRot(l.rot) })), frame: { d, b: refPerp(d) } };
 }
 
 const TEMPLATES = {
@@ -101,7 +117,8 @@ const TEMPLATES = {
 // innerhalb von 1,5 s wird zu einem Schritt zusammengefasst.
 const hist = new Map();
 const histOf = p => { if (!hist.has(p.id)) hist.set(p.id, { undo: [], redo: [] }); return hist.get(p.id); };
-const snapshot = p => structuredClone({ mode: p.mode, deltas: p.deltas, legs: p.legs, zugA: p.zugA, zugE: p.zugE, profileId: p.profileId });
+const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'planes', 'target', 'clamps', 'clampMode'];
+const snapshot = p => structuredClone(Object.fromEntries(SNAP_KEYS.map(k => [k, p[k] ?? null])));
 let lastKey = null, lastTime = 0;
 function commit(key = null, snap = null) {
   const p = proj(), now = Date.now();
@@ -132,7 +149,7 @@ function updateUndoButtons() {
 $('#undoBtn').addEventListener('click', () => undoRedo(-1));
 $('#redoBtn').addEventListener('click', () => undoRedo(1));
 document.addEventListener('keydown', e => {
-  if (!(e.metaKey || e.ctrlKey) || e.target.matches('input, textarea')) return;
+  if (!(e.metaKey || e.ctrlKey) || e.target.matches?.('input, textarea')) return;
   const k = e.key.toLowerCase();
   if (k === 'z') { e.preventDefault(); undoRedo(e.shiftKey ? 1 : -1); }
   else if (k === 'y') { e.preventDefault(); undoRedo(1); }
@@ -259,7 +276,8 @@ $('#modeSeg').addEventListener('click', e => {
   const p = proj();
   if (!m || m === p.mode) return;
   commit();
-  if (m === 'deltas') p.deltas = toDeltas(p.legs); else p.legs = toLegs(p.deltas);
+  if (m === 'deltas') p.deltas = toDeltas(p.legs, p.frame);
+  else ({ legs: p.legs, frame: p.frame } = toLegs(p.deltas));
   p.mode = m;
   renderInputs(); recompute();
 });
@@ -269,6 +287,7 @@ $('.tpl').addEventListener('click', e => {
   commit();
   const p = proj();
   p.legs = structuredClone(t);
+  p.frame = null;
   if (p.mode === 'deltas') p.deltas = toDeltas(p.legs);
   p.done = {};
   renderInputs(); recompute(); resetView();
@@ -294,13 +313,133 @@ $('#pDel').addEventListener('click', () => {
   db.currentId = db.projects[0].id; fullRender(); resetView();
 });
 
+// ---------- Raum, Ziel-Anschluss, Schellen (Eingabe) ----------
+// Flächen werden über den Abstand Rohrmitte am Rohranfang → Fläche eingegeben, gespeichert als Lage im Raum (c),
+// damit sie beim Ändern des Rohrs stehen bleiben.
+const KIND_ORDER = ['back', 'floor', 'left', 'right', 'ceil', 'front'];
+const startPt = (p = proj()) => points(p)[0];
+const planeDistFromStart = (pl, p) => PLANE_KINDS[pl.kind].side * (pl.c - startPt(p)[planeAxis(pl)]);
+const setPlaneDist = (pl, d, p) => { pl.c = startPt(p)[planeAxis(pl)] + PLANE_KINDS[pl.kind].side * d; };
+// Flächen gelten für die ganze Rohrgruppe (Parallelrohre)
+function syncGroupPlanes(p = proj()) {
+  if (!p.group) return;
+  db.projects.forEach(q => { if (q.group === p.group && q !== p) q.planes = structuredClone(p.planes); });
+}
+
+function renderEnv() {
+  const p = proj(), f = prof(p), A = startPt(p);
+  const kindOpts = sel => Object.entries(PLANE_KINDS).map(([k, v]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${v.name}</option>`).join('');
+  const t = p.target ? V.sub(p.target, A) : null;
+  $('#envCard').innerHTML = `
+    <h3>Raum</h3>
+    <p class="hint" style="margin-top:0">Abstand = von der Rohrmitte am Rohranfang bis zur Fläche. Bei Wänden passt meist die Schellenhöhe (${fmt(f.clampH)} mm).</p>
+    ${p.planes.map((pl, i) => `<div class="envrow">
+      <select data-pl="${i}.kind" aria-label="Art der Fläche">${kindOpts(pl.kind)}</select>
+      <input data-pl="${i}.dist" inputmode="decimal" aria-label="Abstand in mm" value="${String(r1(planeDistFromStart(pl, p))).replace('.', ',')}">
+      <label class="chk"><input type="checkbox" data-pl="${i}.pass"${pl.pass ? ' checked' : ''}> Durchführung</label>
+      <button data-pldel="${i}" aria-label="Fläche löschen">✕</button>
+    </div>`).join('')}
+    <button id="plAdd" class="wide" style="margin:6px 0 14px">+ Wand / Boden / Decke</button>
+
+    <h3>Ziel-Anschluss</h3>
+    ${t ? `<p class="hint" style="margin-top:0">Lage des Anschlusses, gemessen ab Rohranfang (Rohrmitte).</p>
+      <div class="row3">
+        <label>X <small>rechts + / links −</small>${signed('tg.0', t[0])}</label>
+        <label>Y <small>hinten + / vorn −</small>${signed('tg.1', t[1])}</label>
+        <label>Z <small>oben + / unten −</small>${signed('tg.2', t[2])}</label>
+      </div>
+      <div class="btnrow" style="margin:8px 0 14px"><button id="tgFromEnd">= aktuelles Rohrende</button><button id="tgDel" class="danger">Ziel entfernen</button></div>`
+    : `<button id="tgAdd" class="wide" style="margin:0 0 14px">◎ Ziel-Anschluss festlegen</button>`}
+
+    <h3>Schellen</h3>
+    <div class="seg" id="clampMode" style="margin-bottom:8px">
+      <button data-cm="auto"${p.clampMode !== 'manual' ? ' class="on"' : ''}>Automatisch</button>
+      <button data-cm="manual"${p.clampMode === 'manual' ? ' class="on"' : ''}>Von Hand</button>
+    </div>
+    <p class="hint" style="margin:0">${layout.clampS.length} Schellen · Regeln: höchstens ${fmt(f.clampMax)} mm Abstand, ${fmt(f.clampBend)} mm vom Bogen, ${fmt(f.clampEnd)} mm vom Rohrende (einstellbar unter „Zangen“).
+      ${p.clampMode === 'manual' ? 'Von Hand: in der 3D-Ansicht mit „Schellen“ antippen zum Setzen, ziehen zum Verschieben, nochmal antippen zum Löschen.' : ''}</p>
+    ${p.clampMode === 'manual' ? '<div class="btnrow" style="margin-top:8px"><button id="clampRedo">Neu verteilen</button><button id="clampClear" class="danger">Alle entfernen</button></div>' : ''}`;
+}
+
+$('#envCard').addEventListener('input', e => {
+  const el = e.target, p = proj();
+  if (el.dataset.pl) {
+    const [i, key] = el.dataset.pl.split('.'), pl = p.planes[+i];
+    commit('pl' + el.dataset.pl);
+    if (key === 'dist') setPlaneDist(pl, num(el.value), p);
+    else if (key === 'pass') pl.pass = el.checked;
+    else if (key === 'kind') { const d = planeDistFromStart(pl, p); pl.kind = el.value; setPlaneDist(pl, Math.abs(d), p); }
+    syncGroupPlanes(p);
+    recompute();
+    if (key === 'kind') renderEnv();
+  } else if (el.dataset.p?.startsWith('tg.')) {
+    commit('tg' + el.dataset.p);
+    const k = +el.dataset.p.split('.')[1];
+    p.target[k] = startPt(p)[k] + readSigned(el);
+    recompute();
+  }
+});
+$('#envCard').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const p = proj(), f = prof(p);
+  if (b.dataset.sign?.startsWith('tg.')) {
+    commit();
+    b.textContent = b.textContent === '−' ? '+' : '−';
+    const k = +b.dataset.sign.split('.')[1];
+    p.target[k] = startPt(p)[k] + num(b.nextElementSibling.value) * (b.textContent === '−' ? -1 : 1);
+    recompute(); return;
+  }
+  if (b.id === 'plAdd') {
+    commit();
+    const kind = KIND_ORDER.find(k => !p.planes.some(pl => pl.kind === k)) || 'back';
+    const pl = { id: uid(), kind, c: 0, pass: false };
+    setPlaneDist(pl, kind === 'floor' ? 1000 : f.clampH, p);
+    p.planes.push(pl);
+  } else if (b.dataset.pldel != null) {
+    commit(); p.planes.splice(+b.dataset.pldel, 1);
+  } else if (b.id === 'tgAdd' || b.id === 'tgFromEnd') {
+    commit(); p.target = [...layout.E];
+  } else if (b.id === 'tgDel') {
+    commit(); p.target = null;
+  } else if (b.dataset.cm) {
+    if (b.dataset.cm === p.clampMode) return;
+    commit();
+    if (b.dataset.cm === 'manual') p.clamps = [...layout.clampS];
+    p.clampMode = b.dataset.cm;
+  } else if (b.id === 'clampRedo') {
+    commit(); p.clamps = autoClamps(layout, f);
+  } else if (b.id === 'clampClear') {
+    commit(); p.clamps = [];
+  } else return;
+  syncGroupPlanes(p);
+  if (!isOrtho()) fit = null;
+  recompute(); renderEnv();
+});
+
 // ---------- Berechnung & Ausgabe ----------
 function recompute(light = false) {
   const p = proj(), f = prof(p);
   layout = computeLayout(points(p), { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, pickMark: b => pickMark(f, b.angle) });
   layout.collisions = selfCollisions(layout.samples, f.D);
+  // Umgebung: Flächen, Schellen, Ziel
+  const raw = points(p);
+  layout.A = raw[0]; layout.E = raw.at(-1);
+  layout.hits = planeHits(layout.samples, p.planes, f.D / 2);
+  layout.clampS = p.clampMode === 'manual' ? p.clamps.filter(s => s >= 0 && s <= layout.total).sort((a, b) => a - b) : autoClamps(layout, f);
+  layout.clampInfo = layout.clampS.map(s => clampInfo(layout.samples, s, p.planes, f));
+  layout.targetDelta = p.target ? V.sub(p.target, layout.E) : null;
+  layout.ghosts = groupLayouts(p);
   if (light) { draw(); return; }
   if (layout.collisions.length) layout.errors.push(`Rohr berührt sich selbst (${layout.collisions.length}× – rot markiert).`);
+  for (const h of layout.hits) {
+    const n = PLANE_KINDS[h.plane.kind].name;
+    if (h.type === 'behind') layout.errors.push(`Rohr liegt hinter ${n} (auf der falschen Seite) – Abstand der Fläche prüfen.`);
+    else if (h.through && !h.plane.pass) layout.errors.push(`Rohr läuft durch ${n} (rot markiert). Als Durchführung freigeben oder Weg ändern.`);
+    else if (!h.through) layout.warnings.push(`Rohr liegt zu dicht an ${n} (Rohrmitte näher als halber Durchmesser).`);
+  }
+  const free = layout.clampInfo.filter(c => !c.mount).length;
+  if (p.planes.length && free) layout.warnings.push(`${free} Schelle(n) ohne Befestigung – keine Wand/Decke in Schellenhöhe (${fmt(f.clampH)} mm).`);
   layout.bends.forEach((b, j) => {
     const off = Math.abs(b.angle / ANGLE_STEP - Math.round(b.angle / ANGLE_STEP)) * ANGLE_STEP;
     if (off > 0.1) layout.warnings.push(`Biegung ${j + 1}: ${fmt(b.angle)}° liegt nicht im ${ANGLE_STEP}°-Raster.`);
@@ -321,6 +460,7 @@ function recompute(light = false) {
     });
   }
   renderSummary();
+  if (!$('#envCard').contains(document.activeElement)) renderEnv();
   renderGuide();
   draw();
   save();
@@ -331,13 +471,22 @@ function messages() {
     layout.warnings.map(m => `<div class="msg warn">⚠ ${esc(m)}</div>`).join('');
 }
 
+// Abweichung Rohrende → Ziel-Anschluss
+function targetHtml() {
+  const d = layout.targetDelta;
+  if (!d) return '';
+  const ok = V.len(d) < 0.5;
+  const parts = [0, 1, 2].map(k => Math.abs(d[k]) < 0.05 ? null : `${fmt(Math.abs(d[k]))} ${[['rechts', 'links'], ['hinten', 'vorne'], ['höher', 'tiefer']][k][d[k] > 0 ? 0 : 1]}`).filter(Boolean);
+  return ok ? '<div class="msg ok">✓ Rohrende trifft den Ziel-Anschluss.</div>'
+    : `<div class="msg warn">◎ Ziel-Anschluss liegt noch ${parts.join(', ')} (gesamt ${fmt(V.len(d))} mm).</div>`;
+}
 function renderSummary() {
   const f = prof();
   $('#summary').innerHTML =
     `<div class="kv"><span>Zuschnitt</span></div><div class="big">${fmt(layout.total)} mm</div>` +
     `<div class="kv"><span>Biegungen <b>${layout.bends.length}</b></span><span>Radius <b>${fmt(f.R)} mm</b></span><span>Zange <b>${esc(f.name)}</b></span></div>` +
     `<div class="chips">${layout.bends.map((b, j) => `<span class="chip">${j + 1}: ${fmt(b.angle)}°${j ? ' / ' + fmt(normRot(b.rot)) + '°' : ''}</span>`).join('')}</div>` +
-    messages();
+    targetHtml() + messages();
 }
 
 function rotText(phi) {
@@ -371,10 +520,109 @@ function tapeSvg() {
   return s;
 }
 
+// ---------- Anleitung: Kontrolle, Montage, Material ----------
+// Kontrollmaß nach Biegung j: bei 90° vom Rohrende bzw. von der Außenkante des vorletzten Schenkels
+// bis zur Außenkante des neuen Schenkels (nur wenn beide parallel liegen), sonst Winkel prüfen.
+function checkText(j) {
+  const b = layout.bends[j], D = prof().D, pts = layout.pts;
+  const dir = i => V.norm(V.sub(pts[i + 1], pts[i]));
+  if (Math.abs(b.angle - 90) > 0.5) return `Winkel mit dem Winkelmesser prüfen: <b>${fmt(b.angle)}°</b>`;
+  if (j === 0) return `Rohrende A bis Außenkante des neuen Schenkels: <b>${fmt(layout.legs[0].len + D / 2)} mm</b>`;
+  if (Math.abs(V.dot(dir(j - 1), dir(j + 1))) > 0.999 && Math.abs(layout.bends[j - 1].angle - 90) < 0.5) {
+    return `Außenkante Schenkel ${j} bis Außenkante Schenkel ${j + 2}: <b>${fmt(layout.legs[j].len + D)} mm</b>`;
+  }
+  return `Rechten Winkel prüfen (Anschlagwinkel).`;
+}
+
+const PREP = { rechts: 'rechts vom', links: 'links vom', hinten: 'hinter dem', vor: 'vor dem', über: 'über dem', unter: 'unter dem' };
+// z. B. „80 mm rechts vom Rohranfang · 1200 mm ab Boden“
+const drillText = (q, plane, p) => drillCoords(q, plane, p.planes, layout.A, layout.E)
+  .map(d => (d.ref === 'Rohranfang' || d.ref === 'Rohrende')
+    ? (d.dir ? `${fmt(d.v)} mm ${PREP[d.dir]} ${d.ref}` : `auf Höhe ${d.ref}`)
+    : `${fmt(d.v)} mm ab ${d.ref}`)
+  .join(' · ');
+
+function montageHtml(p, f) {
+  const ci = layout.clampInfo, pass = layout.hits.filter(h => h.type === 'through' && h.plane.pass);
+  if (!ci.length && !pass.length) return '';
+  let h = `<div class="card"><h3>Montage</h3>`;
+  if (ci.length) {
+    h += `<p class="hint" style="margin-top:0">${ci.length} Schellen, Schellenhöhe ${fmt(f.clampH)} mm. „ab A“ = gemessen auf dem Rohr ab Rohrende A.</p>
+      <div class="scroll-x"><table class="det mont"><tr><th>Nr.</th><th>auf Rohr ab A</th><th>Befestigung</th><th>Bohrpunkt</th></tr>
+      ${ci.map((c, i) => `<tr><td>S${i + 1}</td><td>${fmt(c.s)}</td>
+        <td>${c.mount ? PLANE_KINDS[c.mount.plane.kind].name + (Math.abs(c.mount.d - f.clampH) > 0.5 ? ` <span class="hint">(Abstand ${fmt(c.mount.d)} – Distanz ${fmt(c.mount.d - f.clampH)})</span>` : '') : (p.planes.length ? '<span style="color:var(--warn)">keine Fläche</span>' : '–')}</td>
+        <td>${c.mount ? drillText(c.q, c.mount.plane, p) : '–'}</td></tr>`).join('')}
+      </table></div>`;
+  }
+  if (pass.length) {
+    h += `<h3 style="margin-top:12px">Durchführungen</h3><ul style="margin:0;padding-left:18px">
+      ${pass.map(x => `<li>${PLANE_KINDS[x.plane.kind].name}: ${drillText(x.p, x.plane, p)} <span class="hint">(auf Rohr ${fmt(x.s)} mm ab A, Bohrung > ${fmt(f.D)} mm)</span></li>`).join('')}</ul>`;
+  }
+  return h + '</div>';
+}
+
+function materialHtml(p, f) {
+  const group = [{ name: p.name, len: layout.total, clamps: layout.clampS.length, f }];
+  if (p.group) db.projects.filter(q => q.group === p.group && q.id !== p.id).forEach(q => {
+    const fq = prof(q), L = computeLayout(points(q), { R: fq.R, zugA: q.zugA, zugE: q.zugE, minStraight: fq.minStraight });
+    group.push({ name: q.name, len: L.total, clamps: q.clampMode === 'manual' ? q.clamps.length : autoClamps(L, fq).length, f: fq });
+  });
+  const plan = cutPlan(group.map(g => ({ len: g.len, name: g.name })), f.stock);
+  return `<div class="card"><h3>Material${group.length > 1 ? ` (${group.length} Rohre der Gruppe)` : ''}</h3>
+    <div class="scroll-x"><table class="det"><tr><th>Rohr</th><th>Zuschnitt</th><th>Schellen</th></tr>
+      ${group.map(g => `<tr><td>${esc(g.name)}</td><td>${fmt(g.len)} mm</td><td>${g.clamps}</td></tr>`).join('')}
+      ${group.length > 1 ? `<tr><td><b>Summe</b></td><td><b>${fmt(group.reduce((a, g) => a + g.len, 0))} mm</b></td><td><b>${group.reduce((a, g) => a + g.clamps, 0)}</b></td></tr>` : ''}
+    </table></div>
+    <p style="margin:10px 0 4px"><b>${plan.bars.length}</b> Stange(n) à ${fmt(f.stock)} mm (3 mm Sägeschnitt):</p>
+    <ul style="margin:0;padding-left:18px">${plan.bars.map((b, i) => `<li>Stange ${i + 1}: ${b.cuts.map(c => `${fmt(c.len)} <span class="hint">(${esc(c.name)})</span>`).join(' + ')} – Rest ${fmt(b.rest)} mm</li>`).join('')}</ul>
+    ${plan.tooLong.length ? `<div class="msg err">✕ Länger als eine Stange: ${plan.tooLong.map(c => esc(c.name)).join(', ')} – Verbindung einplanen.</div>` : ''}</div>`;
+}
+
+// ---------- Baustellenmodus: Bildschirm an, große Schrift, Drucken ----------
+let wakeLock = null, wantWake = false, printing = false;
+async function setWake(on) {
+  wantWake = on;
+  try {
+    if (on) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener?.('release', () => { wakeLock = null; renderGuide(); }); }
+    else { await wakeLock?.release(); wakeLock = null; }
+  } catch { wantWake = false; wakeLock = null; }
+  renderGuide();
+}
+document.addEventListener('visibilitychange', () => { if (wantWake && !document.hidden && !wakeLock) setWake(true); });
+try { if (localStorage.getItem('biege.big') === '1') document.body.classList.add('bigtext'); } catch {}
+
+// Bild der 3D-Ansicht für den Druck (auf dem Handy ist die Ansicht dabei ausgeblendet → kurz unsichtbar einblenden)
+async function snapshot3d() {
+  const tv = $('#tab-view'), wasHidden = !cv.clientWidth;
+  if (wasHidden) tv.classList.add('offscreen');
+  printing = true;
+  render3d();
+  const c = document.createElement('canvas');
+  c.width = cv.width; c.height = cv.height;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  for (const src of [cvBg, glc, cv]) if (src.width && !src.hidden) g.drawImage(src, 0, 0, c.width, c.height);
+  printing = false;
+  if (wasHidden) tv.classList.remove('offscreen');
+  draw();
+  return c.toDataURL('image/png');
+}
+async function printPlan() {
+  const p = proj();
+  $('#printHead').innerHTML = `<h2>${esc(p.name)}</h2><div class="kv"><span>${new Date().toLocaleDateString('de-DE')}</span><span>${esc(prof(p).name)}</span><span>Rohrbiegen v${APP_VERSION}</span></div><img src="${await snapshot3d()}" alt="3D-Ansicht">`;
+  window.print();
+}
+
 function renderGuide() {
   const p = proj(), f = prof(p);
   const bends = layout.bends;
-  let h = `<div class="card"><div class="kv"><span>Zuschnitt</span></div><div class="big">${fmt(layout.total)} mm</div>
+  let h = `<div class="guidebar noprint">
+      <button id="gPrint">🖨 Drucken / PDF</button>
+      ${'wakeLock' in navigator ? `<button id="gWake"${wakeLock ? ' class="on"' : ''}>☀ Bildschirm ${wakeLock ? 'bleibt an' : 'anlassen'}</button>` : ''}
+      <button id="gBig"${document.body.classList.contains('bigtext') ? ' class="on"' : ''}>A+ Große Schrift</button>
+    </div>
+    <div id="printHead" class="printonly"></div>
+    <div class="card"><div class="kv"><span>Zuschnitt</span></div><div class="big">${fmt(layout.total)} mm</div>
     <div class="kv"><span>Zange <b>${esc(f.name)}</b></span><span>R <b>${fmt(f.R)}</b></span><span>Rückfederung <b>${fmt(f.springback)}°/90°</b></span></div>
     ${anyCal(f) ? '' : '<div class="msg warn">⚠ Diese Zange ist noch nicht kalibriert – Radius und Markenabstände sind Schätzwerte. Im Reiter „Zangen“ eine Probebiegung machen.</div>'}
     ${messages()}</div>`;
@@ -409,6 +657,7 @@ function renderGuide() {
           ${others.length ? `<div class="alt">${others.map(m => `oder „${esc(m.name)}“ (gemessener Teil ${esc(m.side)}) → ${Math.abs(m.k - k) < 0.05 ? 'gleicher Strich' : `Strich ${fmt(Math.abs(m.k - k))} mm ${m.k > k ? 'weiter weg vom' : 'näher zum'} gemessenen Ende`}`).join(' · ')}</div>` : ''}</li>
         ${j ? `<li>${rotText(phi)}</li>` : ''}
         <li>Biegen bis Skala <b class="hl">${fmt(scale)}°</b>${f.springback ? ` <span class="hint">(Soll ${fmt(b.angle)}° + Rückfederung)</span>` : ''}</li>
+        <li class="check">✓ Kontrolle: ${checkText(j)}</li>
       </ol>${j ? `<div class="rotbox">${rotSvg(phi)}<div><span style="color:var(--mark)">▲ Biegerichtung</span><br><span style="color:var(--accent)">━ voriger Schenkel</span><br>Blick zum freien Ende</div></div>` : ''}</div></div>`;
   });
 
@@ -419,10 +668,19 @@ function renderGuide() {
       <tr><td>Ende</td><td></td><td></td><td>${fmt(layout.straights.at(-1))}</td><td></td><td></td><td></td><td></td></tr>
       </table></div><p class="hint">Alle Maße in mm, gemessen auf der Rohrmitte. Gerade + Bögen ergeben den Zuschnitt.</p></div>`;
   }
+  h += montageHtml(p, f) + materialHtml(p, f);
   $('#tab-guide').innerHTML = h;
 }
 
 $('#tab-guide').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (btn?.id === 'gPrint') { printPlan(); return; }
+  if (btn?.id === 'gWake') { setWake(!wakeLock); return; }
+  if (btn?.id === 'gBig') {
+    const on = document.body.classList.toggle('bigtext');
+    try { localStorage.setItem('biege.big', on ? '1' : '0'); } catch {}
+    renderGuide(); return;
+  }
   const cb = e.target.closest('[data-done]');
   if (cb) {
     proj().done[cb.dataset.done] = cb.checked;
@@ -446,6 +704,11 @@ const PF = [
   ['R', 'Biegeradius auf Rohrmitte (mm)', 'num', 'Steht meist auf der Zange; genauer per Probebiegung.'],
   ['springback', 'Rückfederung (° bei 90°)', 'num', 'So viel weiter biegen. Wird für andere Winkel anteilig gerechnet.'],
   ['minStraight', 'Mindest-Gerade zwischen Bögen (mm)', 'num', 'Kürzeste gerade Strecke, die die Zange noch greift.'],
+  ['clampMax', 'Schellen: größter Abstand (mm)', 'num', 'Entlang des Rohrs, auch über Bögen hinweg.'],
+  ['clampBend', 'Schellen: Abstand vom Bogen (mm)', 'num', 'Gemessen vom Bogenende bzw. -anfang.'],
+  ['clampEnd', 'Schellen: Abstand vom Rohrende (mm)', 'num', ''],
+  ['clampH', 'Schellenhöhe (mm)', 'num', 'Untergrund bis Rohrmitte – ergibt den Wandabstand.'],
+  ['stock', 'Stangenlänge (mm)', 'num', 'Für den Zuschnitt-Plan.'],
 ];
 const curTool = () => db.profiles.find(x => x.id === toolProfId);
 
@@ -597,7 +860,8 @@ const VIEWS = {
 };
 const isOrtho = () => cam.view !== 'iso';
 let fit = null, lastBase = null, view = null; // fit: gesperrte Grundskalierung (beim Bearbeiten springt nichts)
-let sel = -1, drag = null;                       // gewählter Schenkel, laufendes Ziehen eines Anfassers
+let sel = -1, drag = null; // gewählter Schenkel, laufendes Ziehen eines Anfassers
+let camTool = 'edit';      // 'edit' = Gimbal/Anfasser, 'clamp' = Schellen setzen
 function resetView(v = 'iso') {
   [cam.yaw, cam.pitch] = VIEWS[v];
   cam.view = v; cam.zoom = 1; cam.panX = cam.panY = 0; fit = null;
@@ -636,21 +900,21 @@ const niceStep = v => [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000].find(s
 // Röhrenmodell entlang der Mittellinie, Licht von oben links vorne, leichter Tiefennebel.
 // Dieselbe orthografische Projektion wie project(), damit Beschriftung und Gimbal deckungsgleich bleiben.
 const glc = $('#cvGL');
-const gl = glc.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true });
+const gl = glc.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true });
 let glp = null;
 const VS = `attribute vec3 aPos; attribute vec3 aNor; attribute vec3 aCol;
 uniform mat4 uM; uniform mat3 uR;
 varying vec3 vN; varying vec3 vC; varying float vZ;
 void main() { vec4 c = uM * vec4(aPos, 1.0); gl_Position = c; vN = uR * aNor; vC = aCol; vZ = c.z; }`;
 const FS = `precision mediump float;
-uniform vec3 uL; uniform vec3 uFog; uniform float uFogAmt;
+uniform vec3 uL; uniform vec3 uFog; uniform float uFogAmt; uniform float uAlpha;
 varying vec3 vN; varying vec3 vC; varying float vZ;
 void main() {
   vec3 n = normalize(vN);
   float d = max(dot(n, uL), 0.0);
   float s = pow(max(dot(n, normalize(uL + vec3(0.0, 0.0, -1.0))), 0.0), 36.0);
   vec3 col = vC * (0.42 + 0.62 * d) + vec3(0.30) * s;
-  gl_FragColor = vec4(mix(col, uFog, clamp((vZ + 1.0) * 0.5, 0.0, 1.0) * uFogAmt), 1.0);
+  gl_FragColor = vec4(mix(col, uFog, clamp((vZ + 1.0) * 0.5, 0.0, 1.0) * uFogAmt) * uAlpha, uAlpha);
 }`;
 function initGL() {
   if (!gl) return false;
@@ -665,7 +929,7 @@ function initGL() {
     gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     const u = n => gl.getUniformLocation(p, n), a = n => gl.getAttribLocation(p, n);
-    glp = { p, buf: gl.createBuffer(), aPos: a('aPos'), aNor: a('aNor'), aCol: a('aCol'), uM: u('uM'), uR: u('uR'), uL: u('uL'), uFog: u('uFog'), uFogAmt: u('uFogAmt') };
+    glp = { p, buf: gl.createBuffer(), aPos: a('aPos'), aNor: a('aNor'), aCol: a('aCol'), uM: u('uM'), uR: u('uR'), uL: u('uL'), uFog: u('uFog'), uFogAmt: u('uFogAmt'), uAlpha: u('uAlpha') };
     return true;
   } catch (err) {
     console.warn('WebGL nicht nutzbar, Rohr wird flach gezeichnet:', err);
@@ -678,7 +942,7 @@ function tubeMesh(S, r, colOf) {
   const P = [];
   S.forEach(s => { if (!P.length || V.len(V.sub(s.p, P.at(-1).p)) > 1e-6) P.push(s); });
   const n = P.length, N = 20;
-  if (n < 2) return new Float32Array(0);
+  if (n < 2) return [];
   const T = P.map((s, i) => {
     const a = i > 0 ? V.norm(V.sub(s.p, P[i - 1].p)) : null, b = i < n - 1 ? V.norm(V.sub(P[i + 1].p, s.p)) : null;
     return a && b ? V.norm(V.add(a, b)) : a || b;
@@ -706,10 +970,32 @@ function tubeMesh(S, r, colOf) {
     const nn = V.mul(T[i], sg), c = colOf(P[i], P[i]), R = rings[i], ctr = { p: P[i].p, n: nn };
     for (let k = 0; k < N; k++) { put(ctr, c); put({ p: R[k].p, n: nn }, c); put({ p: R[(k + 1) % N].p, n: nn }, c); }
   }
-  return new Float32Array(data);
+  return data;
 }
 
-function renderTubeGL(W, H, dpr, sc, cx, cyy, S, f) {
+// Szene: undurchsichtige Teile (Rohr, Nachbarrohre, Schellen) und halbtransparente Flächen (Wände, Boden, Decke)
+function quadMesh(corners, n, c) {
+  const [a, b, d, e] = corners, data = [], put = p => data.push(...p, ...n, ...c);
+  [a, b, d, a, d, e].forEach(put);
+  return data;
+}
+// Rechteck der Fläche: so groß wie Rohr + Rand, an Nachbarflächen (Raumecke) gekappt
+function planeCorners(pl, planes, lo, hi, margin) {
+  const k = planeAxis(pl), ax = [0, 1, 2].filter(i => i !== k);
+  const range = ax.map(i => {
+    let a = lo[i] - margin, b = hi[i] + margin;
+    for (const o of planes) {
+      if (planeAxis(o) !== i) continue;
+      if (PLANE_KINDS[o.kind].side < 0) a = o.c; else b = o.c;
+    }
+    return [a, b];
+  });
+  const pt = (u, v) => { const p = [0, 0, 0]; p[k] = pl.c; p[ax[0]] = u; p[ax[1]] = v; return p; };
+  const [[u0, u1], [v0, v1]] = range;
+  return [pt(u0, v0), pt(u1, v0), pt(u1, v1), pt(u0, v1)];
+}
+
+function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
   if (!initGL()) { glc.hidden = true; return false; }
   const w = Math.round(W * dpr), h = Math.round(H * dpr);
   if (glc.width !== w || glc.height !== h) { glc.width = w; glc.height = h; }
@@ -720,9 +1006,14 @@ function renderTubeGL(W, H, dpr, sc, cx, cyy, S, f) {
   // Projektion wie project(): Zeilen für Bildschirm-x, Bildschirm-y (nach unten) und Tiefe
   const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const rx = [cy, -sy, 0], ry = [-sy * sp, -cy * sp, -cp], rz = [sy * cp, cy * cp, -sp];
+  const opaque = new Float32Array(scene.opaque), trans = new Float32Array(scene.trans);
   let z0 = Infinity, z1 = -Infinity;
-  S.forEach(s => { const z = V.dot(rz, s.p); z0 = Math.min(z0, z); z1 = Math.max(z1, z); });
-  const r = Math.max(f.D / 2, 2.5 / sc), zc = (z0 + z1) / 2, zr = (z1 - z0) / 2 + r + 1;
+  for (const arr of [opaque, trans]) for (let i = 0; i < arr.length; i += 9) {
+    const z = rz[0] * arr[i] + rz[1] * arr[i + 1] + rz[2] * arr[i + 2];
+    if (z < z0) z0 = z; if (z > z1) z1 = z;
+  }
+  if (!Number.isFinite(z0)) { z0 = -1; z1 = 1; }
+  const zc = (z0 + z1) / 2, zr = (z1 - z0) / 2 + 2;
   const rows = [
     [...V.mul(rx, 2 * sc / W), 2 * cx / W - 1],
     [...V.mul(ry, -2 * sc / H), 1 - 2 * cyy / H],
@@ -733,21 +1024,25 @@ function renderTubeGL(W, H, dpr, sc, cx, cyy, S, f) {
   for (let c = 0; c < 4; c++) for (let k = 0; k < 4; k++) M[c * 4 + k] = rows[k][c];
   [rx, ry, rz].forEach((row, k) => row.forEach((v, c) => { R3[c * 3 + k] = v; }));
 
-  const dark = isDark(), fog = PAL[dark ? 'dark' : 'light'].fog.map(v => v / 255);
-  const steel = dark ? [0.56, 0.6, 0.66] : [0.66, 0.7, 0.75], orange = [0.91, 0.36, 0.06];
-  const mesh = tubeMesh(S, r, (a, b) => (a.b >= 0 && a.b === b.b && a.b === highlight ? orange : steel));
-
   gl.useProgram(glp.p);
   gl.bindBuffer(gl.ARRAY_BUFFER, glp.buf);
-  gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.DYNAMIC_DRAW);
   const st = 36;
   [[glp.aPos, 0], [glp.aNor, 12], [glp.aCol, 24]].forEach(([loc, off]) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, st, off); });
   gl.uniformMatrix4fv(glp.uM, false, M);
   gl.uniformMatrix3fv(glp.uR, false, R3);
   gl.uniform3fv(glp.uL, V.norm([-0.45, -0.65, -0.6]));
-  gl.uniform3fv(glp.uFog, fog);
+  gl.uniform3fv(glp.uFog, PAL[isDark() ? 'dark' : 'light'].fog.map(v => v / 255));
   gl.uniform1f(glp.uFogAmt, 0.3);
-  gl.drawArrays(gl.TRIANGLES, 0, mesh.length / 9);
+
+  gl.disable(gl.BLEND); gl.depthMask(true); gl.uniform1f(glp.uAlpha, 1);
+  if (opaque.length) { gl.bufferData(gl.ARRAY_BUFFER, opaque, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, opaque.length / 9); }
+  if (trans.length) {
+    // Flächen durchscheinend, ohne in den Tiefenpuffer zu schreiben – Rohr dahinter bleibt sichtbar
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+    gl.uniform1f(glp.uAlpha, 0.2);
+    gl.bufferData(gl.ARRAY_BUFFER, trans, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, trans.length / 9);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+  }
   glc.hidden = false;
   return true;
 }
@@ -765,6 +1060,21 @@ function fitCanvas(c, g, W, H, dpr) {
   g.clearRect(0, 0, W, H);
 }
 
+// Anzeige-Schalter (je Gerät gespeichert)
+const VIS_DEFAULT = { dims: true, marks: true, grid: true, planes: true, clamps: true, ghosts: true };
+let vis = { ...VIS_DEFAULT };
+try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
+const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
+
+// Andere Rohre derselben Gruppe (Parallelrohre) für die Anzeige
+function groupLayouts(p) {
+  if (!p.group) return [];
+  return db.projects.filter(q => q.group === p.group && q.id !== p.id).map(q => {
+    const f = prof(q);
+    return { layout: computeLayout(points(q), { R: f.R, zugA: q.zugA, zugE: q.zugE, minStraight: f.minStraight }), D: f.D, name: q.name };
+  });
+}
+
 function render3d() {
   if (!layout || !cv.clientWidth) return;
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
@@ -772,20 +1082,24 @@ function render3d() {
   fitCanvas(cvBg, bctx, W, H, dpr);
   const S = layout.samples;
   if (S.length < 2) return;
-  const f = prof(), pal = PAL[isDark() ? 'dark' : 'light'];
+  const p = proj(), f = prof(), pal = PAL[isDark() ? 'dark' : 'light'], dark = isDark();
+  const planes = vis.planes ? p.planes : [], ghosts = vis.ghosts ? layout.ghosts || [] : [];
 
-  // Weltgrenzen, Boden etwas unter dem tiefsten Punkt
+  // Grenzen: Rohr, Nachbarrohre, Ziel (Wände zählen nicht, sonst würde das Rohr winzig)
+  const fitPts = [...S.map(s => s.p), ...ghosts.flatMap(g => g.layout.samples.map(s => s.p)), ...(p.target ? [p.target] : [])];
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-  S.forEach(s => s.p.forEach((v, k) => { mn[k] = Math.min(mn[k], v); mx[k] = Math.max(mx[k], v); }));
+  fitPts.forEach(q => q.forEach((v, k) => { mn[k] = Math.min(mn[k], v); mx[k] = Math.max(mx[k], v); }));
   const diag = Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) || 1;
-  const zf = mn[2] - Math.max(f.D * 3, diag * 0.12);
+  const floorPl = planes.find(pl => pl.kind === 'floor');
+  const zf = floorPl ? floorPl.c : mn[2] - Math.max(f.D * 3, diag * 0.12);
 
   const ortho = isOrtho();
-  const pr = S.map(s => project(s.p)), fp = ortho ? [] : S.map(s => project([s.p[0], s.p[1], zf]));
+  const pr = fitPts.map(q => project(q));
+  const fp = ortho || !vis.grid ? [] : S.map(s => project([s.p[0], s.p[1], zf]));
   let base = fit;
   if (!base) {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    [...pr, ...fp].forEach(q => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
+    [...pr, ...(floorPl ? [] : fp)].forEach(q => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
     // Rand für Gimbal-Pfeile (~70 px) und oben für die Ansichtsbuttons
     const side = Math.min(90, W * 0.12), top = Math.min(120, H * 0.18), bottom = Math.min(80, H * 0.12);
     base = { sc: Math.min((W - 2 * side) / Math.max(x1 - x0, 1), (H - top - bottom) / Math.max(y1 - y0, 1)), mx: (x0 + x1) / 2, my: (y0 + y1) / 2, dy: (top - bottom) / 2 };
@@ -795,11 +1109,11 @@ function render3d() {
   const sc = base.sc * cam.zoom;
   const cx = W / 2 + cam.panX - base.mx * sc, cyy = H / 2 + base.dy + cam.panY - base.my * sc;
   const P = q => [cx + q.x * sc, cyy + q.y * sc];
-  const P3 = p => P(project(p));
+  const P3 = q => P(project(q));
   view = { P3, sc };
   const tw = Math.max(5, f.D * sc);
 
-  if (ortho) {
+  if (vis.grid && ortho) {
     // Ebenenraster der Ansicht statt Boden
     const gs = niceStep(28 / sc), px = gs * sc;
     bctx.lineWidth = 1;
@@ -810,73 +1124,131 @@ function render3d() {
       for (let k = Math.ceil(-cyy / px); k * px + cyy <= H; k++) if ((k % 5 === 0) === major) { bctx.moveTo(0, cyy + k * px); bctx.lineTo(W, cyy + k * px); }
       bctx.stroke();
     }
-  } else {
-  // Boden: Raster
-  const step = niceStep(diag / 6);
-  const gx0 = Math.floor(mn[0] / step - 1) * step, gx1 = Math.ceil(mx[0] / step + 1) * step;
-  const gy0 = Math.floor(mn[1] / step - 1) * step, gy1 = Math.ceil(mx[1] / step + 1) * step;
-  bctx.strokeStyle = pal.grid; bctx.lineWidth = 1; bctx.beginPath();
-  for (let x = gx0; x <= gx1 + 1e-6; x += step) { const [ax, ay] = P3([x, gy0, zf]), [bx, by] = P3([x, gy1, zf]); bctx.moveTo(ax, ay); bctx.lineTo(bx, by); }
-  for (let y = gy0; y <= gy1 + 1e-6; y += step) { const [ax, ay] = P3([gx0, y, zf]), [bx, by] = P3([gx1, y, zf]); bctx.moveTo(ax, ay); bctx.lineTo(bx, by); }
-  bctx.stroke();
-
-  // Boden: weicher Schatten (Licht von oben). Pfad außerhalb zeichnen, nur der Schatten fällt ins Bild.
-  const off = 10000;
-  bctx.save();
-  bctx.shadowColor = pal.shadow; bctx.shadowBlur = Math.max(6, tw * 2) * dpr; bctx.shadowOffsetX = off * dpr;
-  bctx.lineWidth = tw * 1.3; bctx.lineCap = 'round'; bctx.lineJoin = 'round'; bctx.strokeStyle = '#000';
-  bctx.beginPath();
-  fp.forEach((q, i) => { const [x, y] = P(q); i ? bctx.lineTo(x - off, y) : bctx.moveTo(x - off, y); });
-  bctx.stroke();
-  bctx.restore();
+  } else if (vis.grid) {
+    // Boden (bzw. eingetragener Boden): Raster und weicher Schatten
+    const step = niceStep(diag / 6);
+    const gx0 = Math.floor(mn[0] / step - 1) * step, gx1 = Math.ceil(mx[0] / step + 1) * step;
+    const gy0 = Math.floor(mn[1] / step - 1) * step, gy1 = Math.ceil(mx[1] / step + 1) * step;
+    bctx.strokeStyle = pal.grid; bctx.lineWidth = 1; bctx.beginPath();
+    for (let x = gx0; x <= gx1 + 1e-6; x += step) { const [ax, ay] = P3([x, gy0, zf]), [bx, by] = P3([x, gy1, zf]); bctx.moveTo(ax, ay); bctx.lineTo(bx, by); }
+    for (let y = gy0; y <= gy1 + 1e-6; y += step) { const [ax, ay] = P3([gx0, y, zf]), [bx, by] = P3([gx1, y, zf]); bctx.moveTo(ax, ay); bctx.lineTo(bx, by); }
+    bctx.stroke();
+    const off = 10000; // Pfad außerhalb zeichnen, nur der Schatten fällt ins Bild
+    bctx.save();
+    bctx.shadowColor = pal.shadow; bctx.shadowBlur = Math.max(6, tw * 2) * dpr; bctx.shadowOffsetX = off * dpr;
+    bctx.lineWidth = tw * 1.3; bctx.lineCap = 'round'; bctx.lineJoin = 'round'; bctx.strokeStyle = '#000';
+    bctx.beginPath();
+    fp.forEach((q, i) => { const [x, y] = P(q); i ? bctx.lineTo(x - off, y) : bctx.moveTo(x - off, y); });
+    bctx.stroke();
+    bctx.restore();
   }
 
-  // Achsmaß-Ecken: gestrichelt vom Biegeanfang zum Schnittpunkt zum Biegeende (liegen außerhalb des Rohrs)
-  const cMark = css('--mark'), cAcc = css('--accent'), cText = css('--text');
-  ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.strokeStyle = cAcc; ctx.globalAlpha = 0.7;
-  ctx.beginPath();
-  layout.bends.forEach(b => {
-    const [ax, ay] = P3(V.sub(b.vertex, V.mul(b.din, b.T))), [vx, vy] = P3(b.vertex), [ex2, ey2] = P3(V.add(b.vertex, V.mul(b.dout, b.T)));
-    ctx.moveTo(ax, ay); ctx.lineTo(vx, vy); ctx.lineTo(ex2, ey2);
+  // 3D-Szene: Rohr, Nachbarrohre, Schellen-Hülsen, Flächen
+  const r = Math.max(f.D / 2, 2.5 / sc);
+  const steel = dark ? [0.56, 0.6, 0.66] : [0.66, 0.7, 0.75], orange = [0.91, 0.36, 0.06];
+  const ghostCol = dark ? [0.36, 0.4, 0.46] : [0.82, 0.85, 0.89], clampCol = dark ? [0.85, 0.86, 0.9] : [0.2, 0.22, 0.26];
+  const opaque = tubeMesh(S, r, (a, b) => (a.b >= 0 && a.b === b.b && a.b === highlight ? orange : steel));
+  const add = (arr, out = opaque) => { for (let i = 0; i < arr.length; i++) out.push(arr[i]); };
+  ghosts.forEach(g => add(tubeMesh(g.layout.samples, Math.max(g.D / 2, 2.5 / sc), () => ghostCol)));
+  if (vis.clamps) layout.clampInfo.forEach(c => add(tubeMesh([{ p: V.sub(c.p, V.mul(c.t, 5)), b: -1 }, { p: V.add(c.p, V.mul(c.t, 5)), b: -1 }], r * 1.45 + 0.8, () => clampCol)));
+  const trans = [], quads = [];
+  planes.forEach(pl => {
+    const corners = planeCorners(pl, planes, mn, mx, Math.max(150, diag * 0.25)), n = [0, 0, 0];
+    n[planeAxis(pl)] = -PLANE_KINDS[pl.kind].side;
+    quads.push({ pl, corners });
+    add(quadMesh(corners, n, pl.kind === 'floor' || pl.kind === 'ceil' ? [0.55, 0.62, 0.72] : [0.85, 0.74, 0.55]), trans);
   });
-  ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
-
-  // Rohr: echtes 3D (WebGL) mit Licht und Tiefenpuffer; ohne WebGL flach in 2D
-  if (!renderTubeGL(W, H, dpr, sc, cx, cyy, S, f)) {
+  if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans })) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = tw; ctx.strokeStyle = css('--tube');
     ctx.beginPath(); S.forEach((s, i) => { const [x, y] = P3(s.p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
   }
 
-  // Maße an den Schenkeln
+  const cMark = css('--mark'), cAcc = css('--accent'), cText = css('--text'), cMuted = css('--muted');
   ctx.font = '600 12px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  for (let i = 1; i < layout.verts.length; i++) {
-    const a = layout.verts[i - 1], b = layout.verts[i];
-    const [x, y] = P3([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
-    const t = fmt(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
-    const w = ctx.measureText(t).width + 10;
-    ctx.fillStyle = css('--card'); ctx.fillRect(x - w / 2, y - 26, w, 18);
-    ctx.strokeStyle = cAcc; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, y - 26, w, 18);
-    ctx.fillStyle = cAcc; ctx.fillText(t, x, y - 17);
+
+  // Flächen: Kante und Name
+  quads.forEach(({ pl, corners }) => {
+    const sp = corners.map(P3);
+    ctx.strokeStyle = cMuted; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+    ctx.beginPath(); sp.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
+    ctx.globalAlpha = 1;
+    const [lx, ly] = sp.reduce((m, q) => (q[1] < m[1] ? q : m)); // oberste Ecke
+    ctx.fillStyle = cMuted; ctx.textAlign = 'left'; ctx.fillText(PLANE_KINDS[pl.kind].name, Math.min(Math.max(lx + 6, 6), W - 90), Math.max(ly + 10, 60));
+    ctx.textAlign = 'center';
+  });
+
+  if (vis.dims) {
+    // Achsmaß-Ecken: gestrichelt vom Biegeanfang zum Schnittpunkt zum Biegeende
+    ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.strokeStyle = cAcc; ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    layout.bends.forEach(b => {
+      const [ax, ay] = P3(V.sub(b.vertex, V.mul(b.din, b.T))), [vx, vy] = P3(b.vertex), [ex2, ey2] = P3(V.add(b.vertex, V.mul(b.dout, b.T)));
+      ctx.moveTo(ax, ay); ctx.lineTo(vx, vy); ctx.lineTo(ex2, ey2);
+    });
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    // Maße an den Schenkeln
+    for (let i = 1; i < layout.verts.length; i++) {
+      const a = layout.verts[i - 1], b = layout.verts[i];
+      const [x, y] = P3([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
+      const t = fmt(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
+      const w = ctx.measureText(t).width + 10;
+      ctx.fillStyle = css('--card'); ctx.fillRect(x - w / 2, y - 26, w, 18);
+      ctx.strokeStyle = cAcc; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, y - 26, w, 18);
+      ctx.fillStyle = cAcc; ctx.fillText(t, x, y - 17);
+    }
   }
 
-  // Selbstberührungen
+  // Schellen: Halter zur Wand, Nummer; ohne Befestigung orange
+  if (vis.clamps) layout.clampInfo.forEach((c, i) => {
+    const [x, y] = P3(c.p);
+    if (c.q) {
+      const [qx, qy] = P3(c.q);
+      ctx.strokeStyle = dark ? '#d0d4da' : '#3b4048'; ctx.lineWidth = 3; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(qx, qy); ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(qx - 4, qy - 4, 8, 8);
+    }
+    const big = camTool === 'clamp';
+    ctx.fillStyle = c.mount || !p.planes.length ? (dark ? '#d0d4da' : '#3b4048') : '#f08c00';
+    ctx.beginPath(); ctx.arc(x, y, big ? 9 : 6, 0, 7); ctx.fill();
+    if (big || vis.dims) { ctx.fillStyle = cText; ctx.font = '600 10px system-ui'; ctx.fillText(`S${i + 1}`, x + 14, y - 10); ctx.font = '600 12px -apple-system, system-ui, sans-serif'; }
+  });
+
+  // Selbstberührungen und Flächen-Treffer
   (layout.collisions || []).forEach(c => {
     const [x, y] = P3(c.p);
     ctx.strokeStyle = '#e03131'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(x, y, Math.max(12, tw * 1.5), 0, 7); ctx.stroke();
   });
+  (layout.hits || []).forEach(h => {
+    if (!vis.planes) return;
+    const [x, y] = P3(h.p), ok = h.type === 'through' && h.plane.pass;
+    ctx.strokeStyle = ok ? cAcc : '#e03131'; ctx.lineWidth = 3; ctx.setLineDash(ok ? [4, 3] : []);
+    ctx.beginPath(); ctx.arc(x, y, Math.max(12, tw * 1.6), 0, 7); ctx.stroke(); ctx.setLineDash([]);
+  });
 
-  // Markierungen
-  layout.bends.forEach((b, j) => {
+  // Ziel-Anschluss: Fadenkreuz, gestrichelte Linie vom Rohrende
+  if (p.target) {
+    const [tx, ty] = P3(p.target), [ex, ey] = P3(layout.E), hit = V.len(layout.targetDelta) < 0.5;
+    const col = hit ? css('--ok') : '#7048e8';
+    if (!hit) { ctx.setLineDash([4, 4]); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(tx, ty, 11, 0, 7); ctx.moveTo(tx - 16, ty); ctx.lineTo(tx + 16, ty); ctx.moveTo(tx, ty - 16); ctx.lineTo(tx, ty + 16); ctx.stroke();
+    ctx.fillStyle = col; ctx.font = '700 11px system-ui'; ctx.fillText('Ziel', tx, ty + 26); ctx.font = '600 12px -apple-system, system-ui, sans-serif';
+  }
+
+  // Strich-Markierungen
+  if (vis.marks) layout.bends.forEach((b, j) => {
     const [x, y] = P3(pointAt(S, b.mark));
     ctx.fillStyle = cMark; ctx.beginPath(); ctx.arc(x, y, j === highlight ? 12 : 10, 0, 7); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = '700 12px -apple-system, system-ui, sans-serif'; ctx.fillText(j + 1, x, y + 0.5);
   });
-  const [sx, sy] = P(pr[0]);
+  const [sx, sy] = P3(S[0].p);
   ctx.fillStyle = cText; ctx.font = '700 13px -apple-system, system-ui, sans-serif'; ctx.fillText('A', sx - 14, sy - 12);
 
-  if (ortho) drawEditOverlay(P3, cAcc);
-  drawGizmo();
+  if (camTool !== 'clamp' && !printing) {
+    if (ortho) drawEditOverlay(P3, cAcc);
+    drawGizmo();
+  } else gizmo = [];
 
   // Achsenkreuz
   const gx = 34, gy = H - 34;
@@ -893,7 +1265,7 @@ function render3d() {
 function ensureDeltas() {
   const p = proj();
   if (p.mode === 'deltas') return;
-  p.deltas = toDeltas(p.legs);
+  p.deltas = toDeltas(p.legs, p.frame);
   p.mode = 'deltas';
   renderInputs();
 }
@@ -1283,14 +1655,16 @@ function extMove(lx, ly) {
   if (best.straight) {
     // geradeaus länger, zurück kürzer: Projektion auf die Schenkelrichtung (vorzeichenbehaftet)
     const sx = best.sx * Math.sign(V.dot(best.a, gz.d)), sy = best.sy * Math.sign(V.dot(best.a, gz.d));
-    const L = round5(gz.L0 + (vx * sx + vy * sy) / (sx * sx + sy * sy), gz.min.lastLeg);
+    const raw = round5(gz.L0 + (vx * sx + vy * sy) / (sx * sx + sy * sy), gz.min.lastLeg);
+    const { L, tag } = snapLen(V.sub(gz.E, V.mul(gz.d, gz.L0)), gz.d, raw);
     setDelta(last, V.mul(gz.d, L));
-    gz.label = `Schenkel ${last + 1}: ${fmt(L)} mm`;
+    gz.label = `Schenkel ${last + 1}: ${fmt(L)} mm${tag ? ' · ' + tag : ''}`;
   } else {
-    const L = round5((vx * best.sx + vy * best.sy) / (best.sx * best.sx + best.sy * best.sy), gz.min.newLeg);
+    const raw = round5((vx * best.sx + vy * best.sy) / (best.sx * best.sx + best.sy * best.sy), gz.min.newLeg);
+    const { L, tag } = snapLen(gz.E, best.a, raw);
     p.deltas.push({ x: 0, y: 0, z: 0 });
     setDelta(last + 1, V.mul(best.a, L));
-    gz.label = `Neuer Schenkel ${fmt(L)} mm · 90°`;
+    gz.label = `Neuer Schenkel ${fmt(L)} mm${tag ? ' · ' + tag : ' · 90°'}`;
   }
 }
 
@@ -1337,6 +1711,112 @@ function gzEnd() {
   selectLeg(g.type === 'ext' ? -1 : g.idx ?? g.i);
 }
 
+// ---------- Einrasten an Wand und Ziel ----------
+// Läuft ein Schenkel achsparallel auf eine Fläche zu, rastet sein Ende so ein, dass das Rohr danach
+// in Schellenhöhe vor der Fläche liegt; außerdem auf die Koordinate des Ziel-Anschlusses.
+function snapLen(start, dir, L) {
+  const p = proj(), f = prof(p), tol = hitTol(12) / view.sc, cands = [];
+  const k = [0, 1, 2].find(i => Math.abs(Math.abs(dir[i]) - 1) < 1e-6);
+  if (k === undefined) return { L };
+  for (const pl of p.planes) {
+    if (planeAxis(pl) !== k) continue;
+    const Lw = (pl.c - start[k]) * dir[k] - f.clampH;
+    if (Lw > 0) cands.push({ L: Lw, tag: `Schellenhöhe vor ${PLANE_KINDS[pl.kind].name}` });
+  }
+  if (p.target) {
+    const Lt = (p.target[k] - start[k]) * dir[k];
+    if (Lt > 0) cands.push({ L: Lt, tag: 'auf Höhe Ziel-Anschluss' });
+  }
+  const hit = cands.filter(c => Math.abs(c.L - L) < tol).sort((a, b) => Math.abs(a.L - L) - Math.abs(b.L - L))[0];
+  return hit || { L };
+}
+
+// ---------- Schellen-Werkzeug ----------
+let clampDrag = null;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 3500);
+}
+function setTool(tool) {
+  camTool = tool;
+  $('#clampTool').classList.toggle('on', tool === 'clamp');
+  if (tool === 'clamp') { selectLeg(-1); toast('Rohr antippen = Schelle setzen · Schelle ziehen = verschieben · antippen = löschen'); }
+  draw();
+}
+$('#clampTool').addEventListener('click', () => setTool(camTool === 'clamp' ? 'edit' : 'clamp'));
+$('#visBtn').addEventListener('click', () => {
+  const pop = $('#visPop');
+  pop.hidden = !pop.hidden;
+  $$('[data-vis]', pop).forEach(i => { i.checked = !!vis[i.dataset.vis]; });
+});
+$('#visPop').addEventListener('change', e => {
+  const k = e.target.dataset.vis;
+  if (!k) return;
+  vis[k] = e.target.checked; saveVis(); draw();
+});
+
+function hitClamp(x, y) {
+  let best = -1, bd = hitTol(14);
+  layout.clampInfo.forEach((c, i) => { const [px, py] = view.P3(c.p), d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+// Nächster Punkt auf dem Rohr (abgewickelte Länge s) zur Bildschirmposition
+function nearestS(x, y, tol = hitTol(16)) {
+  const S = layout.samples;
+  let best = null, bd = tol;
+  for (let i = 1; i < S.length; i++) {
+    const [ax, ay] = view.P3(S[i - 1].p), [bx, by] = view.P3(S[i].p);
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+    const d = Math.hypot(x - ax - t * dx, y - ay - t * dy);
+    if (d < bd) { bd = d; best = S[i - 1].s + (S[i].s - S[i - 1].s) * t; }
+  }
+  return best == null ? null : Math.max(0, Math.min(layout.total, Math.round(best / 5) * 5));
+}
+// Erste Handänderung schaltet auf „von Hand“ und übernimmt die automatischen Positionen
+function ensureManualClamps() {
+  const p = proj();
+  if (p.clampMode === 'manual') return;
+  p.clamps = [...layout.clampS]; p.clampMode = 'manual';
+  toast('Schellen jetzt „von Hand“ – im Reiter Eingabe wieder auf „Automatisch“ umschaltbar');
+}
+function clampDown(e, lx, ly) {
+  const idx = hitClamp(lx, ly), s = idx < 0 ? nearestS(lx, ly) : null;
+  if (idx < 0 && s == null) return false;
+  clampDrag = { idx, s, sx: e.clientX, sy: e.clientY, moved: false, before: snapshot(proj()) };
+  fit = lastBase;
+  return true;
+}
+function clampMove(e) {
+  const [lx, ly] = local(e);
+  if (!clampDrag.moved && Math.hypot(e.clientX - clampDrag.sx, e.clientY - clampDrag.sy) < 5) return;
+  const p = proj();
+  if (!clampDrag.moved) {
+    clampDrag.moved = true;
+    commit(null, clampDrag.before);
+    ensureManualClamps();
+    if (clampDrag.idx < 0) { p.clamps.push(clampDrag.s); clampDrag.idx = p.clamps.length - 1; }
+    else clampDrag.idx = p.clamps.indexOf(layout.clampS[clampDrag.idx]);
+  }
+  const s = nearestS(lx, ly, 1e9);
+  if (s != null && clampDrag.idx >= 0) p.clamps[clampDrag.idx] = s;
+  recompute(true);
+}
+function clampUp() {
+  const c = clampDrag, p = proj();
+  clampDrag = null;
+  if (!c.moved) {
+    commit(null, c.before);
+    ensureManualClamps();
+    if (c.idx >= 0) p.clamps.splice(p.clamps.indexOf(layout.clampS[c.idx]), 1);
+    else p.clamps.push(c.s);
+  }
+  p.clamps.sort((a, b) => a - b);
+  if (!isOrtho()) fit = null;
+  recompute();
+}
+
 // ---------- Zeiger ----------
 // Gimbal hat Vorrang. Iso: ziehen = drehen. Ortho: Anfasser ziehen = bearbeiten, Hintergrund ziehen = verschieben.
 // Schenkel antippen = auswählen.
@@ -1374,8 +1854,11 @@ cv.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') ptrs.clear(); // Maus hat nur einen Zeiger – hängengebliebene Einträge verwerfen
   try { cv.setPointerCapture(e.pointerId); } catch {} // synthetische Testereignisse haben keinen echten Zeiger
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.shiftKey || e.button === 2 || isOrtho() });
+  $('#visPop').hidden = true;
   if (ptrs.size === 1 && view) {
-    const [lx, ly] = local(e), g = hitGizmo(lx, ly);
+    const [lx, ly] = local(e);
+    if (camTool === 'clamp') { if (clampDown(e, lx, ly)) return; }
+    const g = camTool === 'clamp' ? null : hitGizmo(lx, ly);
     if (g) { gzStart(g, e); return; }
     const i = isOrtho() ? hitVertex(lx, ly) : -1;
     if (i >= 0) {
@@ -1385,11 +1868,12 @@ cv.addEventListener('pointerdown', e => {
       drag = { i, sx: e.clientX, sy: e.clientY, a0: L.a, b0: L.b, c: L.c, label: null, before, committed: false };
       fit = lastBase;
     }
-  } else if (ptrs.size === 2) { if (drag) endDrag(); if (gz) gzEnd(); }
+  } else if (ptrs.size === 2) { if (drag) endDrag(); if (gz) gzEnd(); if (clampDrag) clampUp(); }
 });
 cv.addEventListener('pointermove', e => {
   const prev = ptrs.get(e.pointerId);
   if (!prev) return;
+  if (clampDrag && ptrs.size === 1) { clampMove(e); return; }
   if (gz && ptrs.size === 1) { gzMove(e); return; }
   if (drag && ptrs.size === 1) { dragTo(e.clientX, e.clientY); return; }
   const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
@@ -1409,14 +1893,15 @@ cv.addEventListener('pointermove', e => {
 cv.addEventListener('pointerup', e => {
   const pt = ptrs.get(e.pointerId);
   ptrs.delete(e.pointerId);
+  if (clampDrag) { clampUp(); return; }
   if (gz) { gzEnd(); return; }
   if (drag) { endDrag(); return; }
-  if (pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
+  if (camTool !== 'clamp' && pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
     selectLeg(hitLeg(lx, ly));
   }
 });
-cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); if (gz) gzEnd(); if (drag) endDrag(); });
+cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); if (clampDrag) clampUp(); if (gz) gzEnd(); if (drag) endDrag(); });
 cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); draw(); }, { passive: false });
 $('.viewbtns').addEventListener('click', e => { const v = e.target.closest('button')?.dataset.view; if (v) resetView(v); });
 new ResizeObserver(() => draw()).observe($('#viewwrap'));
@@ -1558,7 +2043,7 @@ $('#offDlg').addEventListener('click', e => { if (e.target.id === 'offDlg') $('#
 $('#offNew').addEventListener('click', () => openOffset('new'));
 $('#offLegView').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
 $('#lpOff').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#offDlg').hidden = true; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#offDlg').hidden = true; $('#parDlg').hidden = true; $('#visPop').hidden = true; } });
 
 // ---------- Version / Update ----------
 // Eigene Version aus version.js; beim Öffnen und beim Zurückkehren in die App mit dem Server vergleichen.
@@ -1586,6 +2071,120 @@ async function reloadApp() {
 $('#verTag').textContent = `v${APP_VERSION}`;
 $('#updateBar').addEventListener('click', reloadApp);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+
+// ---------- Export / Import ----------
+// Datei mit dem aktuellen Projekt (samt Parallelrohren) und den benutzten Zangenprofilen.
+// Auf dem iPhone über das Teilen-Menü (AirDrop, Dateien, Mail …), sonst als Download.
+async function exportProject() {
+  const p = proj();
+  const projects = p.group ? db.projects.filter(q => q.group === p.group) : [p];
+  const profiles = db.profiles.filter(f => projects.some(q => q.profileId === f.id));
+  const data = { format: 'rohrbiegen', version: 1, app: APP_VERSION, exported: new Date().toISOString(), projects, profiles };
+  const name = `${p.name.replace(/[^\wäöüÄÖÜß -]+/g, '').trim() || 'Rohr'}.rohrbiegen.json`;
+  const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: p.name }); return; }
+  } catch (err) { if (err?.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+// Import: Projekte bekommen neue IDs (nichts wird überschrieben); gleiche Zangenprofile (Name + Radius) werden wiederverwendet
+async function importFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { alert('Die Datei ist keine gültige Projektdatei.'); return; }
+  if (data?.format !== 'rohrbiegen' || !Array.isArray(data.projects)) { alert('Die Datei ist keine Rohrbiegen-Projektdatei.'); return; }
+  const profMap = {};
+  (data.profiles || []).forEach(f => {
+    const same = db.profiles.find(x => x.name === f.name && Math.abs(x.R - f.R) < 0.01);
+    if (same) profMap[f.id] = same.id;
+    else { const n = { ...structuredClone(f), id: uid() }; db.profiles.push(n); profMap[f.id] = n.id; }
+  });
+  const groupMap = {};
+  const added = data.projects.map(q => {
+    const n = { ...structuredClone(q), id: uid() };
+    n.profileId = profMap[q.profileId] || db.profiles[0].id;
+    if (q.group) n.group = groupMap[q.group] ||= uid();
+    return n;
+  });
+  db.projects.push(...added);
+  migrate(db);
+  db.currentId = added[0].id;
+  fullRender(); resetView();
+  alert(`${added.length} Projekt(e) importiert.`);
+}
+
+$('#pExport').addEventListener('click', exportProject);
+$('#pImport').addEventListener('click', () => $('#pImportFile').click());
+$('#pImportFile').addEventListener('change', e => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; });
+
+// ---------- Parallelrohr ----------
+const par = { opts: [] };
+function openParallel() {
+  const p = proj(), pts = cleanPoints(points(p)), d0 = V.norm(V.sub(pts[1], pts[0]));
+  // Startrichtung: die vier Richtungen senkrecht zum ersten Schenkel
+  par.opts = extDirs(d0).filter(a => Math.abs(V.dot(a, d0)) < 0.999).map(a => ({ dir: a, label: `neben Schenkel 1: ${dirName(a)}` }));
+  if (!$('#parDist').value) $('#parDist').value = String(Math.max(20, prof(p).D * 3));
+  labelParallelOpts(true);
+  $('#parDlg').hidden = false;
+  updateParallel();
+}
+// Lagen, bei denen das Parallelrohr an eine Wand/den Boden stößt, kennzeichnen; Vorgabe = erste freie Lage
+function labelParallelOpts(pickDefault = false) {
+  const p = proj(), f = prof(p), pts = cleanPoints(points(p)), dist = num($('#parDist').value), sel = $('#parMode').value;
+  par.opts.forEach(o => {
+    o.blocked = null;
+    if (!(dist > 0)) return;
+    const L = computeLayout(parallelPoints(pts, dist, o.dir), { R: f.R });
+    const h = planeHits(L.samples, p.planes, f.D / 2).find(x => !(x.type === 'through' && x.plane.pass));
+    if (h) o.blocked = PLANE_KINDS[h.plane.kind].name;
+  });
+  $('#parMode').innerHTML = par.opts.map((o, i) => `<option value="${i}">${o.label}${o.blocked ? ` (stößt an ${o.blocked})` : ''}</option>`).join('');
+  $('#parMode').value = pickDefault ? String(Math.max(0, par.opts.findIndex(o => !o.blocked))) : sel;
+}
+function parallelResult() {
+  const p = proj(), o = par.opts[+$('#parMode').value], d = num($('#parDist').value);
+  if (!o || !(d > 0)) return null;
+  return parallelPoints(cleanPoints(points(p)), d, o.dir);
+}
+function updateParallel() {
+  const res = parallelResult(), p = proj();
+  if (!res) { $('#parInfo').innerHTML = '<div class="msg err">Abstand eingeben.</div>'; $('#parOk').disabled = true; return; }
+  const own = cleanPoints(points(p)), lens = pts => pts.slice(1).map((q, i) => fmt(V.len(V.sub(q, pts[i]))));
+  // innen liegende Schenkel werden kürzer – bei zu großem Abstand würden sie rückwärts laufen
+  const bad = own.slice(1).findIndex((q, i) => V.dot(V.sub(q, own[i]), V.sub(res[i + 1], res[i])) <= 0 || V.len(V.sub(res[i + 1], res[i])) < prof(p).minStraight);
+  if (num($('#parDist').value) <= prof(p).D) { $('#parInfo').innerHTML = `<div class="msg err">✕ Abstand muss größer als der Rohrdurchmesser (${fmt(prof(p).D)} mm) sein.</div>`; $('#parOk').disabled = true; return; }
+  if (bad >= 0) { $('#parInfo').innerHTML = `<div class="msg err">✕ Abstand zu groß: Schenkel ${bad + 1} wird innen zu kurz. Kleineren Abstand oder andere Seite wählen.</div>`; $('#parOk').disabled = true; return; }
+  const same = lens(own).join() === lens(res).join(), blk = par.opts[+$('#parMode').value]?.blocked;
+  $('#parInfo').innerHTML = `<div class="kv"><span>Schenkel bisher <b>${lens(own).join(' / ')}</b></span><span>Parallelrohr <b>${lens(res).join(' / ')}</b></span></div>
+    <p class="hint" style="margin:6px 0 0">${same ? 'Gleiche Form, nur versetzt.' : 'Verschachtelte Bögen: andere Schenkellängen, dieselben Biegewinkel.'}</p>
+    ${blk ? `<div class="msg warn">⚠ Das Parallelrohr stößt an ${blk} – andere Lage wählen.</div>` : ''}`;
+  $('#parOk').disabled = false;
+}
+function createParallel() {
+  const p = proj(), res = parallelResult();
+  if (!res) return;
+  p.group ||= uid();
+  const n = structuredClone(p);
+  Object.assign(n, {
+    id: uid(), name: `${p.name} ∥${db.projects.filter(q => q.group === p.group).length}`,
+    mode: 'deltas', frame: null, origin: res[0], deltas: res.slice(1).map((q, i) => { const v = V.sub(q, res[i]); return { x: v[0], y: v[1], z: v[2] }; }),
+    target: null, clamps: [], clampMode: 'auto', done: {},
+  });
+  db.projects.push(n);
+  db.currentId = n.id;
+  $('#parDlg').hidden = true;
+  fullRender(); resetView();
+  toast(`Parallelrohr „${n.name}“ angelegt – das Original ist in 3D hell dargestellt.`);
+}
+$('#pPar').addEventListener('click', openParallel);
+$('#parDist').addEventListener('input', () => { labelParallelOpts(); updateParallel(); });
+$('#parMode').addEventListener('change', updateParallel);
+$('#parOk').addEventListener('click', createParallel);
+$('#parCancel').addEventListener('click', () => { $('#parDlg').hidden = true; });
+$('#parDlg').addEventListener('click', e => { if (e.target.id === 'parDlg') $('#parDlg').hidden = true; });
 
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
