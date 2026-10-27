@@ -1,4 +1,4 @@
-import { PLANE_KINDS, planeAxis, planeDist, planeHits, autoClamps, clampInfo, drillCoords, parallelPoints, cutPlan } from './site.js';
+import { roomPlanes, planeDist, planeHits, autoClamps, clampInfo, drillCoords, parallelGeometry, parallelPoints, sideDir, straightRuns, cutPlan, triangulate, cleanOutline, signedArea, pointInPoly, wallLetter } from './site.js';
 import { pointsFromDeltas, pointsFromAngles, anglesFromPoints, cleanPoints, computeLayout, calibrate, pointAt, V, rotAbout, selfCollisions, refPerp } from './geometry.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -28,14 +28,34 @@ function defaultProfiles() {
     { ...base, id: 'es8', name: 'Edelstahl 8 mm', D: 8, R: 24, minStraight: 25, marks: defaultMarks(24) },
   ];
 }
-// Schellen-Regeln je Profil: größter Abstand, Abstand zum Bogen bzw. Rohrende, Schellenhöhe (Untergrund → Rohrmitte), Stangenlänge
-const CLAMP_DEFAULTS = { clampMax: 600, clampBend: 80, clampEnd: 80, clampH: 20, stock: 6000 };
-// Felder, die spätere Versionen ergänzt haben
-const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, planes: [], target: null, clamps: [], clampMode: 'auto', group: null };
+// Schellen-Regeln je Profil: größter Abstand, kleinster Abstand auf einer Geraden, Abstand zum Bogen bzw. Rohrende,
+// Schellenhöhe (Untergrund → Rohrmitte), Stangenlänge
+const CLAMP_DEFAULTS = { clampMax: 600, clampMin: 300, clampBend: 80, clampEnd: 80, clampH: 20, stock: 6000 };
+// Felder, die spätere Versionen ergänzt haben. roomId = Raum (db.rooms), bundle = Parallelrohre { id, side 0–3, dist }
+const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, roomId: null, bundle: [], target: null, clamps: [], clampMode: 'auto' };
+
+// Bis Version 14 hatte jedes Rohr eigene, unbegrenzte Flächen → daraus einen rechteckigen Raum machen
+function roomFromPlanes(p) {
+  const pts = p.mode === 'deltas' ? pointsFromDeltas(p.deltas, p.origin || [0, 0, 0]) : pointsFromAngles(p.legs, p.frame, p.origin || [0, 0, 0]);
+  const mn = [0, 1, 2].map(k => Math.min(...pts.map(q => q[k]))), mx = [0, 1, 2].map(k => Math.max(...pts.map(q => q[k])));
+  const get = k => p.planes.find(pl => pl.kind === k);
+  const x0 = get('left')?.c ?? mn[0] - 500, x1 = get('right')?.c ?? mx[0] + 500;
+  const y0 = get('front')?.c ?? mn[1] - 1500, y1 = get('back')?.c ?? mx[1] + 500;
+  const z0 = get('floor')?.c ?? mn[2] - 1000, z1 = get('ceil')?.c ?? Math.max(z0 + 2500, mx[2] + 300);
+  return {
+    id: uid(), name: `Raum ${p.name}`, outline: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], z0, height: z1 - z0,
+    pass: { 0: !!get('front')?.pass, 1: !!get('right')?.pass, 2: !!get('back')?.pass, 3: !!get('left')?.pass },
+  };
+}
 
 // Ältere Daten auf den aktuellen Stand bringen
 function migrate(d) {
-  d.projects.forEach(p => { for (const [k, v] of Object.entries(PROJECT_DEFAULTS)) if (p[k] === undefined) p[k] = structuredClone(v); });
+  d.rooms ||= [];
+  d.projects.forEach(p => {
+    for (const [k, v] of Object.entries(PROJECT_DEFAULTS)) if (p[k] === undefined) p[k] = structuredClone(v);
+    if (p.planes?.length && !p.roomId) { const r = roomFromPlanes(p); d.rooms.push(r); p.roomId = r.id; }
+    delete p.planes; delete p.group; // Rohrgruppen entfallen: Parallelrohre gehören jetzt zum Rohr (bundle)
+  });
   d.profiles.forEach(f => { for (const [k, v] of Object.entries(CLAMP_DEFAULTS)) if (f[k] === undefined) f[k] = v; });
   d.profiles.forEach(f => {
     if (f.marks) return;
@@ -72,7 +92,7 @@ function seed() {
   const profiles = defaultProfiles();
   const p = newProject(profiles[0].id, 'Beispiel 3D');
   p.deltas = [{ x: 150, y: 0, z: 0 }, { x: 0, y: 0, z: 120 }, { x: 0, y: 180, z: 0 }, { x: 140, y: 0, z: 0 }];
-  return { profiles, projects: [p], currentId: p.id };
+  return { profiles, projects: [p], rooms: [], currentId: p.id };
 }
 function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE)); if (d?.profiles?.length && d?.projects?.length) return migrate(d); } catch {}
@@ -82,6 +102,7 @@ let db = load();
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(db)); } catch {} };
 const proj = () => db.projects.find(p => p.id === db.currentId) || db.projects[0];
 const prof = (p = proj()) => db.profiles.find(x => x.id === p.profileId) || db.profiles[0];
+const roomOf = (p = proj()) => db.rooms.find(r => r.id === p.roomId) || null;
 // Achs-Schnittpunkte in Raumkoordinaten; origin = Lage des Rohranfangs, frame = Ausrichtung im Winkel-Modus
 const points = p => (p.mode === 'deltas' ? pointsFromDeltas(p.deltas, p.origin) : pointsFromAngles(p.legs, p.frame, p.origin));
 
@@ -117,8 +138,14 @@ const TEMPLATES = {
 // innerhalb von 1,5 s wird zu einem Schritt zusammengefasst.
 const hist = new Map();
 const histOf = p => { if (!hist.has(p.id)) hist.set(p.id, { undo: [], redo: [] }); return hist.get(p.id); };
-const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'planes', 'target', 'clamps', 'clampMode'];
-const snapshot = p => structuredClone(Object.fromEntries(SNAP_KEYS.map(k => [k, p[k] ?? null])));
+const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'roomId', 'bundle', 'target', 'clamps', 'clampMode'];
+const snapshot = p => structuredClone({ ...Object.fromEntries(SNAP_KEYS.map(k => [k, p[k] ?? null])), _room: roomOf(p) });
+function restoreSnapshot(p, snap) {
+  const { _room, ...rest } = structuredClone(snap);
+  Object.assign(p, rest);
+  p.bundle ||= [];
+  if (_room) { const i = db.rooms.findIndex(r => r.id === _room.id); if (i >= 0) db.rooms[i] = _room; else db.rooms.push(_room); }
+}
 let lastKey = null, lastTime = 0;
 function commit(key = null, snap = null) {
   const p = proj(), now = Date.now();
@@ -134,7 +161,7 @@ function undoRedo(dir) {
   const p = proj(), h = histOf(p), from = dir < 0 ? h.undo : h.redo, to = dir < 0 ? h.redo : h.undo;
   if (!from.length || gz || drag) return;
   to.push(snapshot(p));
-  Object.assign(p, from.pop());
+  restoreSnapshot(p, from.pop());
   lastKey = null;
   if (!isOrtho()) fit = null;
   renderProjectBar(); renderInputs(); recompute();
@@ -189,22 +216,14 @@ function renderInputs() {
   const p = proj();
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === p.mode));
   $('#modeHint').textContent = p.mode === 'deltas'
-    ? 'Jeder Schenkel = Weg von Schnittpunkt zu Schnittpunkt (Achsmaß, Rohrmitte). X: rechts + / links −, Y: hinten + / vorn −, Z: oben + / unten −. Für schräge Schenkel mehrere Werte eintragen.'
+    ? 'Für jeden Schenkel Richtung wählen und Länge eingeben (Achsmaß, Rohrmitte bis Rohrmitte). Die Vorschau zeigt, wohin das Rohr läuft.'
     : 'Achsmaß jedes Schenkels bis zum nächsten Schnittpunkt. Drehung = Lage der Biegung gegenüber der vorigen: 0° gleiche Ebene (U-Form), 180° gleiche Ebene (Z-Form/Etage), ±90° räumlich.';
   const n = p.mode === 'deltas' ? p.deltas.length : p.legs.length;
   const legName = i => (i === 0 ? 'Rohranfang → Schnittpunkt 1' : i === n - 1 ? `Schnittpunkt ${i} → Rohrende` : `Schnittpunkt ${i} → ${i + 1}`);
   let h = '';
   if (p.mode === 'deltas') {
     p.deltas.forEach((d, i) => {
-      h += `<div class="leg"><div class="leghead">Schenkel ${i + 1} <span class="meta" data-len="${i}"></span>` +
-        `<button data-off="${i}" title="Versatz einfügen" aria-label="Versatz einfügen">⤳</button>` +
-        `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
-        `<div class="row3">` +
-        `<label>X <small>rechts + / links −</small>${signed(`deltas.${i}.x`, d.x)}</label>` +
-        `<label>Y <small>hinten + / vorn −</small>${signed(`deltas.${i}.y`, d.y)}</label>` +
-        `<label>Z <small>oben + / unten −</small>${signed(`deltas.${i}.z`, d.z)}</label>` +
-        `</div><div class="hint" style="margin:6px 0 0">${legName(i)}</div></div>` +
-        (i < n - 1 ? `<div class="bendrow"><div class="t" data-bend="${i}">Biegung ${i + 1}</div></div>` : '');
+      h += legCard(p, d, i, n) + (i < n - 1 ? `<div class="bendrow"><div class="t" data-bend="${i}">Biegung ${i + 1}</div></div>` : '');
     });
   } else {
     p.legs.forEach((l, i) => {
@@ -234,7 +253,24 @@ function readSigned(inp) {
 }
 
 $('#legList').addEventListener('input', e => {
-  const el = e.target;
+  const el = e.target, p = proj();
+  if (el.dataset.leglen != null) {
+    const i = +el.dataset.leglen, L = num(el.value);
+    if (!(L > 0)) return;
+    commit('len' + i);
+    setDelta(i, V.mul(V.norm(deltaVec(p.deltas[i])), L));
+    recompute(); return;
+  }
+  if (el.dataset.obla != null || el.dataset.oblb != null || el.dataset.oblg != null) {
+    const i = +(el.dataset.obla ?? el.dataset.oblb ?? el.dataset.oblg), card = el.closest('.leg');
+    let a = +card.querySelector('[data-obla]').value, b = +card.querySelector('[data-oblb]').value;
+    const g = +card.querySelector('[data-oblg]').value;
+    if (!perpDirs(a).includes(b)) b = perpDirs(a).includes(2) ? 2 : perpDirs(a)[0];
+    oblPref.set(i, { a, b });
+    commit();
+    setDelta(i, obliqueVec(a, b, g, V.len(deltaVec(p.deltas[i])) || 100));
+    renderInputs(); recompute(); focusLeg(i); return;
+  }
   if (!el.dataset.p) return;
   commit('f:' + el.dataset.p);
   setPath(proj(), el.dataset.p, 'signed' in el.dataset ? readSigned(el) : num(el.value));
@@ -249,6 +285,11 @@ $('#legList').addEventListener('click', e => {
     commit();
     setPath(p, b.dataset.sign, num(b.nextElementSibling.value) * (b.textContent === '−' ? -1 : 1));
     recompute();
+  } else if (b.dataset.dir) {
+    const [i, k] = b.dataset.dir.split(':');
+    legDirClick(+i, k);
+  } else if (b.dataset.free != null) {
+    freeLegs.add(+b.dataset.free); renderInputs(); focusLeg(+b.dataset.free);
   } else if (b.dataset.off != null) {
     openOffset('insert', +b.dataset.off);
   } else if (b.dataset.del != null) {
@@ -258,6 +299,7 @@ $('#legList').addEventListener('click', e => {
     renderInputs(); recompute();
   }
 });
+$('#legList').addEventListener('focusin', e => { const c = e.target.closest('.leg'); if (c && proj().mode === 'deltas') focusLeg(+c.dataset.leg); });
 $('#addLeg').addEventListener('click', () => {
   const p = proj();
   commit();
@@ -313,133 +355,376 @@ $('#pDel').addEventListener('click', () => {
   db.currentId = db.projects[0].id; fullRender(); resetView();
 });
 
-// ---------- Raum, Ziel-Anschluss, Schellen (Eingabe) ----------
-// Flächen werden über den Abstand Rohrmitte am Rohranfang → Fläche eingegeben, gespeichert als Lage im Raum (c),
-// damit sie beim Ändern des Rohrs stehen bleiben.
-const KIND_ORDER = ['back', 'floor', 'left', 'right', 'ceil', 'front'];
-const startPt = (p = proj()) => points(p)[0];
-const planeDistFromStart = (pl, p) => PLANE_KINDS[pl.kind].side * (pl.c - startPt(p)[planeAxis(pl)]);
-const setPlaneDist = (pl, d, p) => { pl.c = startPt(p)[planeAxis(pl)] + PLANE_KINDS[pl.kind].side * d; };
-// Flächen gelten für die ganze Rohrgruppe (Parallelrohre)
-function syncGroupPlanes(p = proj()) {
-  if (!p.group) return;
-  db.projects.forEach(q => { if (q.group === p.group && q !== p) q.planes = structuredClone(p.planes); });
+// ---------- Reiter „Raum“: Grundriss, Rohr ausrichten, Ziel-Anschluss, Schellen ----------
+const bbox2 = o => ({ x0: Math.min(...o.map(q => q[0])), x1: Math.max(...o.map(q => q[0])), y0: Math.min(...o.map(q => q[1])), y1: Math.max(...o.map(q => q[1])) });
+const isRect = o => o?.length === 4 && o.every((q, i) => { const n = o[(i + 1) % 4]; return Math.abs(q[0] - n[0]) < 1e-6 || Math.abs(q[1] - n[1]) < 1e-6; });
+const edgeLen = (o, i) => { const a = o[i], b = o[(i + 1) % o.length]; return Math.hypot(b[0] - a[0], b[1] - a[1]); };
+const mm = n => String(r1(n)).replace('.', ',');
+
+// Neuer Raum ums Rohr: Rohr hängt an der Rückwand (in Schellenhöhe), 1 m über dem Boden, links/rechts 0,5 m Platz
+function newRoomAround(p) {
+  const pts = points(p), f = prof(p), round = (v, s) => Math.round(v / s) * s;
+  const mn = [0, 1, 2].map(k => Math.min(...pts.map(q => q[k]))), mx = [0, 1, 2].map(k => Math.max(...pts.map(q => q[k])));
+  const x0 = round(mn[0] - 500, 10), x1 = round(mx[0] + 500, 10), y1 = mx[1] + f.clampH, y0 = y1 - Math.max(2500, round(mx[1] - mn[1] + 1500, 10));
+  const z0 = mn[2] - 1000, height = Math.max(2500, round(mx[2] - z0 + 300, 10));
+  return { id: uid(), name: `Raum ${db.rooms.length + 1}`, outline: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], z0, height, pass: {} };
 }
+// Kantenlänge ändern: die folgende Wand wandert mit (Grundriss bleibt rechtwinklig)
+function setEdgeLen(room, i, L) {
+  const o = room.outline, n = o.length, a = o[i], b = o[(i + 1) % n], ax = Math.abs(b[0] - a[0]) > 1e-6 ? 0 : 1;
+  const d = Math.sign(b[ax] - a[ax]) * (L - edgeLen(o, i));
+  const next = structuredClone(o);
+  next[(i + 1) % n][ax] += d; next[(i + 2) % n][ax] += d;
+  if (next.some((q, k) => edgeLen(next, k) < 50)) return false;
+  room.outline = next; return true;
+}
+// Wand-Koordinaten eines Punkts: Abstand zur Wand, Lage entlang der Wand (ab ihrem Anfang = kleinere Koordinate), Höhe über Boden
+function wallFrame(pl, planes) {
+  const u = pl.axis === 0 ? 1 : 0, lo = pl.ext[u][0];
+  const ref = planes.find(q => q.kind === 'wall' && q.axis === u && Math.abs(q.c - lo) < 0.5);
+  return { u, lo, refName: ref ? ref.name : 'Wandanfang' };
+}
+function wallCoords(pt, pl, room) {
+  const { u, lo } = wallFrame(pl, layout.planes);
+  return { dist: planeDist(pl, pt), along: pt[u] - lo, height: pt[2] - (room.z0 || 0) };
+}
+function fromWallCoords(c, pl, room) {
+  const { u, lo } = wallFrame(pl, layout.planes), q = [0, 0, 0];
+  q[pl.axis] = pl.c + pl.n * c.dist; q[u] = lo + c.along; q[2] = (room.z0 || 0) + c.height;
+  return q;
+}
+// Bezugspunkt des Rohrs: A, E oder Schnittpunkt i
+const place = { ref: 'A', wall: null, tgWall: null };
+function refPoint(p, ref) {
+  const pts = points(p);
+  return ref === 'A' ? pts[0] : ref === 'E' ? pts.at(-1) : pts[+ref.slice(1)] || pts[0];
+}
+// Nächste Wand zum Punkt als Vorgabe
+const nearestWall = pt => layout.planes.filter(q => q.kind === 'wall').sort((a, b) => Math.abs(planeDist(a, pt)) - Math.abs(planeDist(b, pt)))[0];
 
-function renderEnv() {
-  const p = proj(), f = prof(p), A = startPt(p);
-  const kindOpts = sel => Object.entries(PLANE_KINDS).map(([k, v]) => `<option value="${k}"${k === sel ? ' selected' : ''}>${v.name}</option>`).join('');
-  const t = p.target ? V.sub(p.target, A) : null;
-  $('#envCard').innerHTML = `
+function renderRoomTab() {
+  const p = proj(), f = prof(p), room = roomOf(p), walls = layout.planes.filter(q => q.kind === 'wall');
+  let h = `<div class="card">
     <h3>Raum</h3>
-    <p class="hint" style="margin-top:0">Abstand = von der Rohrmitte am Rohranfang bis zur Fläche. Bei Wänden passt meist die Schellenhöhe (${fmt(f.clampH)} mm).</p>
-    ${p.planes.map((pl, i) => `<div class="envrow">
-      <select data-pl="${i}.kind" aria-label="Art der Fläche">${kindOpts(pl.kind)}</select>
-      <input data-pl="${i}.dist" inputmode="decimal" aria-label="Abstand in mm" value="${String(r1(planeDistFromStart(pl, p))).replace('.', ',')}">
-      <label class="chk"><input type="checkbox" data-pl="${i}.pass"${pl.pass ? ' checked' : ''}> Durchführung</label>
-      <button data-pldel="${i}" aria-label="Fläche löschen">✕</button>
-    </div>`).join('')}
-    <button id="plAdd" class="wide" style="margin:6px 0 14px">+ Wand / Boden / Decke</button>
+    <div class="row2">
+      <label>Raum für dieses Rohr<select id="rmSel"><option value="">– kein Raum –</option>${db.rooms.map(r => `<option value="${r.id}"${r.id === p.roomId ? ' selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
+      ${room ? `<label>Name<input id="rmName" value="${esc(room.name)}"></label>` : ''}
+    </div>
+    <div class="btnrow">
+      <button id="rmNew">+ Neuer Raum ums Rohr</button>
+      ${room ? '<button id="rmDraw" class="primary">✎ Grundriss in 3D zeichnen</button>' : ''}
+    </div>`;
+  if (!room) {
+    h += `<p class="hint">Ein Raum gibt Wände, Boden und Decke vor: Das Rohr rastet in Schellenhöhe davor ein, Schellen bekommen Bohrpunkte, und Rohre, die durch Wände laufen, werden erkannt. Mehrere Rohre können im selben Raum liegen und sehen sich gegenseitig.</p></div>`;
+  } else {
+    const rect = isRect(room.outline), bb = bbox2(room.outline);
+    h += `<div class="row3" style="margin-top:12px">
+        ${rect ? `<label>Breite (mm)<input data-rm="w" inputmode="decimal" value="${mm(bb.x1 - bb.x0)}"></label><label>Tiefe (mm)<input data-rm="d" inputmode="decimal" value="${mm(bb.y1 - bb.y0)}"></label>` : ''}
+        <label>Raumhöhe (mm)<input data-rm="h" inputmode="decimal" value="${mm(room.height)}"></label>
+      </div>
+      <p class="hint">${rect ? 'Rechteckiger Raum. Für L-Formen und Nischen den Grundriss in 3D zeichnen.' : 'Grundriss mit ' + room.outline.length + ' Ecken.'} Länge einer Wand ändern verschiebt die folgende Wand mit.</p>
+      ${walls.map(w => `<div class="wallrow"><b>${w.name}</b>
+        <label class="unit"><input data-edge="${w.edge}" inputmode="decimal" value="${mm(edgeLen(room.outline, w.edge))}" aria-label="Länge ${w.name}"><span>mm</span></label>
+        <label class="chk"><input type="checkbox" data-pass="${w.edge}"${w.pass ? ' checked' : ''}> Durchführung</label></div>`).join('')}
+      <div class="btnrow" style="margin-top:8px"><button id="rmDel" class="danger">Raum löschen</button></div>
+    </div>`;
 
-    <h3>Ziel-Anschluss</h3>
-    ${t ? `<p class="hint" style="margin-top:0">Lage des Anschlusses, gemessen ab Rohranfang (Rohrmitte).</p>
+    // Rohr im Raum
+    if (!place.wall || !walls.some(w => w.id === place.wall)) place.wall = nearestWall(refPoint(p, place.ref))?.id || walls[0]?.id;
+    const pl = walls.find(w => w.id === place.wall);
+    if (pl) {
+      const wc = wallCoords(refPoint(p, place.ref), pl, room), fr = wallFrame(pl, layout.planes);
+      const refs = [['A', 'Rohranfang A'], ['E', 'Rohrende'], ...points(p).slice(1, -1).map((_, i) => [`V${i + 1}`, `Schnittpunkt ${i + 1}`])];
+      h += `<div class="card"><h3>Rohr im Raum ausrichten</h3>
+        <div class="row2">
+          <label>Bezugspunkt am Rohr<select id="plRef">${refs.map(([v, t]) => `<option value="${v}"${v === place.ref ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label>gemessen an<select id="plWall">${walls.map(w => `<option value="${w.id}"${w.id === pl.id ? ' selected' : ''}>${w.name}</option>`).join('')}</select></label>
+        </div>
+        <div class="row3">
+          <label>Abstand zur Wand<input data-plc="dist" inputmode="decimal" value="${mm(wc.dist)}"></label>
+          <label>Abstand zu ${fr.refName}<input data-plc="along" inputmode="decimal" value="${mm(wc.along)}"></label>
+          <label>Höhe über Boden<input data-plc="height" inputmode="decimal" value="${mm(wc.height)}"></label>
+        </div>
+        <div class="btnrow" style="margin-top:8px"><button id="plWallH">An Wand (${fmt(f.clampH)} mm)</button><button id="plRotL">↺ 90° drehen</button><button id="plRotR">↻ 90° drehen</button></div>
+        <p class="hint">Maße bis Rohrmitte. Änderungen wirken sofort – in 3D mitverfolgen.</p></div>`;
+    }
+  }
+
+  // Ziel-Anschluss
+  h += `<div class="card"><h3>Ziel-Anschluss</h3>`;
+  if (!p.target) h += `<p class="hint" style="margin-top:0">Wo soll das Rohr ankommen? Die App zeigt laufend, wie weit das Rohrende noch davon entfernt ist.</p><button id="tgAdd" class="wide" style="margin:0">◎ Ziel festlegen (am aktuellen Rohrende)</button>`;
+  else if (room && walls.length) {
+    if (!place.tgWall || !walls.some(w => w.id === place.tgWall)) place.tgWall = nearestWall(p.target)?.id;
+    const tw = walls.find(w => w.id === place.tgWall), tc = wallCoords(p.target, tw, room), fr = wallFrame(tw, layout.planes);
+    h += `<div class="row2"><label>gemessen an<select id="tgWall">${walls.map(w => `<option value="${w.id}"${w.id === tw.id ? ' selected' : ''}>${w.name}</option>`).join('')}</select></label><span></span></div>
       <div class="row3">
+        <label>Abstand zur Wand<input data-tgc="dist" inputmode="decimal" value="${mm(tc.dist)}"></label>
+        <label>Abstand zu ${fr.refName}<input data-tgc="along" inputmode="decimal" value="${mm(tc.along)}"></label>
+        <label>Höhe über Boden<input data-tgc="height" inputmode="decimal" value="${mm(tc.height)}"></label>
+      </div>`;
+  } else {
+    const t = V.sub(p.target, layout.A);
+    h += `<p class="hint" style="margin-top:0">Lage ab Rohranfang (Rohrmitte).</p><div class="row3">
         <label>X <small>rechts + / links −</small>${signed('tg.0', t[0])}</label>
         <label>Y <small>hinten + / vorn −</small>${signed('tg.1', t[1])}</label>
-        <label>Z <small>oben + / unten −</small>${signed('tg.2', t[2])}</label>
-      </div>
-      <div class="btnrow" style="margin:8px 0 14px"><button id="tgFromEnd">= aktuelles Rohrende</button><button id="tgDel" class="danger">Ziel entfernen</button></div>`
-    : `<button id="tgAdd" class="wide" style="margin:0 0 14px">◎ Ziel-Anschluss festlegen</button>`}
+        <label>Z <small>oben + / unten −</small>${signed('tg.2', t[2])}</label></div>`;
+  }
+  if (p.target) h += `${targetHtml()}<div class="btnrow" style="margin-top:8px"><button id="tgFromEnd">= aktuelles Rohrende</button><button id="tgDel" class="danger">Ziel entfernen</button></div>`;
+  h += '</div>';
 
-    <h3>Schellen</h3>
-    <div class="seg" id="clampMode" style="margin-bottom:8px">
+  // Schellen
+  h += `<div class="card"><h3>Schellen</h3>
+    <div class="seg" style="margin-bottom:8px">
       <button data-cm="auto"${p.clampMode !== 'manual' ? ' class="on"' : ''}>Automatisch</button>
       <button data-cm="manual"${p.clampMode === 'manual' ? ' class="on"' : ''}>Von Hand</button>
     </div>
-    <p class="hint" style="margin:0">${layout.clampS.length} Schellen · Regeln: höchstens ${fmt(f.clampMax)} mm Abstand, ${fmt(f.clampBend)} mm vom Bogen, ${fmt(f.clampEnd)} mm vom Rohrende (einstellbar unter „Zangen“).
-      ${p.clampMode === 'manual' ? 'Von Hand: in der 3D-Ansicht mit „Schellen“ antippen zum Setzen, ziehen zum Verschieben, nochmal antippen zum Löschen.' : ''}</p>
-    ${p.clampMode === 'manual' ? '<div class="btnrow" style="margin-top:8px"><button id="clampRedo">Neu verteilen</button><button id="clampClear" class="danger">Alle entfernen</button></div>' : ''}`;
+    <p class="hint" style="margin:0">${layout.clampS.length} ${layout.bundle.length ? 'Mehrfachschellen' : 'Schellen'} · höchstens ${fmt(f.clampMax)} mm Abstand, ${fmt(f.clampBend)} mm vom Bogen, auf einer Geraden nicht näher als ${fmt(f.clampMin)} mm (einstellbar unter „Zangen“).
+      ${p.clampMode === 'manual' ? 'Von Hand: in 3D „Schellen“ wählen – Rohr antippen setzt, Ziehen verschiebt, Antippen löscht.' : ''}</p>
+    ${p.clampMode === 'manual' ? '<div class="btnrow" style="margin-top:8px"><button id="clampRedo">Neu verteilen</button><button id="clampClear" class="danger">Alle entfernen</button></div>' : ''}
+  </div>`;
+  $('#tab-room').innerHTML = h;
 }
 
-$('#envCard').addEventListener('input', e => {
-  const el = e.target, p = proj();
-  if (el.dataset.pl) {
-    const [i, key] = el.dataset.pl.split('.'), pl = p.planes[+i];
-    commit('pl' + el.dataset.pl);
-    if (key === 'dist') setPlaneDist(pl, num(el.value), p);
-    else if (key === 'pass') pl.pass = el.checked;
-    else if (key === 'kind') { const d = planeDistFromStart(pl, p); pl.kind = el.value; setPlaneDist(pl, Math.abs(d), p); }
-    syncGroupPlanes(p);
-    recompute();
-    if (key === 'kind') renderEnv();
+// Ein Rohr um 90° um die Senkrechte durch den Bezugspunkt drehen
+function rotatePipe(p, dir) {
+  const R = refPoint(p, place.ref);
+  ensureDeltas();
+  const rz = v => (dir > 0 ? [-v[1], v[0], v[2]] : [v[1], -v[0], v[2]]);
+  p.deltas = p.deltas.map(d => { const v = rz(deltaVec(d)); return { x: v[0], y: v[1], z: v[2] }; });
+  p.origin = V.add(R, rz(V.sub(p.origin, R)));
+}
+
+$('#tab-room').addEventListener('input', e => {
+  const el = e.target, p = proj(), room = roomOf(p);
+  if (el.id === 'rmName') { room.name = el.value; save(); $('#rmSel').selectedOptions[0].textContent = el.value; return; }
+  if (el.dataset.rm) {
+    const v = num(el.value);
+    if (!(v >= 300)) return;
+    commit('rm' + el.dataset.rm);
+    if (el.dataset.rm === 'h') room.height = v;
+    else {
+      const bb = bbox2(room.outline), ax = el.dataset.rm === 'w' ? 0 : 1, hi = ax ? bb.y1 : bb.x1, lo = ax ? bb.y0 : bb.x0;
+      room.outline.forEach(q => { if (Math.abs(q[ax] - hi) < 1e-6) q[ax] = lo + v; });
+    }
+  } else if (el.dataset.edge) {
+    const v = num(el.value);
+    if (!(v >= 50)) return;
+    commit('edge' + el.dataset.edge);
+    if (!setEdgeLen(room, +el.dataset.edge, v)) return;
+  } else if (el.dataset.pass) {
+    commit(); room.pass ||= {}; room.pass[el.dataset.pass] = el.checked;
+  } else if (el.dataset.plc || el.dataset.tgc) {
+    const isT = !!el.dataset.tgc, pl = layout.planes.find(w => w.id === (isT ? place.tgWall : place.wall));
+    if (!pl) return;
+    commit((isT ? 'tg' : 'pl') + (el.dataset.plc || el.dataset.tgc));
+    const pt = isT ? p.target : refPoint(p, place.ref), c = wallCoords(pt, pl, room);
+    c[el.dataset.plc || el.dataset.tgc] = num(el.value);
+    const q = fromWallCoords(c, pl, room);
+    if (isT) p.target = q; else p.origin = V.add(p.origin, V.sub(q, pt));
+    if (!isOrtho()) fit = null;
   } else if (el.dataset.p?.startsWith('tg.')) {
     commit('tg' + el.dataset.p);
-    const k = +el.dataset.p.split('.')[1];
-    p.target[k] = startPt(p)[k] + readSigned(el);
-    recompute();
-  }
+    p.target[+el.dataset.p.split('.')[1]] = layout.A[+el.dataset.p.split('.')[1]] + readSigned(el);
+  } else return;
+  recompute();
 });
-$('#envCard').addEventListener('click', e => {
+$('#tab-room').addEventListener('change', e => {
+  const el = e.target, p = proj();
+  if (el.id === 'rmSel') { commit(); p.roomId = el.value || null; fit = null; recompute(); renderRoomTab(); }
+  else if (el.id === 'plRef') { place.ref = el.value; place.wall = null; renderRoomTab(); }
+  else if (el.id === 'plWall') { place.wall = el.value; renderRoomTab(); }
+  else if (el.id === 'tgWall') { place.tgWall = el.value; renderRoomTab(); }
+});
+$('#tab-room').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
-  const p = proj(), f = prof(p);
+  const p = proj(), f = prof(p), room = roomOf(p);
   if (b.dataset.sign?.startsWith('tg.')) {
-    commit();
-    b.textContent = b.textContent === '−' ? '+' : '−';
+    commit(); b.textContent = b.textContent === '−' ? '+' : '−';
     const k = +b.dataset.sign.split('.')[1];
-    p.target[k] = startPt(p)[k] + num(b.nextElementSibling.value) * (b.textContent === '−' ? -1 : 1);
-    recompute(); return;
-  }
-  if (b.id === 'plAdd') {
-    commit();
-    const kind = KIND_ORDER.find(k => !p.planes.some(pl => pl.kind === k)) || 'back';
-    const pl = { id: uid(), kind, c: 0, pass: false };
-    setPlaneDist(pl, kind === 'floor' ? 1000 : f.clampH, p);
-    p.planes.push(pl);
-  } else if (b.dataset.pldel != null) {
-    commit(); p.planes.splice(+b.dataset.pldel, 1);
-  } else if (b.id === 'tgAdd' || b.id === 'tgFromEnd') {
-    commit(); p.target = [...layout.E];
-  } else if (b.id === 'tgDel') {
-    commit(); p.target = null;
-  } else if (b.dataset.cm) {
+    p.target[k] = layout.A[k] + num(b.nextElementSibling.value) * (b.textContent === '−' ? -1 : 1);
+  } else if (b.id === 'rmNew') {
+    commit(); const r = newRoomAround(p); db.rooms.push(r); p.roomId = r.id; fit = null;
+    toast('Raum angelegt – das Rohr hängt an der Rückwand. Maße und Lage hier anpassen.');
+  } else if (b.id === 'rmDel') {
+    if (!confirm(`Raum „${room.name}“ löschen? Rohre darin bleiben erhalten.`)) return;
+    commit(); db.rooms = db.rooms.filter(r => r !== room); db.projects.forEach(q => { if (q.roomId === room.id) q.roomId = null; });
+  } else if (b.id === 'rmDraw') {
+    startRoomDraw(); return;
+  } else if (b.id === 'plWallH') {
+    const pl = layout.planes.find(w => w.id === place.wall); if (!pl) return;
+    commit(); const pt = refPoint(p, place.ref), c = wallCoords(pt, pl, room); c.dist = f.clampH;
+    p.origin = V.add(p.origin, V.sub(fromWallCoords(c, pl, room), pt));
+  } else if (b.id === 'plRotL' || b.id === 'plRotR') {
+    commit(); rotatePipe(p, b.id === 'plRotL' ? 1 : -1); renderInputs();
+  } else if (b.id === 'tgAdd' || b.id === 'tgFromEnd') { commit(); p.target = [...layout.E]; }
+  else if (b.id === 'tgDel') { commit(); p.target = null; }
+  else if (b.dataset.cm) {
     if (b.dataset.cm === p.clampMode) return;
     commit();
     if (b.dataset.cm === 'manual') p.clamps = [...layout.clampS];
     p.clampMode = b.dataset.cm;
-  } else if (b.id === 'clampRedo') {
-    commit(); p.clamps = autoClamps(layout, f);
-  } else if (b.id === 'clampClear') {
-    commit(); p.clamps = [];
-  } else return;
-  syncGroupPlanes(p);
+  } else if (b.id === 'clampRedo') { commit(); p.clamps = autoClamps(layout, f); }
+  else if (b.id === 'clampClear') { commit(); p.clamps = []; }
+  else return;
   if (!isOrtho()) fit = null;
-  recompute(); renderEnv();
+  recompute(); renderRoomTab();
 });
 
+// ---------- Schenkel als Richtung + Länge ----------
+// Jede Richtung als Knopf; schräge Schenkel als Winkel zwischen zwei Richtungen (15°-Raster); sonst frei in X/Y/Z.
+const DIRS = [
+  { v: [1, 0, 0], label: '→ rechts', word: 'rechts' }, { v: [-1, 0, 0], label: '← links', word: 'links' },
+  { v: [0, 0, 1], label: '↑ oben', word: 'oben' }, { v: [0, 0, -1], label: '↓ unten', word: 'unten' },
+  { v: [0, 1, 0], label: '↗ hinten', word: 'hinten' }, { v: [0, -1, 0], label: '↙ vorne', word: 'vorne' },
+];
+const freeLegs = new Set(); // Schenkel, die bewusst frei in X/Y/Z bearbeitet werden
+const oblPref = new Map();  // gewählte Lesart einer Schräge je Schenkel: { a, b } („von a nach b“)
+const OBL_ORDER = [0, 1, 4, 5, 2, 3]; // ohne Vorgabe zuerst waagrecht: „von rechts nach oben“ statt „von oben nach rechts“
+const perpDirs = a => DIRS.map((D, k) => k).filter(k => Math.abs(V.dot(DIRS[k].v, DIRS[a].v)) < 1e-9);
+function classifyLeg(v, pref = null) {
+  const L = V.len(v);
+  if (L < 1e-9) return { kind: 'axis', dir: -1, len: 0 };
+  for (let a = 0; a < 6; a++) if (Math.abs(V.dot(v, DIRS[a].v) - L) < 1e-6) return { kind: 'axis', dir: a, len: L };
+  const order = pref ? [pref.a, ...OBL_ORDER.filter(a => a !== pref.a)] : OBL_ORDER;
+  for (const a of order) {
+    const ca = V.dot(v, DIRS[a].v);
+    if (ca <= 1e-9) continue;
+    for (const b of (pref?.a === a ? [pref.b, ...perpDirs(a).filter(k => k !== pref.b)] : perpDirs(a))) {
+      const cb = V.dot(v, DIRS[b].v);
+      if (cb <= 1e-9 || V.len(V.sub(v, V.add(V.mul(DIRS[a].v, ca), V.mul(DIRS[b].v, cb)))) > 1e-6) continue;
+      const ang = Math.atan2(cb, ca) * 180 / Math.PI;
+      if (Math.abs(ang / 15 - Math.round(ang / 15)) < 1e-4) return { kind: 'oblique', a, b, ang: Math.round(ang), len: L };
+    }
+  }
+  return { kind: 'free', len: L };
+}
+const obliqueVec = (a, b, ang, L) => V.mul(V.add(V.mul(DIRS[a].v, Math.cos(ang * Math.PI / 180)), V.mul(DIRS[b].v, Math.sin(ang * Math.PI / 180))), L);
+function legSays(c) {
+  if (c.kind === 'axis') return c.dir < 0 ? 'Richtung wählen' : `läuft nach <b>${DIRS[c.dir].word}</b>`;
+  if (c.kind === 'oblique') return `läuft <b>${c.ang}°</b> von ${DIRS[c.a].word} nach ${DIRS[c.b].word}`;
+  return 'läuft schräg (frei in X/Y/Z)';
+}
+
+function legCard(p, d, i, n) {
+  const legName = i === 0 ? 'Rohranfang → Schnittpunkt 1' : i === n - 1 ? `Schnittpunkt ${i} → Rohrende` : `Schnittpunkt ${i} → ${i + 1}`;
+  const v = deltaVec(d), c = freeLegs.has(i) ? { kind: 'free', len: V.len(v) } : classifyLeg(v, oblPref.get(i));
+  const prev = i > 0 ? V.norm(deltaVec(p.deltas[i - 1])) : null;
+  const blocked = k => prev && Math.abs(Math.abs(V.dot(prev, DIRS[k].v)) - 1) < 1e-9; // gleiche Richtung oder zurück
+  const sel = (data, opts, val) => `<select data-${data}="${i}">${opts.map(([k, t]) => `<option value="${k}"${k === val ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
+  let h = `<div class="leg" data-leg="${i}"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName}</span>` +
+    `<button data-off="${i}" title="Versatz einfügen" aria-label="Versatz einfügen">⤳</button>` +
+    `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
+    `<div class="dirpick">${DIRS.map((D, k) => `<button data-dir="${i}:${k}"${c.kind === 'axis' && c.dir === k ? ' class="on"' : ''}${blocked(k) ? ' disabled' : ''}>${D.label}</button>`).join('')}` +
+    `<button data-dir="${i}:obl"${c.kind !== 'axis' ? ' class="on"' : ''}>∠ schräg</button></div>`;
+  if (c.kind === 'oblique') {
+    h += `<div class="row3 oblrow">
+      <label>von${sel('obla', DIRS.map((D, k) => [k, D.word]), c.a)}</label>
+      <label>nach${sel('oblb', perpDirs(c.a).map(k => [k, DIRS[k].word]), c.b)}</label>
+      <label>Winkel${sel('oblg', [15, 30, 45, 60, 75].map(a => [a, a + '°']), c.ang)}</label></div>
+      <button class="linkbtn" data-free="${i}">X/Y/Z frei eingeben</button>`;
+  } else if (c.kind === 'free') {
+    h += `<div class="row3 oblrow">
+      <label>X <small>rechts + / links −</small>${signed(`deltas.${i}.x`, d.x)}</label>
+      <label>Y <small>hinten + / vorn −</small>${signed(`deltas.${i}.y`, d.y)}</label>
+      <label>Z <small>oben + / unten −</small>${signed(`deltas.${i}.z`, d.z)}</label></div>`;
+  }
+  h += `<div class="lenrow"><label>Länge (Achsmaß)<span class="unit"><input data-leglen="${i}" inputmode="decimal" value="${fin(c.len)}" placeholder="0"${c.kind === 'free' ? ' disabled' : ''}><span>mm</span></span></label>
+    <div class="dirsay" data-say="${i}">${legSays(c)}</div></div></div>`;
+  return h;
+}
+
+// Schenkel i auf neue Richtung setzen; Länge bleibt (leerer Schenkel: 100 mm)
+function setLegDir(i, vec) {
+  const p = proj(), L = V.len(deltaVec(p.deltas[i])) || 100;
+  setDelta(i, V.mul(V.norm(vec), L));
+}
+function legDirClick(i, k) {
+  const p = proj(), v = deltaVec(p.deltas[i]), c = classifyLeg(v);
+  commit();
+  if (k === 'obl') {
+    if (c.kind !== 'axis') return;
+    const a = c.dir < 0 ? 0 : c.dir, b = perpDirs(a).includes(2) ? 2 : perpDirs(a)[0];
+    setDelta(i, obliqueVec(a, b, 45, c.len || 100));
+    oblPref.set(i, { a, b });
+    freeLegs.delete(i);
+  } else { setLegDir(i, DIRS[+k].v); freeLegs.delete(i); }
+  renderInputs(); recompute(); focusLeg(i);
+}
+
+// Gerade bearbeiteten Schenkel in 3D und in der Vorschau hervorheben
+let previewLeg = -1;
+function focusLeg(i) {
+  previewLeg = i;
+  if (sel !== i) selectLeg(i);
+  $$('#legList .leg').forEach(el => el.classList.toggle('focus', +el.dataset.leg === i));
+  drawMini();
+}
+
 // ---------- Berechnung & Ausgabe ----------
+function hitMessages(hits, who) {
+  for (const h of hits) {
+    if (h.type === 'outside') layout.errors.push(`${who} liegt außerhalb des Raums – Lage im Reiter „Raum“ prüfen.`);
+    else if (h.through && !h.plane.pass) layout.errors.push(`${who} läuft durch ${h.plane.name} (rot markiert). Als Durchführung freigeben oder Weg ändern.`);
+    else if (!h.through) layout.warnings.push(`${who} liegt zu dicht an ${h.plane.name}.`);
+  }
+}
+// Gerade, auf der die abgewickelte Länge s liegt (= Schenkelnummer)
+const legAt = (L, s) => Math.max(0, straightRuns(L).findIndex(r => s >= r.s0 - 0.01 && s <= r.s1 + 0.01));
+
+// Parallelrohre: aus dem Hauptrohr berechnet, laufen bei jeder Änderung live mit.
+// Schellen sitzen an denselben Stellen wie beim Hauptrohr (Mehrfachschellen).
+function bundleLayouts(p, f, main) {
+  const verts = main.verts;
+  if (verts.length < 2 || !p.bundle?.length) return [];
+  return p.bundle.map((b, i) => {
+    const g = parallelGeometry(verts, b.dist, sideDir(verts, b.side));
+    const L = computeLayout(g.pts, { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, pickMark: bd => pickMark(f, bd.angle) });
+    Object.assign(L, { name: `Rohr ${i + 2}`, def: b, offsets: g.offsets, A: g.pts[0], E: g.pts.at(-1) });
+    L.inverted = verts.slice(1).some((q, k) => V.dot(V.sub(q, verts[k]), V.sub(g.pts[k + 1], g.pts[k])) <= 0);
+    L.clampInfo = main.clampS.map(s => clampInfo(main.samples, s, main.planes, f, g.offsets[legAt(main, s)]));
+    L.hits = main.room ? planeHits(L.samples, main.room, f.D / 2) : [];
+    return L;
+  });
+}
+// Andere Rohre im selben Raum (samt ihren Parallelrohren) – werden hell dargestellt
+function roomGhosts(p) {
+  if (!p.roomId) return [];
+  return db.projects.filter(q => q.roomId === p.roomId && q.id !== p.id).flatMap(q => {
+    const f = prof(q), L = computeLayout(points(q), { R: f.R, zugA: q.zugA, zugE: q.zugE });
+    const out = [{ samples: L.samples, D: f.D, name: q.name }];
+    if (L.verts.length > 1) (q.bundle || []).forEach(b => out.push({ samples: computeLayout(parallelPoints(L.verts, b.dist, sideDir(L.verts, b.side)), { R: f.R }).samples, D: f.D }));
+    return out;
+  });
+}
+
 function recompute(light = false) {
   const p = proj(), f = prof(p);
   layout = computeLayout(points(p), { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, pickMark: b => pickMark(f, b.angle) });
   layout.collisions = selfCollisions(layout.samples, f.D);
-  // Umgebung: Flächen, Schellen, Ziel
-  const raw = points(p);
+  // Umgebung: Raum, Schellen, Ziel, Parallelrohre, andere Rohre im Raum
+  const raw = points(p), room = roomOf(p);
   layout.A = raw[0]; layout.E = raw.at(-1);
-  layout.hits = planeHits(layout.samples, p.planes, f.D / 2);
+  layout.room = room; layout.planes = roomPlanes(room);
+  layout.hits = room ? planeHits(layout.samples, room, f.D / 2) : [];
   layout.clampS = p.clampMode === 'manual' ? p.clamps.filter(s => s >= 0 && s <= layout.total).sort((a, b) => a - b) : autoClamps(layout, f);
-  layout.clampInfo = layout.clampS.map(s => clampInfo(layout.samples, s, p.planes, f));
+  layout.clampInfo = layout.clampS.map(s => clampInfo(layout.samples, s, layout.planes, f));
   layout.targetDelta = p.target ? V.sub(p.target, layout.E) : null;
-  layout.ghosts = groupLayouts(p);
-  if (light) { draw(); return; }
+  layout.bundle = bundleLayouts(p, f, layout);
+  layout.ghosts = roomGhosts(p);
+  if (light) { draw(); drawMini(); return; }
   if (layout.collisions.length) layout.errors.push(`Rohr berührt sich selbst (${layout.collisions.length}× – rot markiert).`);
-  for (const h of layout.hits) {
-    const n = PLANE_KINDS[h.plane.kind].name;
-    if (h.type === 'behind') layout.errors.push(`Rohr liegt hinter ${n} (auf der falschen Seite) – Abstand der Fläche prüfen.`);
-    else if (h.through && !h.plane.pass) layout.errors.push(`Rohr läuft durch ${n} (rot markiert). Als Durchführung freigeben oder Weg ändern.`);
-    else if (!h.through) layout.warnings.push(`Rohr liegt zu dicht an ${n} (Rohrmitte näher als halber Durchmesser).`);
-  }
-  const free = layout.clampInfo.filter(c => !c.mount).length;
-  if (p.planes.length && free) layout.warnings.push(`${free} Schelle(n) ohne Befestigung – keine Wand/Decke in Schellenhöhe (${fmt(f.clampH)} mm).`);
+  const who = layout.bundle.length ? 'Rohr 1' : 'Rohr';
+  hitMessages(layout.hits, who);
+  layout.bundle.forEach(B => {
+    if (B.def.dist <= f.D) layout.errors.push(`${B.name}: Abstand muss größer als der Rohrdurchmesser (${fmt(f.D)} mm) sein.`);
+    else if (B.inverted) layout.errors.push(`${B.name}: Abstand zu groß – ein innen liegender Schenkel würde rückwärts laufen.`);
+    B.errors.forEach(m => layout.errors.push(`${B.name}: ${m}`));
+    B.warnings.forEach(m => layout.warnings.push(`${B.name}: ${m}`));
+    hitMessages(B.hits, B.name);
+  });
+  const free = layout.clampInfo.filter((c, i) => !c.mount || layout.bundle.some(B => !B.clampInfo[i]?.mount)).length;
+  if (room && free) layout.warnings.push(`${free} Schelle(n) ohne Befestigung – keine Wand/Decke in Schellenhöhe (${fmt(f.clampH)} mm).`);
   layout.bends.forEach((b, j) => {
     const off = Math.abs(b.angle / ANGLE_STEP - Math.round(b.angle / ANGLE_STEP)) * ANGLE_STEP;
     if (off > 0.1) layout.warnings.push(`Biegung ${j + 1}: ${fmt(b.angle)}° liegt nicht im ${ANGLE_STEP}°-Raster.`);
@@ -460,9 +745,11 @@ function recompute(light = false) {
     });
   }
   renderSummary();
-  if (!$('#envCard').contains(document.activeElement)) renderEnv();
+  if (!$('#tab-room').contains(document.activeElement)) renderRoomTab();
+  if (!$('#bundleCard').contains(document.activeElement)) renderBundle();
   renderGuide();
   draw();
+  drawMini();
   save();
 }
 
@@ -505,75 +792,80 @@ function rotSvg(phi) {
   </svg>`;
 }
 
-function tapeSvg() {
-  const L = layout.total || 1, W = 600, x0 = 14, sc = (W - 2 * x0) / L;
+function tapeSvg(Lo = layout) {
+  const L = Lo.total || 1, W = 600, x0 = 14, sc = (W - 2 * x0) / L;
   let s = `<svg class="tape" viewBox="0 0 ${W} 120" role="img" aria-label="Rohr mit Markierungen">`;
   s += `<rect x="${x0}" y="48" width="${L * sc}" height="14" rx="3" fill="var(--tube-hi)" stroke="var(--tube)"/>`;
-  layout.bends.forEach(b => { s += `<rect x="${x0 + b.start * sc}" y="48" width="${Math.max(1, b.B * sc)}" height="14" fill="var(--tube)" opacity=".6"/>`; });
-  layout.bends.forEach((b, j) => {
+  Lo.bends.forEach(b => { s += `<rect x="${x0 + b.start * sc}" y="48" width="${Math.max(1, b.B * sc)}" height="14" fill="var(--tube)" opacity=".6"/>`; });
+  Lo.bends.forEach((b, j) => {
     const x = x0 + b.mark * sc, up = j % 2 === 0;
     s += `<line x1="${x}" y1="${up ? 34 : 48}" x2="${x}" y2="${up ? 62 : 76}" stroke="var(--mark)" stroke-width="3"/>`;
     s += `<circle cx="${x}" cy="${up ? 20 : 90}" r="13" fill="var(--mark)"/><text x="${x}" y="${up ? 26 : 96}" text-anchor="middle" fill="#fff" style="font-weight:700">${j + 1}</text>`;
   });
   s += `<text x="${x0}" y="116">A</text><text x="${W - x0}" y="116" text-anchor="end">${fmt(L)}</text></svg>`;
-  s += `<div class="marklist">${layout.bends.map((b, j) => `<span><span class="num">${j + 1}</span>${fmt(b.mark)} mm</span>`).join('')}</div>`;
+  s += `<div class="marklist">${Lo.bends.map((b, j) => `<span><span class="num">${j + 1}</span>${fmt(b.mark)} mm</span>`).join('')}</div>`;
   return s;
 }
 
 // ---------- Anleitung: Kontrolle, Montage, Material ----------
 // Kontrollmaß nach Biegung j: bei 90° vom Rohrende bzw. von der Außenkante des vorletzten Schenkels
 // bis zur Außenkante des neuen Schenkels (nur wenn beide parallel liegen), sonst Winkel prüfen.
-function checkText(j) {
-  const b = layout.bends[j], D = prof().D, pts = layout.pts;
+function checkText(L, j) {
+  const b = L.bends[j], D = prof().D, pts = L.pts;
   const dir = i => V.norm(V.sub(pts[i + 1], pts[i]));
   if (Math.abs(b.angle - 90) > 0.5) return `Winkel mit dem Winkelmesser prüfen: <b>${fmt(b.angle)}°</b>`;
-  if (j === 0) return `Rohrende A bis Außenkante des neuen Schenkels: <b>${fmt(layout.legs[0].len + D / 2)} mm</b>`;
-  if (Math.abs(V.dot(dir(j - 1), dir(j + 1))) > 0.999 && Math.abs(layout.bends[j - 1].angle - 90) < 0.5) {
-    return `Außenkante Schenkel ${j} bis Außenkante Schenkel ${j + 2}: <b>${fmt(layout.legs[j].len + D)} mm</b>`;
+  if (j === 0) return `Rohrende A bis Außenkante des neuen Schenkels: <b>${fmt(L.legs[0].len + D / 2)} mm</b>`;
+  if (Math.abs(V.dot(dir(j - 1), dir(j + 1))) > 0.999 && Math.abs(L.bends[j - 1].angle - 90) < 0.5) {
+    return `Außenkante Schenkel ${j} bis Außenkante Schenkel ${j + 2}: <b>${fmt(L.legs[j].len + D)} mm</b>`;
   }
   return `Rechten Winkel prüfen (Anschlagwinkel).`;
 }
 
 const PREP = { rechts: 'rechts vom', links: 'links vom', hinten: 'hinter dem', vor: 'vor dem', über: 'über dem', unter: 'unter dem' };
 // z. B. „80 mm rechts vom Rohranfang · 1200 mm ab Boden“
-const drillText = (q, plane, p) => drillCoords(q, plane, p.planes, layout.A, layout.E)
+const drillText = (q, plane, L) => drillCoords(q, plane, layout.planes, L.A || layout.A, L.E || layout.E)
   .map(d => (d.ref === 'Rohranfang' || d.ref === 'Rohrende')
     ? (d.dir ? `${fmt(d.v)} mm ${PREP[d.dir]} ${d.ref}` : `auf Höhe ${d.ref}`)
     : `${fmt(d.v)} mm ab ${d.ref}`)
   .join(' · ');
 
+// Montage: Schellen (bei Parallelrohren als Mehrfachschelle) mit Bohrpunkt je Rohr, Durchführungen
 function montageHtml(p, f) {
-  const ci = layout.clampInfo, pass = layout.hits.filter(h => h.type === 'through' && h.plane.pass);
+  const pipes = [layout, ...layout.bundle], ci = layout.clampInfo;
+  const pass = pipes.flatMap(L => L.hits.filter(h => h.type === 'through' && h.plane.pass).map(h => ({ ...h, L })));
   if (!ci.length && !pass.length) return '';
+  const multi = pipes.length > 1, mountTxt = c => c.mount
+    ? c.mount.plane.name + (Math.abs(c.mount.d - f.clampH) > 0.5 ? ` <span class="hint">(Abstand ${fmt(c.mount.d)} – Distanz ${fmt(c.mount.d - f.clampH)})</span>` : '')
+    : (layout.room ? '<span style="color:var(--warn)">keine Fläche</span>' : '–');
   let h = `<div class="card"><h3>Montage</h3>`;
   if (ci.length) {
-    h += `<p class="hint" style="margin-top:0">${ci.length} Schellen, Schellenhöhe ${fmt(f.clampH)} mm. „ab A“ = gemessen auf dem Rohr ab Rohrende A.</p>
-      <div class="scroll-x"><table class="det mont"><tr><th>Nr.</th><th>auf Rohr ab A</th><th>Befestigung</th><th>Bohrpunkt</th></tr>
-      ${ci.map((c, i) => `<tr><td>S${i + 1}</td><td>${fmt(c.s)}</td>
-        <td>${c.mount ? PLANE_KINDS[c.mount.plane.kind].name + (Math.abs(c.mount.d - f.clampH) > 0.5 ? ` <span class="hint">(Abstand ${fmt(c.mount.d)} – Distanz ${fmt(c.mount.d - f.clampH)})</span>` : '') : (p.planes.length ? '<span style="color:var(--warn)">keine Fläche</span>' : '–')}</td>
-        <td>${c.mount ? drillText(c.q, c.mount.plane, p) : '–'}</td></tr>`).join('')}
+    h += `<p class="hint" style="margin-top:0">${ci.length} ${multi ? `Mehrfachschellen für ${pipes.length} Rohre` : 'Schellen'}, Schellenhöhe ${fmt(f.clampH)} mm. „ab A“ = gemessen auf Rohr 1 ab Rohrende A.</p>
+      <div class="scroll-x"><table class="det mont"><tr><th>Nr.</th><th>auf Rohr ab A</th>${multi ? '<th>Rohr</th>' : ''}<th>Befestigung</th><th>Bohrpunkt</th></tr>
+      ${ci.map((c, i) => pipes.map((L, k) => {
+        const cc = k ? L.clampInfo[i] : c;
+        return `<tr${k ? ' class="sub"' : ''}>${k ? '<td></td><td></td>' : `<td>S${i + 1}</td><td>${fmt(c.s)}</td>`}${multi ? `<td>${k + 1}</td>` : ''}
+          <td>${mountTxt(cc)}</td><td>${cc.mount ? drillText(cc.q, cc.mount.plane, L) : '–'}</td></tr>`;
+      }).join('')).join('')}
       </table></div>`;
   }
   if (pass.length) {
     h += `<h3 style="margin-top:12px">Durchführungen</h3><ul style="margin:0;padding-left:18px">
-      ${pass.map(x => `<li>${PLANE_KINDS[x.plane.kind].name}: ${drillText(x.p, x.plane, p)} <span class="hint">(auf Rohr ${fmt(x.s)} mm ab A, Bohrung > ${fmt(f.D)} mm)</span></li>`).join('')}</ul>`;
+      ${pass.map(x => `<li>${multi ? `${x.L === layout ? 'Rohr 1' : x.L.name} · ` : ''}${x.plane.name}: ${drillText(x.p, x.plane, x.L)} <span class="hint">(Bohrung > ${fmt(f.D)} mm)</span></li>`).join('')}</ul>`;
   }
   return h + '</div>';
 }
 
+// Material: alle Rohre des Bündels, Schellen, Aufteilung auf Stangen
 function materialHtml(p, f) {
-  const group = [{ name: p.name, len: layout.total, clamps: layout.clampS.length, f }];
-  if (p.group) db.projects.filter(q => q.group === p.group && q.id !== p.id).forEach(q => {
-    const fq = prof(q), L = computeLayout(points(q), { R: fq.R, zugA: q.zugA, zugE: q.zugE, minStraight: fq.minStraight });
-    group.push({ name: q.name, len: L.total, clamps: q.clampMode === 'manual' ? q.clamps.length : autoClamps(L, fq).length, f: fq });
-  });
-  const plan = cutPlan(group.map(g => ({ len: g.len, name: g.name })), f.stock);
-  return `<div class="card"><h3>Material${group.length > 1 ? ` (${group.length} Rohre der Gruppe)` : ''}</h3>
-    <div class="scroll-x"><table class="det"><tr><th>Rohr</th><th>Zuschnitt</th><th>Schellen</th></tr>
-      ${group.map(g => `<tr><td>${esc(g.name)}</td><td>${fmt(g.len)} mm</td><td>${g.clamps}</td></tr>`).join('')}
-      ${group.length > 1 ? `<tr><td><b>Summe</b></td><td><b>${fmt(group.reduce((a, g) => a + g.len, 0))} mm</b></td><td><b>${group.reduce((a, g) => a + g.clamps, 0)}</b></td></tr>` : ''}
+  const pipes = [{ name: layout.bundle.length ? 'Rohr 1' : p.name, len: layout.total }, ...layout.bundle.map(L => ({ name: L.name, len: L.total }))];
+  const plan = cutPlan(pipes, f.stock), n = layout.clampS.length;
+  return `<div class="card"><h3>Material</h3>
+    <div class="scroll-x"><table class="det"><tr><th>Rohr</th><th>Zuschnitt</th></tr>
+      ${pipes.map(g => `<tr><td>${esc(g.name)}</td><td>${fmt(g.len)} mm</td></tr>`).join('')}
+      ${pipes.length > 1 ? `<tr><td><b>Summe</b></td><td><b>${fmt(pipes.reduce((a, g) => a + g.len, 0))} mm</b></td></tr>` : ''}
     </table></div>
-    <p style="margin:10px 0 4px"><b>${plan.bars.length}</b> Stange(n) à ${fmt(f.stock)} mm (3 mm Sägeschnitt):</p>
+    <p style="margin:10px 0 4px">Schellen: <b>${n}</b>${pipes.length > 1 ? ` Mehrfachschellen für je ${pipes.length} Rohre` : ''}</p>
+    <p style="margin:6px 0 4px"><b>${plan.bars.length}</b> Stange(n) à ${fmt(f.stock)} mm (3 mm Sägeschnitt):</p>
     <ul style="margin:0;padding-left:18px">${plan.bars.map((b, i) => `<li>Stange ${i + 1}: ${b.cuts.map(c => `${fmt(c.len)} <span class="hint">(${esc(c.name)})</span>`).join(' + ')} – Rest ${fmt(b.rest)} mm</li>`).join('')}</ul>
     ${plan.tooLong.length ? `<div class="msg err">✕ Länger als eine Stange: ${plan.tooLong.map(c => esc(c.name)).join(', ')} – Verbindung einplanen.</div>` : ''}</div>`;
 }
@@ -613,23 +905,28 @@ async function printPlan() {
   window.print();
 }
 
+// Welches Rohr des Bündels die Anleitung zeigt (0 = Rohr 1)
+let guidePipe = 0;
 function renderGuide() {
   const p = proj(), f = prof(p);
-  const bends = layout.bends;
+  if (guidePipe > layout.bundle.length) guidePipe = 0;
+  const L = guidePipe ? layout.bundle[guidePipe - 1] : layout, bends = L.bends;
+  const doneKey = j => (guidePipe ? `${guidePipe}:${j}` : j);
   let h = `<div class="guidebar noprint">
       <button id="gPrint">🖨 Drucken / PDF</button>
       ${'wakeLock' in navigator ? `<button id="gWake"${wakeLock ? ' class="on"' : ''}>☀ Bildschirm ${wakeLock ? 'bleibt an' : 'anlassen'}</button>` : ''}
       <button id="gBig"${document.body.classList.contains('bigtext') ? ' class="on"' : ''}>A+ Große Schrift</button>
     </div>
     <div id="printHead" class="printonly"></div>
-    <div class="card"><div class="kv"><span>Zuschnitt</span></div><div class="big">${fmt(layout.total)} mm</div>
+    ${layout.bundle.length ? `<div class="seg noprint" id="guidePipeSel" style="margin-bottom:12px">${[layout, ...layout.bundle].map((x, i) => `<button data-gp="${i}"${i === guidePipe ? ' class="on"' : ''}>Rohr ${i + 1}</button>`).join('')}</div>` : ''}
+    <div class="card"><div class="kv"><span>Zuschnitt${layout.bundle.length ? ` Rohr ${guidePipe + 1}` : ''}</span></div><div class="big">${fmt(L.total)} mm</div>
     <div class="kv"><span>Zange <b>${esc(f.name)}</b></span><span>R <b>${fmt(f.R)}</b></span><span>Rückfederung <b>${fmt(f.springback)}°/90°</b></span></div>
     ${anyCal(f) ? '' : '<div class="msg warn">⚠ Diese Zange ist noch nicht kalibriert – Radius und Markenabstände sind Schätzwerte. Im Reiter „Zangen“ eine Probebiegung machen.</div>'}
     ${messages()}</div>`;
 
   h += `<div class="card"><h3>1. Ablängen &amp; anzeichnen</h3>
-    <p style="margin:0 0 8px">Rohr auf <b>${fmt(layout.total)} mm</b> ablängen, Anfang mit „A“ beschriften. Strichpositionen ab Anfang auf dem geraden Rohr:</p>
-    ${tapeSvg()}
+    <p style="margin:0 0 8px">Rohr${layout.bundle.length ? ` ${guidePipe + 1}` : ''} auf <b>${fmt(L.total)} mm</b> ablängen, Anfang mit „A“ beschriften. Strichpositionen ab Anfang auf dem geraden Rohr:</p>
+    ${tapeSvg(L)}
     <p class="hint">Tipp: Vor dem Biegen einen Längsstrich über das ganze Rohr ziehen – damit siehst du beim Drehen, wie weit das Rohr verdreht ist.</p></div>`;
 
   if (!bends.length) h += `<div class="card">Keine Biegung – gerades Rohr.</div>`;
@@ -640,7 +937,7 @@ function renderGuide() {
     // Nach einer 90°-Biegung steht der vorige Schenkel quer: Strich direkt ab dessen Achse messen.
     // Abstand = Achsmaß − Tangente + Markenabstand (bei 90° mit L/R genau das Achsmaß).
     const fromAxis = j > 0 && Math.abs(bends[j - 1].angle - 90) < 0.5;
-    const axisDist = layout.legs[j].len - b.T + k;
+    const axisDist = L.legs[j].len - b.T + k;
     const measure = j === 0
       ? `Strich bei <b class="hl">${fmt(b.mark)} mm</b> ab Rohranfang`
       : fromAxis
@@ -648,24 +945,24 @@ function renderGuide() {
            <div class="alt">oder vorab auf dem geraden Rohr: ${fmt(b.mark)} mm ab Anfang</div>`
         : `Strich bei <b class="hl">${fmt(b.mark)} mm</b> ab Anfang <span class="hint">(vor dem ersten Biegen anzeichnen – nach einem schrägen Bogen lässt sich nicht ab Achse messen)</span>`;
     const others = f.marks.filter(m => m.name !== b.markName);
-    h += `<div class="step${highlight === j ? ' hl' : ''}${p.done[j] ? ' done' : ''}" data-step="${j}">
+    h += `<div class="step${highlight === j ? ' hl' : ''}${p.done[doneKey(j)] ? ' done' : ''}" data-step="${j}">
       <h3><span class="num">${j + 1}</span> Biegung ${j + 1} · ${fmt(b.angle)}°
-        <label class="done-box"><input type="checkbox" data-done="${j}"${p.done[j] ? ' checked' : ''}> erledigt</label></h3>
+        <label class="done-box"><input type="checkbox" data-done="${doneKey(j)}"${p.done[doneKey(j)] ? ' checked' : ''}> erledigt</label></h3>
       <div class="inst"><ol>
         <li>${measure}</li>
         <li>Strich auf Marke <b class="hl">„${esc(b.markName)}“</b> – der gemessene Teil liegt <b>${esc(b.markSide || 'links')}</b> von der Zange.
           ${others.length ? `<div class="alt">${others.map(m => `oder „${esc(m.name)}“ (gemessener Teil ${esc(m.side)}) → ${Math.abs(m.k - k) < 0.05 ? 'gleicher Strich' : `Strich ${fmt(Math.abs(m.k - k))} mm ${m.k > k ? 'weiter weg vom' : 'näher zum'} gemessenen Ende`}`).join(' · ')}</div>` : ''}</li>
         ${j ? `<li>${rotText(phi)}</li>` : ''}
         <li>Biegen bis Skala <b class="hl">${fmt(scale)}°</b>${f.springback ? ` <span class="hint">(Soll ${fmt(b.angle)}° + Rückfederung)</span>` : ''}</li>
-        <li class="check">✓ Kontrolle: ${checkText(j)}</li>
+        <li class="check">✓ Kontrolle: ${checkText(L, j)}</li>
       </ol>${j ? `<div class="rotbox">${rotSvg(phi)}<div><span style="color:var(--mark)">▲ Biegerichtung</span><br><span style="color:var(--accent)">━ voriger Schenkel</span><br>Blick zum freien Ende</div></div>` : ''}</div></div>`;
   });
 
   if (bends.length) {
     h += `<div class="card"><h3>Details</h3><div class="scroll-x"><table class="det">
       <tr><th>Nr.</th><th>Winkel</th><th>Drehung</th><th>Gerade davor</th><th>Tangente</th><th>Bogen</th><th>Biegeanfang</th><th>Markierung</th></tr>
-      ${bends.map((b, j) => `<tr><td>${j + 1}</td><td>${fmt(b.angle)}°</td><td>${j ? fmt(normRot(b.rot)) + '°' : '–'}</td><td>${fmt(layout.straights[j])}</td><td>${fmt(b.T)}</td><td>${fmt(b.B)}</td><td>${fmt(b.start)}</td><td>${fmt(b.mark)}</td></tr>`).join('')}
-      <tr><td>Ende</td><td></td><td></td><td>${fmt(layout.straights.at(-1))}</td><td></td><td></td><td></td><td></td></tr>
+      ${bends.map((b, j) => `<tr><td>${j + 1}</td><td>${fmt(b.angle)}°</td><td>${j ? fmt(normRot(b.rot)) + '°' : '–'}</td><td>${fmt(L.straights[j])}</td><td>${fmt(b.T)}</td><td>${fmt(b.B)}</td><td>${fmt(b.start)}</td><td>${fmt(b.mark)}</td></tr>`).join('')}
+      <tr><td>Ende</td><td></td><td></td><td>${fmt(L.straights.at(-1))}</td><td></td><td></td><td></td><td></td></tr>
       </table></div><p class="hint">Alle Maße in mm, gemessen auf der Rohrmitte. Gerade + Bögen ergeben den Zuschnitt.</p></div>`;
   }
   h += montageHtml(p, f) + materialHtml(p, f);
@@ -675,6 +972,7 @@ function renderGuide() {
 $('#tab-guide').addEventListener('click', e => {
   const btn = e.target.closest('button');
   if (btn?.id === 'gPrint') { printPlan(); return; }
+  if (btn?.dataset.gp) { guidePipe = +btn.dataset.gp; highlight = -1; renderGuide(); draw(); return; }
   if (btn?.id === 'gWake') { setWake(!wakeLock); return; }
   if (btn?.id === 'gBig') {
     const on = document.body.classList.toggle('bigtext');
@@ -706,6 +1004,7 @@ const PF = [
   ['minStraight', 'Mindest-Gerade zwischen Bögen (mm)', 'num', 'Kürzeste gerade Strecke, die die Zange noch greift.'],
   ['clampMax', 'Schellen: größter Abstand (mm)', 'num', 'Entlang des Rohrs, auch über Bögen hinweg.'],
   ['clampBend', 'Schellen: Abstand vom Bogen (mm)', 'num', 'Gemessen vom Bogenende bzw. -anfang.'],
+  ['clampMin', 'Schellen: kleinster Abstand auf einer Geraden (mm)', 'num', 'Kämen zwei Schellen zwischen zwei Bögen näher, wird nur eine in die Mitte gesetzt.'],
   ['clampEnd', 'Schellen: Abstand vom Rohrende (mm)', 'num', ''],
   ['clampH', 'Schellenhöhe (mm)', 'num', 'Untergrund bis Rohrmitte – ergibt den Wandabstand.'],
   ['stock', 'Stangenlänge (mm)', 'num', 'Für den Zuschnitt-Plan.'],
@@ -979,22 +1278,6 @@ function quadMesh(corners, n, c) {
   [a, b, d, a, d, e].forEach(put);
   return data;
 }
-// Rechteck der Fläche: so groß wie Rohr + Rand, an Nachbarflächen (Raumecke) gekappt
-function planeCorners(pl, planes, lo, hi, margin) {
-  const k = planeAxis(pl), ax = [0, 1, 2].filter(i => i !== k);
-  const range = ax.map(i => {
-    let a = lo[i] - margin, b = hi[i] + margin;
-    for (const o of planes) {
-      if (planeAxis(o) !== i) continue;
-      if (PLANE_KINDS[o.kind].side < 0) a = o.c; else b = o.c;
-    }
-    return [a, b];
-  });
-  const pt = (u, v) => { const p = [0, 0, 0]; p[k] = pl.c; p[ax[0]] = u; p[ax[1]] = v; return p; };
-  const [[u0, u1], [v0, v1]] = range;
-  return [pt(u0, v0), pt(u1, v0), pt(u1, v1), pt(u0, v1)];
-}
-
 function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
   if (!initGL()) { glc.hidden = true; return false; }
   const w = Math.round(W * dpr), h = Math.round(H * dpr);
@@ -1066,14 +1349,10 @@ let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
 
-// Andere Rohre derselben Gruppe (Parallelrohre) für die Anzeige
-function groupLayouts(p) {
-  if (!p.group) return [];
-  return db.projects.filter(q => q.group === p.group && q.id !== p.id).map(q => {
-    const f = prof(q);
-    return { layout: computeLayout(points(q), { R: f.R, zugA: q.zugA, zugE: q.zugE, minStraight: f.minStraight }), D: f.D, name: q.name };
-  });
-}
+// Blickrichtung (vom Betrachter weg) in Weltkoordinaten – für die Puppenhaus-Ansicht
+const viewDir = () => { const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch); return [sy * cp, cy * cp, -sp]; };
+// Puppenhaus: Flächen, deren Raumseite vom Betrachter weg zeigt (Wand zwischen uns und dem Raum, Decke von oben), ausblenden
+const planeVisible = pl => { const n = [0, 0, 0]; n[pl.axis] = pl.n; return V.dot(n, viewDir()) < 0.05; };
 
 function render3d() {
   if (!layout || !cv.clientWidth) return;
@@ -1083,23 +1362,26 @@ function render3d() {
   const S = layout.samples;
   if (S.length < 2) return;
   const p = proj(), f = prof(), pal = PAL[isDark() ? 'dark' : 'light'], dark = isDark();
-  const planes = vis.planes ? p.planes : [], ghosts = vis.ghosts ? layout.ghosts || [] : [];
+  const room = layout.room, showRoom = !!room && (vis.planes || camTool === 'room');
+  const planes = showRoom ? layout.planes : [], ghosts = vis.ghosts ? layout.ghosts || [] : [];
+  const pipes = [layout, ...layout.bundle];
 
-  // Grenzen: Rohr, Nachbarrohre, Ziel (Wände zählen nicht, sonst würde das Rohr winzig)
-  const fitPts = [...S.map(s => s.p), ...ghosts.flatMap(g => g.layout.samples.map(s => s.p)), ...(p.target ? [p.target] : [])];
+  // Grenzen fürs Einpassen: Rohre, Ziel; im Raum-Werkzeug der ganze Raum
+  const fitPts = [...pipes.flatMap(L => L.samples.map(s => s.p)), ...(p.target ? [p.target] : [])];
+  if (camTool === 'room' && room) room.outline.forEach(([x, y]) => { fitPts.push([x, y, room.z0 || 0], [x, y, (room.z0 || 0) + room.height]); });
+  if (camTool === 'room' && roomDraw) roomDraw.pts.forEach(([x, y]) => fitPts.push([x, y, roomDraw.z0]));
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   fitPts.forEach(q => q.forEach((v, k) => { mn[k] = Math.min(mn[k], v); mx[k] = Math.max(mx[k], v); }));
   const diag = Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) || 1;
-  const floorPl = planes.find(pl => pl.kind === 'floor');
-  const zf = floorPl ? floorPl.c : mn[2] - Math.max(f.D * 3, diag * 0.12);
+  const zf = room ? room.z0 || 0 : mn[2] - Math.max(f.D * 3, diag * 0.12);
 
   const ortho = isOrtho();
   const pr = fitPts.map(q => project(q));
-  const fp = ortho || !vis.grid ? [] : S.map(s => project([s.p[0], s.p[1], zf]));
+  const fp = ortho || !vis.grid ? [] : pipes.map(L => L.samples.map(s => project([s.p[0], s.p[1], zf])));
   let base = fit;
   if (!base) {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    [...pr, ...(floorPl ? [] : fp)].forEach(q => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
+    [...pr, ...(room ? [] : fp.flat())].forEach(q => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
     // Rand für Gimbal-Pfeile (~70 px) und oben für die Ansichtsbuttons
     const side = Math.min(90, W * 0.12), top = Math.min(120, H * 0.18), bottom = Math.min(80, H * 0.12);
     base = { sc: Math.min((W - 2 * side) / Math.max(x1 - x0, 1), (H - top - bottom) / Math.max(y1 - y0, 1)), mx: (x0 + x1) / 2, my: (y0 + y1) / 2, dy: (top - bottom) / 2 };
@@ -1110,11 +1392,11 @@ function render3d() {
   const cx = W / 2 + cam.panX - base.mx * sc, cyy = H / 2 + base.dy + cam.panY - base.my * sc;
   const P = q => [cx + q.x * sc, cyy + q.y * sc];
   const P3 = q => P(project(q));
-  view = { P3, sc };
+  view = { P3, sc, cx, cyy };
   const tw = Math.max(5, f.D * sc);
 
   if (vis.grid && ortho) {
-    // Ebenenraster der Ansicht statt Boden
+    // Ebenenraster der Ansicht
     const gs = niceStep(28 / sc), px = gs * sc;
     bctx.lineWidth = 1;
     for (const major of [false, true]) {
@@ -1125,81 +1407,103 @@ function render3d() {
       bctx.stroke();
     }
   } else if (vis.grid) {
-    // Boden (bzw. eingetragener Boden): Raster und weicher Schatten
-    const step = niceStep(diag / 6);
-    const gx0 = Math.floor(mn[0] / step - 1) * step, gx1 = Math.ceil(mx[0] / step + 1) * step;
-    const gy0 = Math.floor(mn[1] / step - 1) * step, gy1 = Math.ceil(mx[1] / step + 1) * step;
+    // Boden: Raster (im Raum über den ganzen Grundriss) und weicher Schatten der Rohre
+    const lo = room ? [Math.min(...room.outline.map(q => q[0])), Math.min(...room.outline.map(q => q[1]))] : [mn[0], mn[1]];
+    const hi = room ? [Math.max(...room.outline.map(q => q[0])), Math.max(...room.outline.map(q => q[1]))] : [mx[0], mx[1]];
+    const step = niceStep(Math.hypot(hi[0] - lo[0], hi[1] - lo[1]) / 8 || diag / 6);
+    const pad = room ? 0 : 1;
+    const gx0 = Math.floor(lo[0] / step - pad) * step, gx1 = Math.ceil(hi[0] / step + pad) * step;
+    const gy0 = Math.floor(lo[1] / step - pad) * step, gy1 = Math.ceil(hi[1] / step + pad) * step;
+    bctx.save();
+    if (room) { // Raster nur innerhalb des Grundrisses
+      bctx.beginPath(); room.outline.forEach(([x, y], i) => { const [a, b] = P3([x, y, zf]); i ? bctx.lineTo(a, b) : bctx.moveTo(a, b); }); bctx.closePath(); bctx.clip();
+    }
     bctx.strokeStyle = pal.grid; bctx.lineWidth = 1; bctx.beginPath();
     for (let x = gx0; x <= gx1 + 1e-6; x += step) { const [ax, ay] = P3([x, gy0, zf]), [bx, by] = P3([x, gy1, zf]); bctx.moveTo(ax, ay); bctx.lineTo(bx, by); }
     for (let y = gy0; y <= gy1 + 1e-6; y += step) { const [ax, ay] = P3([gx0, y, zf]), [bx, by] = P3([gx1, y, zf]); bctx.moveTo(ax, ay); bctx.lineTo(bx, by); }
     bctx.stroke();
+    bctx.restore();
     const off = 10000; // Pfad außerhalb zeichnen, nur der Schatten fällt ins Bild
     bctx.save();
     bctx.shadowColor = pal.shadow; bctx.shadowBlur = Math.max(6, tw * 2) * dpr; bctx.shadowOffsetX = off * dpr;
     bctx.lineWidth = tw * 1.3; bctx.lineCap = 'round'; bctx.lineJoin = 'round'; bctx.strokeStyle = '#000';
-    bctx.beginPath();
-    fp.forEach((q, i) => { const [x, y] = P(q); i ? bctx.lineTo(x - off, y) : bctx.moveTo(x - off, y); });
-    bctx.stroke();
+    fp.forEach(line => { bctx.beginPath(); line.forEach((q, i) => { const [x, y] = P(q); i ? bctx.lineTo(x - off, y) : bctx.moveTo(x - off, y); }); bctx.stroke(); });
     bctx.restore();
   }
 
-  // 3D-Szene: Rohr, Nachbarrohre, Schellen-Hülsen, Flächen
+  // 3D-Szene: Rohre, Nachbarrohre im Raum, Schellen-Hülsen, Raumflächen
   const r = Math.max(f.D / 2, 2.5 / sc);
   const steel = dark ? [0.56, 0.6, 0.66] : [0.66, 0.7, 0.75], orange = [0.91, 0.36, 0.06];
   const ghostCol = dark ? [0.36, 0.4, 0.46] : [0.82, 0.85, 0.89], clampCol = dark ? [0.85, 0.86, 0.9] : [0.2, 0.22, 0.26];
-  const opaque = tubeMesh(S, r, (a, b) => (a.b >= 0 && a.b === b.b && a.b === highlight ? orange : steel));
-  const add = (arr, out = opaque) => { for (let i = 0; i < arr.length; i++) out.push(arr[i]); };
-  ghosts.forEach(g => add(tubeMesh(g.layout.samples, Math.max(g.D / 2, 2.5 / sc), () => ghostCol)));
-  if (vis.clamps) layout.clampInfo.forEach(c => add(tubeMesh([{ p: V.sub(c.p, V.mul(c.t, 5)), b: -1 }, { p: V.add(c.p, V.mul(c.t, 5)), b: -1 }], r * 1.45 + 0.8, () => clampCol)));
-  const trans = [], quads = [];
-  planes.forEach(pl => {
-    const corners = planeCorners(pl, planes, mn, mx, Math.max(150, diag * 0.25)), n = [0, 0, 0];
-    n[planeAxis(pl)] = -PLANE_KINDS[pl.kind].side;
-    quads.push({ pl, corners });
-    add(quadMesh(corners, n, pl.kind === 'floor' || pl.kind === 'ceil' ? [0.55, 0.62, 0.72] : [0.85, 0.74, 0.55]), trans);
+  const opaque = [], add = (arr, out = opaque) => { for (let i = 0; i < arr.length; i++) out.push(arr[i]); };
+  pipes.forEach((L, k) => add(tubeMesh(L.samples, r, (a, b) => (k === guidePipe && a.b >= 0 && a.b === b.b && a.b === highlight ? orange : steel))));
+  ghosts.forEach(g => add(tubeMesh(g.samples, Math.max(g.D / 2, 2.5 / sc), () => ghostCol)));
+  const clampSets = pipes.map(L => L.clampInfo);
+  if (vis.clamps) clampSets.flat().forEach(c => add(tubeMesh([{ p: V.sub(c.p, V.mul(c.t, 5)), b: -1 }, { p: V.add(c.p, V.mul(c.t, 5)), b: -1 }], r * 1.45 + 0.8, () => clampCol)));
+  const trans = [], wallCol = [0.85, 0.74, 0.55], floorCol = [0.55, 0.62, 0.72];
+  const visiblePlanes = planes.filter(planeVisible);
+  visiblePlanes.forEach(pl => {
+    const n = [0, 0, 0]; n[pl.axis] = pl.n;
+    if (pl.poly) { // Boden/Decke: Grundriss in Dreiecken
+      triangulate(pl.poly).forEach(([i, j, k]) => add([pl.poly[i], pl.poly[j], pl.poly[k]].flatMap(([x, y]) => [x, y, pl.c, ...n, ...floorCol]), trans));
+    } else {
+      const u = pl.axis === 0 ? 1 : 0, e = pl.ext, pt = (a, z) => { const q = [0, 0, z]; q[pl.axis] = pl.c; q[u] = a; return q; };
+      add(quadMesh([pt(e[u][0], e[2][0]), pt(e[u][1], e[2][0]), pt(e[u][1], e[2][1]), pt(e[u][0], e[2][1])], n, wallCol), trans);
+    }
   });
   if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans })) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = tw; ctx.strokeStyle = css('--tube');
-    ctx.beginPath(); S.forEach((s, i) => { const [x, y] = P3(s.p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+    pipes.forEach(L => { ctx.beginPath(); L.samples.forEach((s, i) => { const [x, y] = P3(s.p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); });
   }
 
   const cMark = css('--mark'), cAcc = css('--accent'), cText = css('--text'), cMuted = css('--muted');
   ctx.font = '600 12px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-  // Flächen: Kante und Name
-  quads.forEach(({ pl, corners }) => {
-    const sp = corners.map(P3);
-    ctx.strokeStyle = cMuted; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
-    ctx.beginPath(); sp.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
+  // Raum: Grundriss am Boden und Deckenkanten, Wandnamen auf sichtbaren Wänden
+  if (showRoom) {
+    const z0 = room.z0 || 0, z1 = z0 + room.height;
+    ctx.strokeStyle = cMuted; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.8;
+    for (const z of [z0, z1]) {
+      ctx.setLineDash(z === z1 ? [4, 4] : []);
+      ctx.beginPath(); room.outline.forEach(([x, y], i) => { const [a, b] = P3([x, y, z]); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); }); ctx.closePath(); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    room.outline.forEach(([x, y]) => { const [a, b] = P3([x, y, z0]), [c, d] = P3([x, y, z1]); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); });
     ctx.globalAlpha = 1;
-    const [lx, ly] = sp.reduce((m, q) => (q[1] < m[1] ? q : m)); // oberste Ecke
-    ctx.fillStyle = cMuted; ctx.textAlign = 'left'; ctx.fillText(PLANE_KINDS[pl.kind].name, Math.min(Math.max(lx + 6, 6), W - 90), Math.max(ly + 10, 60));
-    ctx.textAlign = 'center';
-  });
+    visiblePlanes.filter(pl => pl.kind === 'wall').forEach(pl => {
+      const u = pl.axis === 0 ? 1 : 0, q = [0, 0, z1 - Math.min(150, room.height * 0.08)];
+      q[pl.axis] = pl.c; q[u] = (pl.ext[u][0] + pl.ext[u][1]) / 2;
+      const [x, y] = P3(q);
+      ctx.fillStyle = cMuted; ctx.fillText(pl.name + (pl.pass ? ' ⇄' : ''), x, y);
+    });
+  }
 
+  const ML = guidePipe ? layout.bundle[guidePipe - 1] || layout : layout; // Markierungen des Rohrs aus der Anleitung
   if (vis.dims) {
     // Achsmaß-Ecken: gestrichelt vom Biegeanfang zum Schnittpunkt zum Biegeende
     ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.strokeStyle = cAcc; ctx.globalAlpha = 0.7;
     ctx.beginPath();
-    layout.bends.forEach(b => {
+    pipes.forEach(L => L.bends.forEach(b => {
       const [ax, ay] = P3(V.sub(b.vertex, V.mul(b.din, b.T))), [vx, vy] = P3(b.vertex), [ex2, ey2] = P3(V.add(b.vertex, V.mul(b.dout, b.T)));
       ctx.moveTo(ax, ay); ctx.lineTo(vx, vy); ctx.lineTo(ex2, ey2);
-    });
+    }));
     ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
-    // Maße an den Schenkeln
-    for (let i = 1; i < layout.verts.length; i++) {
-      const a = layout.verts[i - 1], b = layout.verts[i];
-      const [x, y] = P3([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
-      const t = fmt(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
-      const w = ctx.measureText(t).width + 10;
-      ctx.fillStyle = css('--card'); ctx.fillRect(x - w / 2, y - 26, w, 18);
-      ctx.strokeStyle = cAcc; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, y - 26, w, 18);
-      ctx.fillStyle = cAcc; ctx.fillText(t, x, y - 17);
-    }
+    // Maße an den Schenkeln (Rohr 1 und das Rohr aus der Anleitung)
+    [...new Set([layout, ML])].forEach(L => {
+      for (let i = 1; i < L.verts.length; i++) {
+        const a = L.verts[i - 1], b = L.verts[i];
+        const [x, y] = P3([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
+        const t = fmt(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
+        const w = ctx.measureText(t).width + 10;
+        ctx.fillStyle = css('--card'); ctx.fillRect(x - w / 2, y - 26, w, 18);
+        ctx.strokeStyle = cAcc; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, y - 26, w, 18);
+        ctx.fillStyle = cAcc; ctx.fillText(t, x, y - 17);
+      }
+    });
   }
 
   // Schellen: Halter zur Wand, Nummer; ohne Befestigung orange
-  if (vis.clamps) layout.clampInfo.forEach((c, i) => {
+  if (vis.clamps) clampSets.forEach((set, k) => set.forEach((c, i) => {
     const [x, y] = P3(c.p);
     if (c.q) {
       const [qx, qy] = P3(c.q);
@@ -1207,27 +1511,26 @@ function render3d() {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(qx, qy); ctx.stroke();
       ctx.fillStyle = ctx.strokeStyle; ctx.fillRect(qx - 4, qy - 4, 8, 8);
     }
-    const big = camTool === 'clamp';
-    ctx.fillStyle = c.mount || !p.planes.length ? (dark ? '#d0d4da' : '#3b4048') : '#f08c00';
+    const big = camTool === 'clamp' && k === 0;
+    ctx.fillStyle = c.mount || !room ? (dark ? '#d0d4da' : '#3b4048') : '#f08c00';
     ctx.beginPath(); ctx.arc(x, y, big ? 9 : 6, 0, 7); ctx.fill();
-    if (big || vis.dims) { ctx.fillStyle = cText; ctx.font = '600 10px system-ui'; ctx.fillText(`S${i + 1}`, x + 14, y - 10); ctx.font = '600 12px -apple-system, system-ui, sans-serif'; }
-  });
+    if (k === 0 && (big || vis.dims)) { ctx.fillStyle = cText; ctx.font = '600 10px system-ui'; ctx.fillText(`S${i + 1}`, x + 14, y - 10); ctx.font = '600 12px -apple-system, system-ui, sans-serif'; }
+  }));
 
-  // Selbstberührungen und Flächen-Treffer
+  // Selbstberührungen und Raum-Treffer
   (layout.collisions || []).forEach(c => {
     const [x, y] = P3(c.p);
     ctx.strokeStyle = '#e03131'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(x, y, Math.max(12, tw * 1.5), 0, 7); ctx.stroke();
   });
-  (layout.hits || []).forEach(h => {
-    if (!vis.planes) return;
-    const [x, y] = P3(h.p), ok = h.type === 'through' && h.plane.pass;
+  pipes.flatMap(L => L.hits || []).forEach(h => {
+    const [x, y] = P3(h.p), ok = h.type === 'through' && h.plane?.pass;
     ctx.strokeStyle = ok ? cAcc : '#e03131'; ctx.lineWidth = 3; ctx.setLineDash(ok ? [4, 3] : []);
     ctx.beginPath(); ctx.arc(x, y, Math.max(12, tw * 1.6), 0, 7); ctx.stroke(); ctx.setLineDash([]);
   });
 
   // Ziel-Anschluss: Fadenkreuz, gestrichelte Linie vom Rohrende
-  if (p.target) {
+  if (p.target && layout.targetDelta) {
     const [tx, ty] = P3(p.target), [ex, ey] = P3(layout.E), hit = V.len(layout.targetDelta) < 0.5;
     const col = hit ? css('--ok') : '#7048e8';
     if (!hit) { ctx.setLineDash([4, 4]); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]); }
@@ -1236,16 +1539,17 @@ function render3d() {
     ctx.fillStyle = col; ctx.font = '700 11px system-ui'; ctx.fillText('Ziel', tx, ty + 26); ctx.font = '600 12px -apple-system, system-ui, sans-serif';
   }
 
-  // Strich-Markierungen
-  if (vis.marks) layout.bends.forEach((b, j) => {
-    const [x, y] = P3(pointAt(S, b.mark));
+  // Strich-Markierungen (des Rohrs aus der Anleitung) und Rohranfänge
+  if (vis.marks) ML.bends.forEach((b, j) => {
+    const [x, y] = P3(pointAt(ML.samples, b.mark));
     ctx.fillStyle = cMark; ctx.beginPath(); ctx.arc(x, y, j === highlight ? 12 : 10, 0, 7); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = '700 12px -apple-system, system-ui, sans-serif'; ctx.fillText(j + 1, x, y + 0.5);
   });
-  const [sx, sy] = P3(S[0].p);
-  ctx.fillStyle = cText; ctx.font = '700 13px -apple-system, system-ui, sans-serif'; ctx.fillText('A', sx - 14, sy - 12);
+  ctx.fillStyle = cText; ctx.font = '700 13px -apple-system, system-ui, sans-serif';
+  { const [sx, sy] = P3(S[0].p); ctx.fillText('A', sx - 14, sy - 12); } // Parallelrohre beginnen daneben – ein „A“ genügt
 
-  if (camTool !== 'clamp' && !printing) {
+  if (camTool === 'room') { gizmo = []; drawRoomOverlay(P3); }
+  else if (camTool !== 'clamp' && !printing) {
     if (ortho) drawEditOverlay(P3, cAcc);
     drawGizmo();
   } else gizmo = [];
@@ -1334,7 +1638,7 @@ function dragTo(clientX, clientY) {
 function endDrag() {
   const { i, committed, before } = drag;
   drag = null;
-  if (!committed) Object.assign(proj(), before); // nur angetippt: auch den Moduswechsel zurücknehmen
+  if (!committed) restoreSnapshot(proj(), before); // nur angetippt: auch den Moduswechsel zurücknehmen
   renderInputs(); recompute(); selectLeg(i);
 }
 
@@ -1556,13 +1860,15 @@ function drawGizmo() {
   // Ringe am Biegepunkt des gewählten Schenkels
   if (sel >= 1 && (!gz || gz.type === 'bend' || gz.type === 'rot')) {
     const i = sel, A = pts[i], { p, q, w, theta } = ringBasis(i, pts);
-    if (!gz || gz.type === 'rot') {
+    // Von der Kante gesehene Ringe (nur noch ein Strich) sind nicht bedienbar und würden Anfasser verdecken
+    const flat = poly => { const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]); return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < 14; };
+    if ((!gz || gz.type === 'rot') && !flat(ringPts(A, q, w, 40 / sc, 0, 360, 30))) {
       const ring = ringPts(A, q, w, 40 / sc, 0, 360, 4);
       ctx.save(); ctx.globalAlpha = 0.85; polyline(ring, C_ROT, 3); ctx.restore();
       knob(...ring[0], 8, C_ROT);
       gizmo.push({ type: 'rot', i, poly: ring });
     }
-    if (!gz || gz.type === 'bend') {
+    if ((!gz || gz.type === 'bend') && !flat(ringPts(A, p, q, 66 / sc, 0, 180, 30))) {
       const arc = ringPts(A, p, q, 66 / sc, 0, 180, 3);
       ctx.save(); ctx.globalAlpha = 0.9; polyline(arc, C_BEND, 3); ctx.restore();
       ringPts(A, p, q, 66 / sc, ANGLE_STEP, 180 - ANGLE_STEP, ANGLE_STEP).forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7); ctx.fillStyle = C_BEND; ctx.fill(); });
@@ -1703,7 +2009,7 @@ function gzEnd() {
     if (last) setDelta(p.deltas.length - 1, V.mul(g.d, g.L0 + 50));
     else { p.deltas.push({ x: 0, y: 0, z: 0 }); setDelta(p.deltas.length - 1, V.mul(g.a, Math.max(100, g.min.newLeg))); }
   } else if (!g.committed) {
-    Object.assign(p, g.before); // nichts geändert: auch den Moduswechsel zurücknehmen
+    restoreSnapshot(p, g.before); // nichts geändert: auch den Moduswechsel zurücknehmen
   }
   if (!isOrtho()) fit = null; // in 3D nach dem Loslassen neu einpassen
   renderInputs(); recompute();
@@ -1718,10 +2024,10 @@ function snapLen(start, dir, L) {
   const p = proj(), f = prof(p), tol = hitTol(12) / view.sc, cands = [];
   const k = [0, 1, 2].find(i => Math.abs(Math.abs(dir[i]) - 1) < 1e-6);
   if (k === undefined) return { L };
-  for (const pl of p.planes) {
-    if (planeAxis(pl) !== k) continue;
+  for (const pl of layout.planes) {
+    if (pl.axis !== k) continue;
     const Lw = (pl.c - start[k]) * dir[k] - f.clampH;
-    if (Lw > 0) cands.push({ L: Lw, tag: `Schellenhöhe vor ${PLANE_KINDS[pl.kind].name}` });
+    if (Lw > 0) cands.push({ L: Lw, tag: `Schellenhöhe vor ${pl.name}` });
   }
   if (p.target) {
     const Lt = (p.target[k] - start[k]) * dir[k];
@@ -1739,12 +2045,18 @@ function toast(msg) {
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 3500);
 }
 function setTool(tool) {
+  const p = proj();
+  if (tool === 'room' && !roomOf(p)) { commit(); const r = newRoomAround(p); db.rooms.push(r); p.roomId = r.id; recompute(); toast('Raum ums Rohr angelegt – jetzt Wände ziehen oder neu zeichnen.'); }
+  if (tool !== 'room') roomDraw = null;
+  if (tool !== camTool) fit = null;
   camTool = tool;
-  $('#clampTool').classList.toggle('on', tool === 'clamp');
+  $$('.toolseg button').forEach(b => b.classList.toggle('on', b.dataset.tool === tool));
+  renderRoomBar();
   if (tool === 'clamp') { selectLeg(-1); toast('Rohr antippen = Schelle setzen · Schelle ziehen = verschieben · antippen = löschen'); }
+  if (tool === 'room') { selectLeg(-1); if (!roomDraw) toast('Wand ziehen = verschieben · Maß antippen = Länge eingeben'); }
   draw();
 }
-$('#clampTool').addEventListener('click', () => setTool(camTool === 'clamp' ? 'edit' : 'clamp'));
+$('.toolseg').addEventListener('click', e => { const t = e.target.closest('button')?.dataset.tool; if (t) setTool(t); });
 $('#visBtn').addEventListener('click', () => {
   const pop = $('#visPop');
   pop.hidden = !pop.hidden;
@@ -1817,6 +2129,190 @@ function clampUp() {
   recompute();
 }
 
+// ---------- Raum-Werkzeug in 3D: Grundriss zeichnen, Wände ziehen, Maße antippen ----------
+let roomDraw = null;   // beim Zeichnen: { pts: [[x, y]…], hover, z0 }
+let roomDrag = null;   // beim Ziehen einer Wand
+let roomLabels = [];   // Trefferflächen der Maßzahlen
+
+// Bildschirmpunkt → Punkt auf dem Boden (Höhe z0); von der Seite gesehen nicht möglich
+function floorPoint(X, Y, z0) {
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  if (sp < 0.15) return null;
+  const a = (X - view.cx) / view.sc, b = (Y - view.cyy) / view.sc, m = (-b - z0 * cp) / sp;
+  return [cy * a + sy * m, -sy * a + cy * m];
+}
+const roomGrid = () => Math.min(100, Math.max(10, niceStep(14 / view.sc))); // Fangraster 10 … 100 mm
+const snapG = (v, g = roomGrid()) => Math.round(v / g) * g;
+
+function renderRoomBar() {
+  const bar = $('#roomBar');
+  bar.hidden = camTool !== 'room';
+  if (bar.hidden) return;
+  bar.innerHTML = roomDraw
+    ? `<span>${roomDraw.pts.length < 3 ? 'Ecken auf dem Boden antippen' : 'Ersten Punkt antippen oder „Schließen“'}</span>
+       <button data-rb="cancel">Abbrechen</button><button data-rb="undo"${roomDraw.pts.length ? '' : ' disabled'}>↶ Punkt</button><button data-rb="close" class="primary"${roomDraw.pts.length >= 3 ? '' : ' disabled'}>Schließen</button>`
+    : `<span>Wand ziehen · Maß antippen</span><button data-rb="new">✎ Neu zeichnen</button><button data-rb="done" class="primary">Fertig</button>`;
+}
+$('#roomBar').addEventListener('click', e => {
+  const k = e.target.closest('button')?.dataset.rb;
+  if (!k) return;
+  if (k === 'new') startRoomDraw();
+  else if (k === 'cancel') { roomDraw = null; renderRoomBar(); draw(); }
+  else if (k === 'undo') { roomDraw.pts.pop(); renderRoomBar(); draw(); }
+  else if (k === 'close') closeRoomDraw();
+  else if (k === 'done') setTool('edit');
+});
+
+function startRoomDraw() {
+  const p = proj();
+  if (!roomOf(p)) { commit(); const r = newRoomAround(p); db.rooms.push(r); p.roomId = r.id; recompute(); }
+  roomDraw = { pts: [], hover: null, z0: roomOf(p).z0 || 0 };
+  // auf dem Handy liegt die 3D-Ansicht in einem eigenen Reiter
+  if (!cv.clientWidth) $('[data-tab=view]').click();
+  setTool('room');
+  resetView('top');
+  cam.zoom = 0.6; // Platz rund um den bisherigen Raum zum Zeichnen
+  draw();
+}
+function closeRoomDraw() {
+  const pts = roomDraw.pts, first = pts[0], last = pts.at(-1);
+  if (pts.length < 3) return;
+  // letzte Kante rechtwinklig schließen: notfalls eine Ecke einfügen. Wände wechseln sich ab (waagrecht/senkrecht),
+  // also geht es nach einer senkrechten letzten Kante erst waagrecht zurück und umgekehrt.
+  if (Math.abs(last[0] - first[0]) > 0.5 && Math.abs(last[1] - first[1]) > 0.5) {
+    const prev = pts.at(-2), lastVertical = prev && Math.abs(prev[0] - last[0]) < 0.5;
+    pts.push(lastVertical ? [first[0], last[1]] : [last[0], first[1]]);
+  }
+  const o = cleanOutline(pts);
+  if (o.length < 4 || Math.abs(signedArea(o)) < 1e5) { toast('Der Grundriss ist zu klein – bitte neu zeichnen.'); return; }
+  const room = roomOf();
+  commit();
+  room.outline = o; room.pass = {};
+  roomDraw = null; fit = null;
+  recompute(); renderRoomTab(); renderRoomBar();
+  toast(`Grundriss mit ${o.length} Wänden übernommen. Wände ziehen oder Maße antippen zum Anpassen.`);
+}
+// Nächster Rasterpunkt; rechtwinklig zum letzten Punkt
+function drawSnap(X, Y) {
+  const q = floorPoint(X, Y, roomDraw.z0);
+  if (!q) return null;
+  const s = [snapG(q[0]), snapG(q[1])], last = roomDraw.pts.at(-1);
+  if (last) { if (Math.abs(s[0] - last[0]) >= Math.abs(s[1] - last[1])) s[1] = last[1]; else s[0] = last[0]; }
+  return s;
+}
+function roomTap(x, y) {
+  if (!roomDraw) {
+    const lb = roomLabels.find(l => x >= l.x - l.w / 2 - 6 && x <= l.x + l.w / 2 + 6 && y >= l.y - 14 && y <= l.y + 14);
+    if (lb) {
+      const room = roomOf(), v = prompt(`Länge ${lb.name} (mm):`, String(r1(edgeLen(room.outline, lb.edge))));
+      if (v == null) return;
+      commit();
+      if (!setEdgeLen(room, lb.edge, num(v))) toast('Diese Länge passt nicht in den Grundriss.');
+      recompute(); renderRoomTab();
+    }
+    return;
+  }
+  if (floorPoint(x, y, roomDraw.z0) == null) { toast('Zum Zeichnen von oben schauen (Ansicht „Oben“ oder 3D).'); return; }
+  const first = roomDraw.pts[0];
+  if (first && roomDraw.pts.length >= 3) {
+    const [fx, fy] = view.P3([first[0], first[1], roomDraw.z0]);
+    if (Math.hypot(fx - x, fy - y) < hitTol(18)) { closeRoomDraw(); return; }
+  }
+  const s = drawSnap(x, y), last = roomDraw.pts.at(-1);
+  if (last && Math.hypot(s[0] - last[0], s[1] - last[1]) < 1) return;
+  roomDraw.pts.push(s);
+  renderRoomBar(); draw();
+}
+function roomHover(x, y) {
+  if (!roomDraw) return;
+  roomDraw.hover = drawSnap(x, y);
+  draw();
+}
+
+// Wand ziehen: beide Ecken der Kante wandern senkrecht zur Wand
+function hitEdge(x, y) {
+  const room = roomOf();
+  if (!room || roomDraw) return -1;
+  const z0 = room.z0 || 0, o = room.outline;
+  let best = -1, bd = hitTol(14);
+  o.forEach((a, i) => {
+    const b = o[(i + 1) % o.length], d = segDist(x, y, ...view.P3([a[0], a[1], z0]), ...view.P3([b[0], b[1], z0]));
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+function roomDown(e, lx, ly) {
+  if (roomDraw) return false;
+  if (roomLabels.some(l => lx >= l.x - l.w / 2 - 6 && lx <= l.x + l.w / 2 + 6 && ly >= l.y - 14 && ly <= l.y + 14)) return false; // Antippen auf Maß: beim Loslassen
+  const i = hitEdge(lx, ly);
+  if (i < 0) return false;
+  const room = roomOf(), o = room.outline, a = o[i], b = o[(i + 1) % o.length];
+  roomDrag = { edge: i, axis: Math.abs(b[0] - a[0]) > 1e-6 ? 1 : 0, before: snapshot(proj()), moved: false, sx: e.clientX, sy: e.clientY };
+  fit = lastBase;
+  return true;
+}
+function roomMove(e) {
+  const [lx, ly] = local(e), room = roomOf();
+  if (!roomDrag.moved && Math.hypot(e.clientX - roomDrag.sx, e.clientY - roomDrag.sy) < 4) return;
+  const q = floorPoint(lx, ly, room.z0 || 0);
+  if (!q) return;
+  if (!roomDrag.moved) { roomDrag.moved = true; commit(null, roomDrag.before); }
+  const o = structuredClone(room.outline), n = o.length, v = snapG(q[roomDrag.axis], 10);
+  o[roomDrag.edge][roomDrag.axis] = v; o[(roomDrag.edge + 1) % n][roomDrag.axis] = v;
+  if (o.every((_, k) => edgeLen(o, k) >= 50)) room.outline = o;
+  recompute(true);
+}
+function roomUp() {
+  const moved = roomDrag.moved;
+  roomDrag = null;
+  if (moved) { recompute(); renderRoomTab(); }
+}
+
+// Anzeige im Raum-Werkzeug: Maße der Wände bzw. der gezeichnete Grundriss
+function drawRoomOverlay(P3) {
+  roomLabels = [];
+  const cAcc = css('--accent'), card = css('--card');
+  const label = (t, x, y, col = cAcc) => {
+    ctx.font = '700 12px -apple-system, system-ui, sans-serif';
+    const w = ctx.measureText(t).width + 12;
+    ctx.fillStyle = card; ctx.fillRect(x - w / 2, y - 11, w, 22);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.strokeRect(x - w / 2, y - 11, w, 22);
+    ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, x, y + 0.5);
+    return w;
+  };
+  if (roomDraw) {
+    const z0 = roomDraw.z0, pts = roomDraw.pts.map(([x, y]) => P3([x, y, z0]));
+    ctx.strokeStyle = cAcc; ctx.lineWidth = 3;
+    ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+    if (roomDraw.hover && pts.length) {
+      const [hx, hy] = P3([roomDraw.hover[0], roomDraw.hover[1], z0]), last = roomDraw.pts.at(-1);
+      ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(...pts.at(-1)); ctx.lineTo(hx, hy); ctx.stroke(); ctx.setLineDash([]);
+      const L = Math.hypot(roomDraw.hover[0] - last[0], roomDraw.hover[1] - last[1]);
+      if (L > 0) label(`${fmt(L)} mm`, (pts.at(-1)[0] + hx) / 2, (pts.at(-1)[1] + hy) / 2 - 16);
+    }
+    roomDraw.pts.forEach((q, i) => { if (i) { const a = roomDraw.pts[i - 1]; label(fmt(Math.hypot(q[0] - a[0], q[1] - a[1])), (pts[i - 1][0] + pts[i][0]) / 2, (pts[i - 1][1] + pts[i][1]) / 2 - 16, css('--muted')); } });
+    pts.forEach(([x, y], i) => { ctx.beginPath(); ctx.arc(x, y, i === 0 && pts.length >= 3 ? 10 : 6, 0, 7); ctx.fillStyle = i === 0 ? css('--mark') : cAcc; ctx.fill(); });
+    if (roomDraw.hover) { const [hx, hy] = P3([roomDraw.hover[0], roomDraw.hover[1], z0]); ctx.strokeStyle = cAcc; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx, hy, 7, 0, 7); ctx.stroke(); }
+    return;
+  }
+  const room = roomOf();
+  if (!room) return;
+  const z0 = room.z0 || 0, o = room.outline, walls = layout.planes.filter(q => q.kind === 'wall');
+  o.forEach((a, i) => {
+    const b = o[(i + 1) % o.length], [ax, ay] = P3([a[0], a[1], z0]), [bx, by] = P3([b[0], b[1], z0]);
+    const active = roomDrag?.edge === i;
+    ctx.strokeStyle = cAcc; ctx.globalAlpha = active ? 1 : 0.55; ctx.lineWidth = active ? 6 : 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.globalAlpha = 1;
+    // Maß außen neben der Wand
+    const w = walls.find(q => q.edge === i), out = w ? -w.n : 0, m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, z0], off = 26 / view.sc;
+    if (w) m[w.axis] += out * off;
+    const [lx, ly] = P3(m), name = w ? w.name : `Kante ${i + 1}`;
+    const lw = label(`${w ? wallLetter(i) + ' · ' : ''}${fmt(edgeLen(o, i))}`, lx, ly);
+    roomLabels.push({ x: lx, y: ly, w: lw, edge: i, name });
+  });
+  o.forEach(([x, y]) => { const [a, b] = P3([x, y, z0]); ctx.fillStyle = cAcc; ctx.beginPath(); ctx.arc(a, b, 4, 0, 7); ctx.fill(); });
+}
+
 // ---------- Zeiger ----------
 // Gimbal hat Vorrang. Iso: ziehen = drehen. Ortho: Anfasser ziehen = bearbeiten, Hintergrund ziehen = verschieben.
 // Schenkel antippen = auswählen.
@@ -1858,9 +2354,11 @@ cv.addEventListener('pointerdown', e => {
   if (ptrs.size === 1 && view) {
     const [lx, ly] = local(e);
     if (camTool === 'clamp') { if (clampDown(e, lx, ly)) return; }
-    const g = camTool === 'clamp' ? null : hitGizmo(lx, ly);
+    if (camTool === 'room') { if (roomDown(e, lx, ly)) return; }
+    // Gimbal und Schnittpunkt-Anfasser gehören nur zum Werkzeug „Rohr“
+    const g = camTool === 'edit' ? hitGizmo(lx, ly) : null;
     if (g) { gzStart(g, e); return; }
-    const i = isOrtho() ? hitVertex(lx, ly) : -1;
+    const i = camTool === 'edit' && isOrtho() ? hitVertex(lx, ly) : -1;
     if (i >= 0) {
       const before = snapshot(proj());
       ensureDeltas();
@@ -1872,7 +2370,8 @@ cv.addEventListener('pointerdown', e => {
 });
 cv.addEventListener('pointermove', e => {
   const prev = ptrs.get(e.pointerId);
-  if (!prev) return;
+  if (!prev) { if (camTool === 'room' && roomDraw && view) roomHover(...local(e)); return; } // Vorschau beim Zeichnen (Maus)
+  if (roomDrag && ptrs.size === 1) { roomMove(e); return; }
   if (clampDrag && ptrs.size === 1) { clampMove(e); return; }
   if (gz && ptrs.size === 1) { gzMove(e); return; }
   if (drag && ptrs.size === 1) { dragTo(e.clientX, e.clientY); return; }
@@ -1894,14 +2393,16 @@ cv.addEventListener('pointerup', e => {
   const pt = ptrs.get(e.pointerId);
   ptrs.delete(e.pointerId);
   if (clampDrag) { clampUp(); return; }
+  if (roomDrag) { roomUp(); return; }
   if (gz) { gzEnd(); return; }
   if (drag) { endDrag(); return; }
-  if (camTool !== 'clamp' && pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
+  if (pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
-    selectLeg(hitLeg(lx, ly));
-  }
+    if (camTool === 'room') roomTap(lx, ly);
+    else if (camTool === 'edit') selectLeg(hitLeg(lx, ly));
+  } else if (camTool === 'room' && roomDraw && pt && e.pointerType !== 'mouse') roomHover(...local(e));
 });
-cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); if (clampDrag) clampUp(); if (gz) gzEnd(); if (drag) endDrag(); });
+cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); if (clampDrag) clampUp(); if (roomDrag) roomUp(); if (gz) gzEnd(); if (drag) endDrag(); });
 cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); draw(); }, { passive: false });
 $('.viewbtns').addEventListener('click', e => { const v = e.target.closest('button')?.dataset.view; if (v) resetView(v); });
 new ResizeObserver(() => draw()).observe($('#viewwrap'));
@@ -1914,6 +2415,8 @@ $('.tabbar').addEventListener('click', e => {
   $$('.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
   if (t === 'tools') renderTools();
+  if (t === 'room') renderRoomTab();
+  if (t === 'input') requestAnimationFrame(drawMini);
   window.scrollTo(0, 0);
   draw();
 });
@@ -2043,7 +2546,7 @@ $('#offDlg').addEventListener('click', e => { if (e.target.id === 'offDlg') $('#
 $('#offNew').addEventListener('click', () => openOffset('new'));
 $('#offLegView').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
 $('#lpOff').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#offDlg').hidden = true; $('#parDlg').hidden = true; $('#visPop').hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#offDlg').hidden = true; $('#visPop').hidden = true; } });
 
 // ---------- Version / Update ----------
 // Eigene Version aus version.js; beim Öffnen und beim Zurückkehren in die App mit dem Server vergleichen.
@@ -2077,9 +2580,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 // Auf dem iPhone über das Teilen-Menü (AirDrop, Dateien, Mail …), sonst als Download.
 async function exportProject() {
   const p = proj();
-  const projects = p.group ? db.projects.filter(q => q.group === p.group) : [p];
+  const projects = [p];
   const profiles = db.profiles.filter(f => projects.some(q => q.profileId === f.id));
-  const data = { format: 'rohrbiegen', version: 1, app: APP_VERSION, exported: new Date().toISOString(), projects, profiles };
+  const rooms = db.rooms.filter(r => projects.some(q => q.roomId === r.id));
+  const data = { format: 'rohrbiegen', version: 2, app: APP_VERSION, exported: new Date().toISOString(), projects, profiles, rooms };
   const name = `${p.name.replace(/[^\wäöüÄÖÜß -]+/g, '').trim() || 'Rohr'}.rohrbiegen.json`;
   const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
   try {
@@ -2102,11 +2606,13 @@ async function importFile(file) {
     if (same) profMap[f.id] = same.id;
     else { const n = { ...structuredClone(f), id: uid() }; db.profiles.push(n); profMap[f.id] = n.id; }
   });
-  const groupMap = {};
+  // Räume bekommen neue IDs; ältere Dateien (Version 1) bringen Flächen mit, die migrate() in Räume umwandelt
+  const roomMap = {};
+  (data.rooms || []).forEach(r => { const n = { ...structuredClone(r), id: uid() }; db.rooms.push(n); roomMap[r.id] = n.id; });
   const added = data.projects.map(q => {
     const n = { ...structuredClone(q), id: uid() };
     n.profileId = profMap[q.profileId] || db.profiles[0].id;
-    if (q.group) n.group = groupMap[q.group] ||= uid();
+    if (q.roomId) n.roomId = roomMap[q.roomId] || null;
     return n;
   });
   db.projects.push(...added);
@@ -2120,78 +2626,99 @@ $('#pExport').addEventListener('click', exportProject);
 $('#pImport').addEventListener('click', () => $('#pImportFile').click());
 $('#pImportFile').addEventListener('change', e => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; });
 
-// ---------- Parallelrohr ----------
-const par = { opts: [] };
-function openParallel() {
-  const p = proj(), pts = cleanPoints(points(p)), d0 = V.norm(V.sub(pts[1], pts[0]));
-  // Startrichtung: die vier Richtungen senkrecht zum ersten Schenkel
-  par.opts = extDirs(d0).filter(a => Math.abs(V.dot(a, d0)) < 0.999).map(a => ({ dir: a, label: `neben Schenkel 1: ${dirName(a)}` }));
-  if (!$('#parDist').value) $('#parDist').value = String(Math.max(20, prof(p).D * 3));
-  labelParallelOpts(true);
-  $('#parDlg').hidden = false;
-  updateParallel();
-}
-// Lagen, bei denen das Parallelrohr an eine Wand/den Boden stößt, kennzeichnen; Vorgabe = erste freie Lage
-function labelParallelOpts(pickDefault = false) {
-  const p = proj(), f = prof(p), pts = cleanPoints(points(p)), dist = num($('#parDist').value), sel = $('#parMode').value;
-  par.opts.forEach(o => {
-    o.blocked = null;
-    if (!(dist > 0)) return;
-    const L = computeLayout(parallelPoints(pts, dist, o.dir), { R: f.R });
-    const h = planeHits(L.samples, p.planes, f.D / 2).find(x => !(x.type === 'through' && x.plane.pass));
-    if (h) o.blocked = PLANE_KINDS[h.plane.kind].name;
+// ---------- Vorschau im Reiter „Eingabe“ ----------
+// Kleine 3D-Skizze (gleiche Blickrichtung wie die 3D-Ansicht), damit beim Tippen sichtbar ist, wohin das Rohr läuft.
+// Der bearbeitete Schenkel leuchtet orange; Richtungspfeile mit Klartext „rechts / oben / hinten“.
+const mini = $('#miniPrev'), mctx = mini.getContext('2d');
+function drawMini() {
+  if (!layout || !mini.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1, W = mini.clientWidth, H = mini.clientHeight;
+  if (mini.width !== Math.round(W * dpr)) { mini.width = Math.round(W * dpr); mini.height = Math.round(H * dpr); }
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H);
+  const pipes = [layout, ...layout.bundle], room = layout.room;
+  const pts = pipes.flatMap(L => L.samples.map(s => project(s.p)));
+  if (pts.length < 2) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  pts.forEach(q => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); });
+  const pad = 22, sc = Math.min((W - 2 * pad - 70) / Math.max(x1 - x0, 1), (H - 2 * pad) / Math.max(y1 - y0, 1));
+  const ox = 70 + (W - 70) / 2 - (x0 + x1) / 2 * sc, oy = H / 2 - (y0 + y1) / 2 * sc;
+  const P = p => { const q = project(p); return [ox + q.x * sc, oy + q.y * sc]; };
+  const muted = css('--muted');
+  if (room) { // Grundriss als Bezug
+    mctx.strokeStyle = muted; mctx.globalAlpha = 0.35; mctx.lineWidth = 1;
+    mctx.beginPath(); room.outline.forEach(([x, y], i) => { const [a, b] = P([x, y, room.z0 || 0]); i ? mctx.lineTo(a, b) : mctx.moveTo(a, b); }); mctx.closePath(); mctx.stroke();
+    mctx.globalAlpha = 1;
+  }
+  pipes.forEach((L, k) => {
+    mctx.strokeStyle = k ? css('--tube-hi') : css('--tube'); mctx.lineWidth = k ? 3 : 5; mctx.lineCap = mctx.lineJoin = 'round';
+    mctx.beginPath(); L.samples.forEach((s, i) => { const [a, b] = P(s.p); i ? mctx.lineTo(a, b) : mctx.moveTo(a, b); }); mctx.stroke();
   });
-  $('#parMode').innerHTML = par.opts.map((o, i) => `<option value="${i}">${o.label}${o.blocked ? ` (stößt an ${o.blocked})` : ''}</option>`).join('');
-  $('#parMode').value = pickDefault ? String(Math.max(0, par.opts.findIndex(o => !o.blocked))) : sel;
-}
-function parallelResult() {
-  const p = proj(), o = par.opts[+$('#parMode').value], d = num($('#parDist').value);
-  if (!o || !(d > 0)) return null;
-  return parallelPoints(cleanPoints(points(p)), d, o.dir);
-}
-function updateParallel() {
-  const res = parallelResult(), p = proj();
-  if (!res) { $('#parInfo').innerHTML = '<div class="msg err">Abstand eingeben.</div>'; $('#parOk').disabled = true; return; }
-  const own = cleanPoints(points(p)), lens = pts => pts.slice(1).map((q, i) => fmt(V.len(V.sub(q, pts[i]))));
-  // innen liegende Schenkel werden kürzer – bei zu großem Abstand würden sie rückwärts laufen
-  const bad = own.slice(1).findIndex((q, i) => V.dot(V.sub(q, own[i]), V.sub(res[i + 1], res[i])) <= 0 || V.len(V.sub(res[i + 1], res[i])) < prof(p).minStraight);
-  if (num($('#parDist').value) <= prof(p).D) { $('#parInfo').innerHTML = `<div class="msg err">✕ Abstand muss größer als der Rohrdurchmesser (${fmt(prof(p).D)} mm) sein.</div>`; $('#parOk').disabled = true; return; }
-  if (bad >= 0) { $('#parInfo').innerHTML = `<div class="msg err">✕ Abstand zu groß: Schenkel ${bad + 1} wird innen zu kurz. Kleineren Abstand oder andere Seite wählen.</div>`; $('#parOk').disabled = true; return; }
-  const same = lens(own).join() === lens(res).join(), blk = par.opts[+$('#parMode').value]?.blocked;
-  $('#parInfo').innerHTML = `<div class="kv"><span>Schenkel bisher <b>${lens(own).join(' / ')}</b></span><span>Parallelrohr <b>${lens(res).join(' / ')}</b></span></div>
-    <p class="hint" style="margin:6px 0 0">${same ? 'Gleiche Form, nur versetzt.' : 'Verschachtelte Bögen: andere Schenkellängen, dieselben Biegewinkel.'}</p>
-    ${blk ? `<div class="msg warn">⚠ Das Parallelrohr stößt an ${blk} – andere Lage wählen.</div>` : ''}`;
-  $('#parOk').disabled = false;
-}
-function createParallel() {
-  const p = proj(), res = parallelResult();
-  if (!res) return;
-  p.group ||= uid();
-  const n = structuredClone(p);
-  Object.assign(n, {
-    id: uid(), name: `${p.name} ∥${db.projects.filter(q => q.group === p.group).length}`,
-    mode: 'deltas', frame: null, origin: res[0], deltas: res.slice(1).map((q, i) => { const v = V.sub(q, res[i]); return { x: v[0], y: v[1], z: v[2] }; }),
-    target: null, clamps: [], clampMode: 'auto', done: {},
+  // bearbeiteter Schenkel: von Schnittpunkt zu Schnittpunkt
+  const raw = points(proj()), i = previewLeg >= 0 ? previewLeg : sel;
+  if (i >= 0 && i < raw.length - 1) {
+    const [a, b] = P(raw[i]), [c, d] = P(raw[i + 1]);
+    mctx.strokeStyle = css('--mark'); mctx.lineWidth = 6;
+    mctx.beginPath(); mctx.moveTo(a, b); mctx.lineTo(c, d); mctx.stroke();
+    const l = Math.hypot(c - a, d - b);
+    if (l > 12) { // Pfeilspitze am Schenkelende
+      const ux = (c - a) / l, uy = (d - b) / l;
+      mctx.fillStyle = css('--mark'); mctx.beginPath(); mctx.moveTo(c + ux * 6, d + uy * 6);
+      mctx.lineTo(c - ux * 8 - uy * 7, d - uy * 8 + ux * 7); mctx.lineTo(c - ux * 8 + uy * 7, d - uy * 8 - ux * 7); mctx.fill();
+    }
+  }
+  const [ax, ay] = P(raw[0]);
+  mctx.fillStyle = css('--text'); mctx.font = '700 12px system-ui'; mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+  mctx.beginPath(); mctx.arc(ax, ay, 4, 0, 7); mctx.fill(); mctx.fillText('A', ax - 10, ay - 10);
+  // Richtungskreuz mit Wörtern
+  const gx = 36, gy = H / 2 + 6;
+  [['rechts', [1, 0, 0], '#e03131'], ['hinten', [0, 1, 0], '#2f9e44'], ['oben', [0, 0, 1], '#1c7ed6']].forEach(([n, v, c]) => {
+    const q = project(v), ex = gx + q.x * 24, ey = gy + q.y * 24;
+    mctx.strokeStyle = c; mctx.lineWidth = 2; mctx.beginPath(); mctx.moveTo(gx, gy); mctx.lineTo(ex, ey); mctx.stroke();
+    mctx.fillStyle = c; mctx.font = '600 10px system-ui'; mctx.fillText(n, gx + q.x * 34, gy + q.y * 34);
   });
-  db.projects.push(n);
-  db.currentId = n.id;
-  $('#parDlg').hidden = true;
-  fullRender(); resetView();
-  toast(`Parallelrohr „${n.name}“ angelegt – das Original ist in 3D hell dargestellt.`);
 }
-$('#pPar').addEventListener('click', openParallel);
-$('#parDist').addEventListener('input', () => { labelParallelOpts(); updateParallel(); });
-$('#parMode').addEventListener('change', updateParallel);
-$('#parOk').addEventListener('click', createParallel);
-$('#parCancel').addEventListener('click', () => { $('#parDlg').hidden = true; });
-$('#parDlg').addEventListener('click', e => { if (e.target.id === 'parDlg') $('#parDlg').hidden = true; });
+mini.addEventListener('click', () => $('[data-tab=view]').click());
+new ResizeObserver(() => drawMini()).observe(mini);
+
+// ---------- Parallelrohre (Eingabe) ----------
+function renderBundle() {
+  const p = proj(), f = prof(p), verts = layout.verts;
+  const sideName = k => (verts.length > 1 ? dirName(sideDir(verts, k)) : '–');
+  $('#bundleCard').innerHTML = `<h3>Parallelrohre</h3>
+    <p class="hint" style="margin-top:0">Weitere Rohre im festen Abstand (Rohrmitte zu Rohrmitte). Sie laufen bei jeder Änderung mit, als würden sie gemeinsam gebogen; die Schellen werden zu Mehrfachschellen.</p>
+    ${p.bundle.map((b, i) => `<div class="bundlerow"><b>Rohr ${i + 2}</b>
+      <label>Seite<select data-bs="${i}">${[0, 1, 2, 3].map(k => `<option value="${k}"${k === b.side ? ' selected' : ''}>${sideName(k)}</option>`).join('')}</select></label>
+      <label>Abstand<span class="unit"><input data-bd="${i}" inputmode="decimal" value="${fin(b.dist)}"><span>mm</span></span></label>
+      <button data-bdel="${i}" aria-label="Parallelrohr entfernen">✕</button></div>`).join('')}
+    <button id="bAdd" class="wide" style="margin:6px 0 0">+ Parallelrohr</button>`;
+}
+$('#bundleCard').addEventListener('input', e => {
+  const el = e.target, p = proj();
+  if (el.dataset.bd != null) { const v = num(el.value); if (!(v > 0)) return; commit('bd' + el.dataset.bd); p.bundle[+el.dataset.bd].dist = v; recompute(); }
+});
+$('#bundleCard').addEventListener('change', e => {
+  const el = e.target, p = proj();
+  if (el.dataset.bs != null) { commit(); p.bundle[+el.dataset.bs].side = +el.value; recompute(); }
+});
+$('#bundleCard').addEventListener('click', e => {
+  const b = e.target.closest('button'), p = proj(), f = prof(p);
+  if (!b) return;
+  if (b.id === 'bAdd') {
+    commit();
+    const step = Math.max(20, Math.ceil(f.D * 4 / 5) * 5), last = p.bundle.at(-1);
+    p.bundle.push({ id: uid(), side: last ? last.side : 0, dist: last ? last.dist + step : step });
+  } else if (b.dataset.bdel != null) { commit(); p.bundle.splice(+b.dataset.bdel, 1); }
+  else return;
+  if (!isOrtho()) fit = null;
+  recompute(); renderBundle();
+});
 
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
-  window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, proj, points, resetView };
+  window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
 }
 
-function fullRender() { sel = -1; lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { sel = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 checkUpdate();

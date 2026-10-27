@@ -192,7 +192,8 @@ table.marks td:last-child { width: 1%; white-space: nowrap; }
 /* ---------- Handy ---------- */
 button { touch-action: manipulation; }
 .viewwrap { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.viewacts { position: absolute; left: 10px; bottom: 64px; display: flex; gap: 6px; z-index: 1; }
+.viewacts { position: absolute; left: 10px; right: 10px; bottom: 64px; display: flex; flex-wrap: wrap-reverse; gap: 6px; z-index: 1; pointer-events: none; }
+.viewacts > * { pointer-events: auto; }
 .viewacts button { font-size: 14px; color: var(--accent); }
 
 @media (max-width: 600px) {
@@ -303,3 +304,40 @@ body.bigtext table.det { font-size: 15px; }
 
 /* Ist nur die 3D-Ansicht sichtbar (Handy/Tablet), braucht der leere Inhaltsbereich keinen Rand */
 main:not(:has(> .tab.active)) { padding: 0; }
+
+/* ---------- Version 15: Schenkel-Richtung, Vorschau, Bündel, Raum ---------- */
+#miniPrev { display: block; width: 100%; height: 150px; margin-bottom: 10px; background: var(--canvas); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+@media (min-width: 900px) and (min-height: 521px) { #miniPrev { display: none; } }
+@media (max-width: 899px), (max-height: 520px) { #miniPrev { position: sticky; top: calc(62px + env(safe-area-inset-top)); z-index: 4; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); } }
+@media (orientation: landscape) and (max-height: 520px) { #miniPrev { height: 110px; top: 50px; } }
+.leg.focus { border-color: var(--mark); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mark) 30%, transparent); }
+.dirpick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+.dirpick button { min-height: 40px; padding: 4px; font-size: 14px; white-space: nowrap; }
+.dirpick button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dirpick button:disabled { opacity: .35; }
+.oblrow { margin-bottom: 6px; }
+.linkbtn { border: 0; background: none; color: var(--accent); padding: 0; min-height: 28px; font-size: 13px; margin-bottom: 6px; }
+.lenrow { display: grid; grid-template-columns: minmax(130px, 1fr) 1.2fr; gap: 10px; align-items: end; }
+.dirsay { font-size: 14px; color: var(--muted); padding-bottom: 10px; }
+.dirsay b { color: var(--text); }
+.unit { display: flex; align-items: center; gap: 6px; }
+.unit input { flex: 1; width: auto; min-width: 0; }
+.unit span { color: var(--muted); font-size: 14px; }
+.bundlerow, .wallrow { display: grid; grid-template-columns: auto 1.3fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
+.wallrow { grid-template-columns: 70px 1fr auto; align-items: center; }
+.bundlerow > b { padding-bottom: 12px; white-space: nowrap; }
+.bundlerow button { min-height: 42px; border: 0; background: transparent; color: var(--muted); }
+.toolseg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--card); }
+.toolseg button { border: 0; border-radius: 0; font-size: 14px; color: var(--text); }
+.toolseg button + button { border-left: 1px solid var(--line); }
+.toolseg button.on { background: var(--accent); color: #fff; }
+.roombar { position: absolute; left: 8px; right: 8px; bottom: 112px; z-index: 3; margin: 0 auto; max-width: 520px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .15); }
+.roombar span { flex: 1 1 140px; font-size: 13px; color: var(--muted); }
+.roombar button { min-height: 36px; font-size: 14px; }
+table.det tr.sub td { border-bottom-style: dotted; }
+@media (max-width: 420px) { .dirpick { grid-template-columns: repeat(4, 1fr); } .dirpick button { font-size: 13px; } .lenrow { grid-template-columns: 1fr; } .dirsay { padding-bottom: 0; } }
+@media (orientation: landscape) and (max-height: 520px) { .roombar { bottom: 56px; left: 120px; } }
+label.unit { flex-direction: row; align-items: center; }
+.wallrow { grid-template-columns: 62px minmax(90px, 1fr) auto; }
+.wallrow .chk { font-size: 13px; }

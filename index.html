@@ -42,13 +42,13 @@
           <button id="pDel" class="danger">Löschen</button>
         </div>
         <div class="btnrow" style="margin-top:8px">
-          <button id="pPar">∥ Parallelrohr…</button>
           <button id="pExport">Teilen / Export</button>
           <button id="pImport">Import</button>
           <input type="file" id="pImportFile" accept=".json,application/json" hidden>
         </div>
       </div>
 
+      <canvas id="miniPrev" aria-label="Vorschau des Rohrs – antippen öffnet 3D"></canvas>
       <div class="seg" id="modeSeg">
         <button data-mode="deltas">Richtungen X/Y/Z</button>
         <button data-mode="angles">Winkel &amp; Drehung</button>
@@ -63,10 +63,11 @@
         <button data-tpl="u">U-Bogen</button>
         <button data-tpl="d3">3D-Bogen</button>
       </div>
+      <div class="card" id="bundleCard"></div>
       <div class="card" id="summary"></div>
-      <div class="card" id="envCard"></div>
     </section>
 
+    <section class="tab" id="tab-room"></section>
     <section class="tab" id="tab-guide"></section>
     <section class="tab" id="tab-tools"></section>
   </main>
@@ -88,7 +89,7 @@
       <div class="viewhint" id="viewHint"></div>
       <div class="viewacts">
         <button id="visBtn" aria-label="Anzeige" title="Anzeige">👁</button>
-        <button id="clampTool" title="Schellen setzen und verschieben">Schellen</button>
+        <span class="toolseg"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span>
         <button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
       </div>
       <div class="popover" id="visPop" hidden>
@@ -100,6 +101,7 @@
         <label class="chk"><input type="checkbox" data-vis="ghosts"> Nachbarrohre</label>
       </div>
       <div class="toast" id="toast" hidden></div>
+      <div class="roombar" id="roomBar" hidden></div>
       <div class="legpanel" id="legPanel" hidden>
         <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Schließen">Fertig</button></div>
         <div class="row2">
@@ -115,9 +117,10 @@
 </div>
 
 <nav class="tabbar">
-  <button data-tab="input" class="active"><span>✎</span>Eingabe</button>
+  <button data-tab="input" class="active"><span>✎</span>Rohr</button>
   <button data-tab="view" class="only-mobile"><span>◈</span>3D</button>
-  <button data-tab="guide"><span>☰</span>Anleitung</button>
+  <button data-tab="room"><span>⌂</span>Raum</button>
+  <button data-tab="guide"><span>☰</span>Biegen</button>
   <button data-tab="tools"><span>⚙</span>Zangen</button>
 </nav>
 
@@ -142,19 +145,6 @@
     <div class="offinfo" id="offInfo"></div>
     <button id="offOk" class="primary" style="width:100%">Übernehmen</button>
     </div></div>
-  </div>
-</div>
-
-<div class="modal" id="parDlg" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="parTitle">
-    <div class="lp-head"><b id="parTitle">Parallelrohr anlegen</b><button id="parCancel">Abbrechen</button></div>
-    <p class="hint" style="margin-top:0">Ein weiteres Rohr läuft im festen Abstand neben diesem. Beide bilden eine Gruppe: Wände gelten für alle, die Nachbarrohre sind in 3D sichtbar, die Materialliste fasst sie zusammen.</p>
-    <div class="row2">
-      <label>Abstand Rohrmitte–Rohrmitte (mm)<input id="parDist" inputmode="decimal"></label>
-      <label>Lage am Anfang<select id="parMode"></select></label>
-    </div>
-    <div class="offinfo" id="parInfo"></div>
-    <button id="parOk" class="primary" style="width:100%">Anlegen</button>
   </div>
 </div>
 
