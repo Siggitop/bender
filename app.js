@@ -1516,7 +1516,7 @@ function fitCanvas(c, g, W, H, dpr) {
 }
 
 // Anzeige-Schalter (je Gerät gespeichert)
-const VIS_DEFAULT = { dims: true, marks: true, grid: true, planes: true, clamps: true, ghosts: true };
+const VIS_DEFAULT = { dims: true, marks: true, grid: true, planes: true, clamps: true, ghosts: true, gizmo: true };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -1636,12 +1636,17 @@ function render3d() {
   if (showRoom) {
     const z0 = room.z0 || 0, z1 = z0 + room.height;
     ctx.strokeStyle = cMuted; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.8;
-    for (const z of [z0, z1]) {
-      ctx.setLineDash(z === z1 ? [4, 4] : []);
-      ctx.beginPath(); room.outline.forEach(([x, y], i) => { const [a, b] = P3([x, y, z]); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); }); ctx.closePath(); ctx.stroke();
-    }
-    ctx.setLineDash([]);
-    room.outline.forEach(([x, y]) => { const [a, b] = P3([x, y, z0]), [c, d] = P3([x, y, z1]); ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); });
+    // Puppenhaus: nur Kanten sichtbarer Flächen – ausgeblendete Wände und die Decke von oben zeichnen nichts
+    const edge = (a, b) => { const [x0, y0] = P3(a), [x1, y1] = P3(b); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); };
+    ctx.beginPath();
+    visiblePlanes.forEach(pl => {
+      if (pl.poly) pl.poly.forEach(([x, y], i) => { const [nx, ny] = pl.poly[(i + 1) % pl.poly.length]; edge([x, y, pl.c], [nx, ny, pl.c]); });
+      else {
+        const u = pl.axis === 0 ? 1 : 0, e = pl.ext, pt = (a, z) => { const q = [0, 0, z]; q[pl.axis] = pl.c; q[u] = a; return q; };
+        edge(pt(e[u][0], z0), pt(e[u][0], z1)); edge(pt(e[u][1], z0), pt(e[u][1], z1)); edge(pt(e[u][0], z1), pt(e[u][1], z1));
+      }
+    });
+    ctx.stroke();
     ctx.globalAlpha = 1;
     visiblePlanes.filter(pl => pl.kind === 'wall').forEach(pl => {
       const u = pl.axis === 0 ? 1 : 0, q = [0, 0, z1 - Math.min(150, room.height * 0.08)];
@@ -1724,7 +1729,7 @@ function render3d() {
   if (camTool === 'room') { gizmo = []; drawRoomOverlay(P3); }
   else if (camTool !== 'clamp' && !printing && !animLayout) {
     if (ortho) drawEditOverlay(P3, cAcc);
-    drawGizmo();
+    if (vis.gizmo) drawGizmo(); else gizmo = [];
   } else gizmo = [];
 
   // Achsenkreuz
