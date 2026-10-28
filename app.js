@@ -103,6 +103,12 @@ const save = () => { try { localStorage.setItem(STORE, JSON.stringify(db)); } ca
 const proj = () => db.projects.find(p => p.id === db.currentId) || db.projects[0];
 const prof = (p = proj()) => db.profiles.find(x => x.id === p.profileId) || db.profiles[0];
 const roomOf = (p = proj()) => db.rooms.find(r => r.id === p.roomId) || null;
+// Labor: Raum, Schellen, Ziel und Parallelrohre sind Experimente – nur sichtbar und wirksam, wenn eingeschaltet.
+// Die Daten bleiben beim Ausschalten erhalten, werden aber nicht gerechnet und nicht gezeichnet.
+let lab = false;
+try { lab = localStorage.getItem('biege.lab') === '1'; } catch {}
+document.body.classList.toggle('lab', lab);
+const activeRoom = (p = proj()) => (lab ? roomOf(p) : null);
 // Achs-Schnittpunkte in Raumkoordinaten; origin = Lage des Rohranfangs, frame = Ausrichtung im Winkel-Modus
 const points = p => (p.mode === 'deltas' ? pointsFromDeltas(p.deltas, p.origin) : pointsFromAngles(p.legs, p.frame, p.origin));
 
@@ -210,16 +216,22 @@ function renderProjectBar() {
   $('#pProf').innerHTML = db.profiles.map(f => `<option value="${f.id}"${f.id === p.profileId ? ' selected' : ''}>${esc(f.name)} · R ${fmt(f.R)}</option>`).join('');
   $('#pZugA').value = fin(p.zugA);
   $('#pZugE').value = fin(p.zugE);
+  renderProjSum();
+}
+// Kurzinfo im zugeklappten Projekt-Kasten
+function renderProjSum() {
+  const p = proj(), f = prof(p), z = p.zugA || p.zugE ? ` · Zugabe ${fmt(p.zugA)}/${fmt(p.zugE)}` : '';
+  $('#projSum').textContent = `${f.name}${z}`;
 }
 
 function renderInputs() {
   const p = proj();
   $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === p.mode));
   $('#modeHint').textContent = p.mode === 'deltas'
-    ? 'Für jeden Schenkel Richtung wählen und Länge eingeben (Achsmaß, Rohrmitte bis Rohrmitte). Die Vorschau zeigt, wohin das Rohr läuft.'
-    : 'Achsmaß jedes Schenkels bis zum nächsten Schnittpunkt. Drehung = Lage der Biegung gegenüber der vorigen: 0° gleiche Ebene (U-Form), 180° gleiche Ebene (Z-Form/Etage), ±90° räumlich.';
+    ? 'Je Schenkel Richtung antippen und Achsmaß eingeben (Rohrmitte bis Rohrmitte).'
+    : 'Achsmaß bis zum nächsten Schnittpunkt. Drehung: 0° = U-Form, 180° = Z-Form/Etage, ±90° = räumlich.';
   const n = p.mode === 'deltas' ? p.deltas.length : p.legs.length;
-  const legName = i => (i === 0 ? 'Rohranfang → Schnittpunkt 1' : i === n - 1 ? `Schnittpunkt ${i} → Rohrende` : `Schnittpunkt ${i} → ${i + 1}`);
+  const legName = i => legSpan(i, n);
   let h = '';
   if (p.mode === 'deltas') {
     p.deltas.forEach((d, i) => {
@@ -228,7 +240,7 @@ function renderInputs() {
   } else {
     p.legs.forEach((l, i) => {
       h += `<div class="leg"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName(i)}</span>` +
-        `<button data-off="${i}" title="Versatz einfügen" aria-label="Versatz einfügen">⤳</button>` +
+        `<button data-off="${i}" title="Versatz einfügen">⤳ Versatz</button>` +
         `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
         `<label>Achsmaß (mm)<input inputmode="decimal" data-p="legs.${i}.len" value="${fin(l.len)}" placeholder="0"></label></div>`;
       if (i < n - 1) {
@@ -337,10 +349,17 @@ $('.tpl').addEventListener('click', e => {
 
 $('#projSel').addEventListener('change', e => { db.currentId = e.target.value; highlight = -1; fullRender(); resetView(); });
 $('#pName').addEventListener('input', e => { proj().name = e.target.value; save(); $('#projSel').selectedOptions[0].textContent = e.target.value; });
-$('#pProf').addEventListener('change', e => { commit(); proj().profileId = e.target.value; recompute(); });
-$('#pZugA').addEventListener('input', e => { commit('zugA'); proj().zugA = num(e.target.value); recompute(); });
-$('#pZugE').addEventListener('input', e => { commit('zugE'); proj().zugE = num(e.target.value); recompute(); });
-$('#pNew').addEventListener('click', openNewDlg);
+$('#pProf').addEventListener('change', e => { commit(); proj().profileId = e.target.value; recompute(); renderProjSum(); });
+$('#pZugA').addEventListener('input', e => { commit('zugA'); proj().zugA = num(e.target.value); recompute(); renderProjSum(); });
+$('#pZugE').addEventListener('input', e => { commit('zugE'); proj().zugE = num(e.target.value); recompute(); renderProjSum(); });
+// Ohne Labor kein Raum-Dialog: neues gerades Rohr sofort anlegen
+$('#pNew').addEventListener('click', () => {
+  if (lab) { openNewDlg(); return; }
+  const p = newProject(proj().profileId, `Rohr ${db.projects.length + 1}`);
+  db.projects.push(p); db.currentId = p.id;
+  fullRender(); resetView();
+  toast('Neues Rohr angelegt – ersten Schenkel aufmessen.');
+});
 $('#pDup').addEventListener('click', () => {
   const p = { ...structuredClone(proj()), id: uid(), name: proj().name + ' (Kopie)', done: {} };
   db.projects.push(p); db.currentId = p.id; fullRender();
@@ -582,16 +601,6 @@ const DIRS = [
   { v: [0, 0, 1], label: '↑ oben', word: 'oben', ax: 'z' }, { v: [0, 0, -1], label: '↓ unten', word: 'unten', ax: 'z' },
   { v: [0, 1, 0], label: '↗ hinten', word: 'hinten', ax: 'y' }, { v: [0, -1, 0], label: '↙ vorne', word: 'vorne', ax: 'y' },
 ];
-const dirWord = k => `<b class="ax-${DIRS[k].ax}">${DIRS[k].word}</b>`;
-// Kleiner Pfeil, wie der Schenkel in der 3D-Ansicht liegt (gleiche Blickrichtung), Farbe nach Hauptachse
-function legGlyph(v) {
-  const L = V.len(v);
-  if (L < 1e-9) return '';
-  const q = project(V.mul(v, 1 / L)), l = Math.hypot(q.x, q.y) || 1, dx = q.x / l * 15, dy = q.y / l * 15;
-  const ax = 'xyz'[[0, 1, 2].reduce((m, k) => (Math.abs(v[k]) > Math.abs(v[m]) ? k : m), 0)];
-  const axes = [[1, 0, 0, '#e03131'], [0, 1, 0, '#2f9e44'], [0, 0, 1, '#1c7ed6']].map(([a, b, c, col]) => { const p = project([a, b, c]); return `<line x1="20" y1="20" x2="${20 + p.x * 9}" y2="${20 + p.y * 9}" stroke="${col}" stroke-width="1.5" opacity=".45"/>`; }).join('');
-  return `<svg class="glyph" viewBox="0 0 40 40" aria-hidden="true">${axes}<line x1="${20 - dx * 0.2}" y1="${20 - dy * 0.2}" x2="${20 + dx}" y2="${20 + dy}" class="ax-${ax}-stroke" stroke-width="3.5" stroke-linecap="round"/><circle cx="${20 + dx}" cy="${20 + dy}" r="3.5" class="ax-${ax}-fill"/></svg>`;
-}
 const freeLegs = new Set(); // Schenkel, die bewusst frei in X/Y/Z bearbeitet werden
 const oblPref = new Map();  // gewählte Lesart einer Schräge je Schenkel: { a, b } („von a nach b“)
 const OBL_ORDER = [0, 1, 4, 5, 2, 3]; // ohne Vorgabe zuerst waagrecht: „von rechts nach oben“ statt „von oben nach rechts“
@@ -614,21 +623,16 @@ function classifyLeg(v, pref = null) {
   return { kind: 'free', len: L };
 }
 const obliqueVec = (a, b, ang, L) => V.mul(V.add(V.mul(DIRS[a].v, Math.cos(ang * Math.PI / 180)), V.mul(DIRS[b].v, Math.sin(ang * Math.PI / 180))), L);
-// Klartext: „läuft nach rechts“ / „läuft nach rechts, 30° nach oben geneigt“
-function legSays(c) {
-  if (c.kind === 'axis') return c.dir < 0 ? 'Richtung wählen' : `läuft nach ${dirWord(c.dir)}`;
-  if (c.kind === 'oblique') return `läuft nach ${dirWord(c.a)}, <b>${c.ang}°</b> nach ${dirWord(c.b)} geneigt`;
-  return 'läuft schräg (frei in X/Y/Z)';
-}
-
+// Kurzname eines Schenkels: von Anfang/Schnittpunkt bis Schnittpunkt/Ende
+const legSpan = (i, n) => (n === 1 ? 'Anfang → Ende' : i === 0 ? 'Anfang → Punkt 1' : i === n - 1 ? `Punkt ${i} → Ende` : `Punkt ${i} → ${i + 1}`);
 function legCard(p, d, i, n) {
-  const legName = i === 0 ? 'Rohranfang → Schnittpunkt 1' : i === n - 1 ? `Schnittpunkt ${i} → Rohrende` : `Schnittpunkt ${i} → ${i + 1}`;
+  const legName = legSpan(i, n);
   const v = deltaVec(d), c = freeLegs.has(i) ? { kind: 'free', len: V.len(v) } : classifyLeg(v, oblPref.get(i));
   const prev = i > 0 ? V.norm(deltaVec(p.deltas[i - 1])) : null;
   const blocked = k => prev && Math.abs(Math.abs(V.dot(prev, DIRS[k].v)) - 1) < 1e-9; // gleiche Richtung oder zurück
   const sel = (data, opts, val) => `<select data-${data}="${i}">${opts.map(([k, t]) => `<option value="${k}"${k === val ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
   let h = `<div class="leg" data-leg="${i}"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName}</span>` +
-    `<button data-off="${i}" title="Versatz einfügen" aria-label="Versatz einfügen">⤳</button>` +
+    `<button data-off="${i}" title="Versatz einfügen">⤳ Versatz</button>` +
     `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
     `<div class="dirpick">${DIRS.map((D, k) => `<button data-dir="${i}:${k}" class="ax-${D.ax}${c.kind === 'axis' && c.dir === k ? ' on' : ''}"${blocked(k) ? ' disabled' : ''}>${D.label}</button>`).join('')}` +
     `<button data-dir="${i}:obl"${c.kind !== 'axis' ? ' class="on"' : ''}>∠ schräg</button></div>`;
@@ -644,8 +648,9 @@ function legCard(p, d, i, n) {
       <label>Y <small>hinten + / vorn −</small>${signed(`deltas.${i}.y`, d.y)}</label>
       <label>Z <small>oben + / unten −</small>${signed(`deltas.${i}.z`, d.z)}</label></div>`;
   }
-  h += `<div class="lenrow"><label>Länge (Achsmaß)<span class="unit"><input data-leglen="${i}" inputmode="decimal" value="${fin(c.len)}" placeholder="0"${c.kind === 'free' ? ' disabled' : ''}><span>mm</span></span></label>
-    <div class="dirsay" data-say="${i}">${legGlyph(v)}<span>${legSays(c)}</span></div></div></div>`;
+  if (c.kind !== 'free') h += `<label class="lenrow">Achsmaß<span class="unit"><input data-leglen="${i}" inputmode="decimal" value="${fin(c.len)}" placeholder="0"><span>mm</span></span></label>`;
+  else h += `<p class="hint lenfree">Achsmaß ${fmt(c.len)} mm</p>`;
+  h += `</div>`;
   return h;
 }
 
@@ -809,7 +814,7 @@ function bundleLayouts(p, f, main) {
 }
 // Andere Rohre im selben Raum (samt ihren Parallelrohren) – werden hell dargestellt
 function roomGhosts(p) {
-  if (!p.roomId) return [];
+  if (!lab || !p.roomId) return [];
   return db.projects.filter(q => q.roomId === p.roomId && q.id !== p.id).flatMap(q => {
     const f = prof(q), L = computeLayout(points(q), { R: f.R, zugA: q.zugA, zugE: q.zugE });
     const out = [{ samples: L.samples, D: f.D, name: q.name }];
@@ -826,7 +831,7 @@ let anim = null, animLayout = null, animRunning = false, shown = null;
 const curLayout = () => animLayout || layout;
 const ease = t => 1 - Math.pow(1 - t, 3);
 const lerpN = (a, b, t) => a + (b - a) * t;
-const geomOf = p => { const r = roomOf(p); return { pid: p.id, pts: points(p), outline: r ? structuredClone(r.outline) : null, z0: r?.z0 || 0, h: r?.height || 0 }; };
+const geomOf = p => { const r = activeRoom(p); return { pid: p.id, pts: points(p), outline: r ? structuredClone(r.outline) : null, z0: r?.z0 || 0, h: r?.height || 0 }; };
 // Unterschiedliche Punktzahl (Schenkel dazu/weg): das kürzere Rohr endet in seinem letzten Punkt
 function lerpGeom(A, B, t) {
   const n = Math.max(A.pts.length, B.pts.length), at = (P, i) => P[Math.min(i, P.length - 1)];
@@ -837,7 +842,7 @@ function lerpGeom(A, B, t) {
 const sameGeom = (A, B) => A.pid === B.pid && A.pts.length === B.pts.length && A.pts.every((q, i) => V.len(V.sub(q, B.pts[i])) < 1e-6)
   && JSON.stringify(A.outline) === JSON.stringify(B.outline) && A.z0 === B.z0 && A.h === B.h;
 function animLayoutFor(g) {
-  const p = proj(), room = roomOf(p);
+  const p = proj(), room = activeRoom(p);
   const L = buildLayout(p, g.pts, room && g.outline ? { ...room, outline: g.outline, z0: g.z0, height: g.h } : room);
   L.ghosts = layout.ghosts;
   return L;
@@ -864,22 +869,22 @@ function animFrame() {
 
 // Rohrdaten für Rechnung und Anzeige: Mittellinie, Raum, Schellen, Ziel, Parallelrohre.
 // pts/room lassen sich für Zwischenbilder der Animation vorgeben.
-function buildLayout(p, pts = points(p), room = roomOf(p)) {
+function buildLayout(p, pts = points(p), room = activeRoom(p)) {
   const f = prof(p);
   const L = computeLayout(pts, { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, pickMark: b => pickMark(f, b.angle) });
   L.collisions = selfCollisions(L.samples, f.D);
   L.A = pts[0]; L.E = pts.at(-1);
   L.room = room; L.planes = roomPlanes(room);
   L.hits = room ? planeHits(L.samples, room, f.D / 2) : [];
-  L.clampS = p.clampMode === 'manual' ? p.clamps.filter(s => s >= 0 && s <= L.total).sort((a, b) => a - b) : autoClamps(L, f);
+  L.clampS = !lab ? [] : p.clampMode === 'manual' ? p.clamps.filter(s => s >= 0 && s <= L.total).sort((a, b) => a - b) : autoClamps(L, f);
   L.clampInfo = L.clampS.map(s => clampInfo(L.samples, s, L.planes, f));
-  L.targetDelta = p.target ? V.sub(p.target, L.E) : null;
-  L.bundle = bundleLayouts(p, f, L);
+  L.targetDelta = lab && p.target ? V.sub(p.target, L.E) : null;
+  L.bundle = lab ? bundleLayouts(p, f, L) : [];
   return L;
 }
 
 function recompute(light = false) {
-  const p = proj(), f = prof(p), room = roomOf(p);
+  const p = proj(), f = prof(p), room = activeRoom(p);
   layout = buildLayout(p);
   layout.ghosts = roomGhosts(p);
   animateTo(p, light);
@@ -916,8 +921,8 @@ function recompute(light = false) {
     });
   }
   renderSummary();
-  if (!$('#tab-room').contains(document.activeElement)) renderRoomTab();
-  if (!$('#bundleCard').contains(document.activeElement)) renderBundle();
+  if (lab && !$('#tab-room').contains(document.activeElement)) renderRoomTab();
+  if (lab && !$('#bundleCard').contains(document.activeElement)) renderBundle();
   renderGuide();
   draw();
   drawMini();
@@ -944,8 +949,10 @@ function renderSummary() {
     `<div class="kv"><span>Zuschnitt</span></div><div class="big">${fmt(layout.total)} mm</div>` +
     `<div class="kv"><span>Biegungen <b>${layout.bends.length}</b></span><span>Radius <b>${fmt(f.R)} mm</b></span><span>Zange <b>${esc(f.name)}</b></span></div>` +
     `<div class="chips">${layout.bends.map((b, j) => `<span class="chip">${j + 1}: ${fmt(b.angle)}°${j ? ' / ' + fmt(normRot(b.rot)) + '°' : ''}</span>`).join('')}</div>` +
-    targetHtml() + messages();
+    targetHtml() + messages() +
+    (layout.bends.length ? `<button class="primary nextbtn" id="goBend">Weiter zum Biegen →</button>` : '');
 }
+$('#summary').addEventListener('click', e => { if (e.target.id === 'goBend') $('[data-tab=guide]').click(); });
 
 function rotText(phi) {
   const a = Math.abs(phi);
@@ -1136,7 +1143,7 @@ function renderGuide() {
       <tr><td>Ende</td><td></td><td></td><td>${fmt(L.straights.at(-1))}</td><td></td><td></td><td></td><td></td></tr>
       </table></div><p class="hint">Alle Maße in mm, gemessen auf der Rohrmitte. Gerade + Bögen ergeben den Zuschnitt.</p></div>`;
   }
-  h += montageHtml(p, f) + materialHtml(p, f);
+  if (lab) h += montageHtml(p, f) + materialHtml(p, f);
   $('#tab-guide').innerHTML = h;
 }
 
@@ -1167,18 +1174,19 @@ $('#tab-guide').addEventListener('click', e => {
 
 // ---------- Zangen ----------
 let toolProfId = null;
+// lab: nur mit eingeschaltetem Labor sichtbar
 const PF = [
   ['name', 'Bezeichnung', 'text', ''],
   ['D', 'Rohr-Außendurchmesser (mm)', 'num', ''],
   ['R', 'Biegeradius auf Rohrmitte (mm)', 'num', 'Steht meist auf der Zange; genauer per Probebiegung.'],
   ['springback', 'Rückfederung (° bei 90°)', 'num', 'So viel weiter biegen. Wird für andere Winkel anteilig gerechnet.'],
   ['minStraight', 'Mindest-Gerade zwischen Bögen (mm)', 'num', 'Kürzeste gerade Strecke, die die Zange noch greift.'],
-  ['clampMax', 'Schellen: größter Abstand (mm)', 'num', 'Entlang des Rohrs, auch über Bögen hinweg.'],
-  ['clampBend', 'Schellen: Abstand vom Bogen (mm)', 'num', 'Gemessen vom Bogenende bzw. -anfang.'],
-  ['clampMin', 'Schellen: kleinster Abstand auf einer Geraden (mm)', 'num', 'Kämen zwei Schellen zwischen zwei Bögen näher, wird nur eine in die Mitte gesetzt.'],
-  ['clampEnd', 'Schellen: Abstand vom Rohrende (mm)', 'num', ''],
-  ['clampH', 'Schellenhöhe (mm)', 'num', 'Untergrund bis Rohrmitte – ergibt den Wandabstand.'],
-  ['stock', 'Stangenlänge (mm)', 'num', 'Für den Zuschnitt-Plan.'],
+  ['clampMax', 'Schellen: größter Abstand (mm)', 'num', 'Entlang des Rohrs, auch über Bögen hinweg.', 'lab'],
+  ['clampBend', 'Schellen: Abstand vom Bogen (mm)', 'num', 'Gemessen vom Bogenende bzw. -anfang.', 'lab'],
+  ['clampMin', 'Schellen: kleinster Abstand auf einer Geraden (mm)', 'num', 'Kämen zwei Schellen zwischen zwei Bögen näher, wird nur eine in die Mitte gesetzt.', 'lab'],
+  ['clampEnd', 'Schellen: Abstand vom Rohrende (mm)', 'num', '', 'lab'],
+  ['clampH', 'Schellenhöhe (mm)', 'num', 'Untergrund bis Rohrmitte – ergibt den Wandabstand.', 'lab'],
+  ['stock', 'Stangenlänge (mm)', 'num', 'Für den Zuschnitt-Plan.', 'lab'],
 ];
 const curTool = () => db.profiles.find(x => x.id === toolProfId);
 
@@ -1191,7 +1199,7 @@ function renderTools() {
     <label>Zange / Rohr-Profil<select id="tSel">${db.profiles.map(x => `<option value="${x.id}"${x.id === f.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
     <div class="btnrow" style="margin:10px 0 0"><button id="tNew">Neues Profil</button><button id="tDel" class="danger">Löschen</button></div>
   </div>
-  <div class="card">${PF.map(([k, l, t, hlp]) => `<label style="margin-bottom:10px">${l}<input data-pf="${k}" data-t="${t}" ${t === 'num' ? 'inputmode="decimal"' : ''} value="${esc(t === 'num' ? fin(f[k]) : f[k])}">${hlp ? `<small>${hlp}</small>` : ''}</label>`).join('')}</div>
+  <div class="card">${PF.filter(x => lab || !x[4]).map(([k, l, t, hlp]) => `<label style="margin-bottom:10px">${l}<input data-pf="${k}" data-t="${t}" ${t === 'num' ? 'inputmode="decimal"' : ''} value="${esc(t === 'num' ? fin(f[k]) : f[k])}">${hlp ? `<small>${hlp}</small>` : ''}</label>`).join('')}</div>
   <div class="card">
     <h3>Marken der Zange</h3>
     <p class="hint" style="margin-top:0">L/R: Liegt das gemessene Stück links der Zange, kommt der Strich auf L, liegt es rechts, auf R. Nach 90° liegt die neue Rohrachse genau am Strich – dann ist der Abstand Strich → Biegeanfang gleich dem Biegeradius. Die Probebiegung bestätigt das.</p>
@@ -1237,6 +1245,11 @@ function renderTools() {
     <p class="hint">Noch nicht kalibrierte Marken werden aus dem Ergebnis abgeschätzt (L/R liegen um den Radius neben „0“). Am genauesten ist eine Probebiegung pro Marke.</p>
   </div>
   <div class="card">
+    <h3>Labor</h3>
+    <label class="chk"><input type="checkbox" id="labChk"${lab ? ' checked' : ''}> Raum, Wände, Schellen &amp; Parallelrohre (experimentell)</label>
+    <p class="hint" style="margin-bottom:0">Blendet den Reiter „Raum“, Schellen, Ziel-Anschluss, Parallelrohre sowie Montage und Material in der Anleitung ein. Ausgeschaltet bleiben die Daten erhalten, werden aber nicht gerechnet.</p>
+  </div>
+  <div class="card">
     <h3>App</h3>
     <div class="appinfo"><span>Version <b>${APP_VERSION}</b> vom ${APP_DATE}</span><span id="appStatus">${updateStatus()}</span><button id="reloadBtn">Neu laden</button></div>
   </div>`;
@@ -1278,6 +1291,7 @@ $('#tab-tools').addEventListener('input', e => {
   } else if (el.dataset.cal) showCal();
 });
 $('#tab-tools').addEventListener('change', e => {
+  if (e.target.id === 'labChk') { setLab(e.target.checked); return; }
   if (e.target.id === 'tSel') { toolProfId = e.target.value; renderTools(); }
   else if (e.target.dataset.mk?.endsWith('.name')) renderTools(); // Auswahllisten aktualisieren
 });
@@ -1708,7 +1722,7 @@ function render3d() {
   });
 
   // Ziel-Anschluss: Fadenkreuz, gestrichelte Linie vom Rohrende
-  if (p.target && layout.targetDelta) {
+  if (lab && p.target && layout.targetDelta) {
     const [tx, ty] = P3(p.target), [ex, ey] = P3(layout.E), hit = V.len(layout.targetDelta) < 0.5;
     const col = hit ? css('--ok') : '#7048e8';
     if (!hit) { ctx.setLineDash([4, 4]); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(tx, ty); ctx.stroke(); ctx.setLineDash([]); }
@@ -2207,7 +2221,7 @@ function snapLen(start, dir, L) {
     const Lw = (pl.c - start[k]) * dir[k] - f.clampH;
     if (Lw > 0) cands.push({ L: Lw, tag: `Schellenhöhe vor ${pl.name}` });
   }
-  if (p.target) {
+  if (lab && p.target) {
     const Lt = (p.target[k] - start[k]) * dir[k];
     if (Lt > 0) cands.push({ L: Lt, tag: 'auf Höhe Ziel-Anschluss' });
   }
@@ -2585,6 +2599,16 @@ cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clie
 $('.viewbtns').addEventListener('click', e => { const v = e.target.closest('button')?.dataset.view; if (v) resetView(v); });
 new ResizeObserver(() => draw()).observe($('#viewwrap'));
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw());
+
+// ---------- Labor ein/aus ----------
+function setLab(on) {
+  lab = on;
+  try { localStorage.setItem('biege.lab', on ? '1' : '0'); } catch {}
+  document.body.classList.toggle('lab', on);
+  if (!on) { setTool('edit'); $('#visPop').hidden = true; }
+  shown = null; fit = null;
+  recompute(); renderTools();
+}
 
 // ---------- Reiter ----------
 $('.tabbar').addEventListener('click', e => {

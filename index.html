@@ -19,6 +19,7 @@
 <header class="top">
   <div class="brand">⟆ Rohrbiegen</div>
   <select id="projSel" aria-label="Projekt wählen"></select>
+  <button id="pNew" class="hbtn" title="Neues Rohr" aria-label="Neues Rohr">＋</button>
   <button id="undoBtn" class="hbtn" title="Rückgängig (⌘Z)" aria-label="Rückgängig" disabled>↶</button>
   <span class="ver" id="verTag"></span>
   <button id="redoBtn" class="hbtn" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen" disabled>↷</button>
@@ -27,9 +28,10 @@
 <div class="layout">
   <main>
     <section class="tab active" id="tab-input">
-      <div class="card">
+      <details class="card projcard" id="projCard">
+        <summary><span class="pc-t">Projekt &amp; Zange</span><span class="pc-s" id="projSum"></span></summary>
         <div class="row2">
-          <label>Projekt<input id="pName" autocomplete="off"></label>
+          <label>Name<input id="pName" autocomplete="off"></label>
           <label>Zange / Rohr<select id="pProf"></select></label>
         </div>
         <div class="row2">
@@ -37,16 +39,13 @@
           <label>Zugabe Ende (mm)<input id="pZugE" inputmode="decimal" placeholder="0"></label>
         </div>
         <div class="btnrow">
-          <button id="pNew" class="primary">+ Neues Rohr</button>
           <button id="pDup">Duplizieren</button>
-          <button id="pDel" class="danger">Löschen</button>
-        </div>
-        <div class="btnrow" style="margin-top:8px">
           <button id="pExport">Teilen / Export</button>
           <button id="pImport">Import</button>
+          <button id="pDel" class="danger">Löschen</button>
           <input type="file" id="pImportFile" accept=".json,application/json" hidden>
         </div>
-      </div>
+      </details>
 
       <canvas id="miniPrev" aria-label="Vorschau des Rohrs – antippen öffnet 3D"></canvas>
       <div class="seg" id="modeSeg">
@@ -63,7 +62,7 @@
         <button data-tpl="u">U-Bogen</button>
         <button data-tpl="d3">3D-Bogen</button>
       </div>
-      <div class="card" id="bundleCard"></div>
+      <div class="card labonly" id="bundleCard"></div>
       <div class="card" id="summary"></div>
     </section>
 
@@ -89,16 +88,16 @@
       <div class="viewhint" id="viewHint"></div>
       <div class="viewacts">
         <button id="visBtn" aria-label="Anzeige" title="Anzeige">👁</button>
-        <span class="toolseg"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span>
+        <span class="toolseg labonly"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span>
         <button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
       </div>
       <div class="popover" id="visPop" hidden>
         <label class="chk"><input type="checkbox" data-vis="dims"> Maße &amp; Achsmaß-Linien</label>
         <label class="chk"><input type="checkbox" data-vis="marks"> Strich-Markierungen</label>
         <label class="chk"><input type="checkbox" data-vis="grid"> Raster &amp; Schatten</label>
-        <label class="chk"><input type="checkbox" data-vis="planes"> Wände, Boden, Decke</label>
-        <label class="chk"><input type="checkbox" data-vis="clamps"> Schellen</label>
-        <label class="chk"><input type="checkbox" data-vis="ghosts"> Nachbarrohre</label>
+        <label class="chk labonly"><input type="checkbox" data-vis="planes"> Wände, Boden, Decke</label>
+        <label class="chk labonly"><input type="checkbox" data-vis="clamps"> Schellen</label>
+        <label class="chk labonly"><input type="checkbox" data-vis="ghosts"> Nachbarrohre</label>
         <label class="chk"><input type="checkbox" data-vis="gizmo"> Gimbal (Pfeile &amp; Ringe)</label>
       </div>
       <div class="toast" id="toast" hidden></div>
@@ -120,7 +119,7 @@
 <nav class="tabbar">
   <button data-tab="input" class="active"><span>✎</span>Rohr</button>
   <button data-tab="view" class="only-mobile"><span>◈</span>3D</button>
-  <button data-tab="room"><span>⌂</span>Raum</button>
+  <button data-tab="room" class="labonly"><span>⌂</span>Raum</button>
   <button data-tab="guide"><span>☰</span>Biegen</button>
   <button data-tab="tools"><span>⚙</span>Zangen</button>
 </nav>

@@ -36,10 +36,11 @@ Bei jeder Änderung die Versionsnummer in `version.js` um 1 erhöhen. Die App ze
 
 ## Bedienung in Kürze
 
-- **Rohr:** Schenkel mit Richtungsknöpfen und Länge; Vorschau zeigt den bearbeiteten Schenkel. Parallelrohre laufen mit.
-- **3D:** Werkzeuge „Rohr“ (Gimbal am Ende, Ringe am gewählten Schenkel), „Schellen“, „Raum“ (Grundriss zeichnen, Wände ziehen, Maße antippen).
-- **Raum:** Raum anlegen, Wandlängen, Rohr an einer Wand ausrichten, Ziel-Anschluss, Schellen.
-- **Biegen:** Schritt-für-Schritt-Anleitung je Rohr, Montage mit Bohrpunkten, Material, Drucken/PDF.
+- **Rohr:** Schenkel mit Richtungsknöpfen und Achsmaß; Vorschau zeigt den bearbeiteten Schenkel. „＋“ oben legt ein neues gerades Rohr an.
+- **3D:** Gimbal am Ende, Ringe am gewählten Schenkel; über 👁 ausblendbar.
+- **Biegen:** Schritt-für-Schritt-Anleitung, Drucken/PDF.
+- **Zangen:** Zangenprofile, Marken, Kalibrierung.
+- **Labor (unter „Zangen“):** experimentell – Raum mit Wänden, Schellen, Ziel-Anschluss, Parallelrohre, Montage und Material. Ausgeschaltet bleiben diese Daten gespeichert, werden aber nicht gerechnet.
 
 ## Daten
 
