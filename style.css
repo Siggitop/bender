@@ -310,6 +310,10 @@ main:not(:has(> .tab.active)) { padding: 0; }
 @media (min-width: 900px) and (min-height: 521px) { #miniPrev { display: none; } }
 @media (max-width: 899px), (max-height: 520px) { #miniPrev { position: sticky; top: calc(62px + env(safe-area-inset-top)); z-index: 4; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); } }
 @media (orientation: landscape) and (max-height: 520px) { #miniPrev { height: 110px; top: 50px; } }
+/* Tastatur offen (iPhone): Vorschau oben im sichtbaren Ausschnitt, kleiner; Kopf und Tabbar treten zurück */
+body.kbd .top { position: static; }
+body.kbd #miniPrev { top: var(--vv-top, 0px); height: 110px; }
+body.kbd .tabbar { display: none; }
 .leg.focus { border-color: var(--mark); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mark) 30%, transparent); }
 .dirpick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
 .dirpick button { min-height: 40px; padding: 4px; font-size: 14px; white-space: nowrap; }

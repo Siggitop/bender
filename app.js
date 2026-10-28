@@ -84,14 +84,14 @@ function pickMark(f, angle) {
 function newProject(profileId, name) {
   return {
     id: uid(), name, profileId, mode: 'deltas', zugA: 0, zugE: 0, done: {}, ...structuredClone(PROJECT_DEFAULTS),
-    deltas: [{ x: 200, y: 0, z: 0 }, { x: 0, y: 0, z: 150 }],
-    legs: [{ len: 200, angle: 90, rot: 0 }, { len: 150 }],
+    // gerader Anfang: ersten Schenkel aufmessen, dann weiterführen
+    deltas: [{ x: 500, y: 0, z: 0 }],
+    legs: [{ len: 500 }],
   };
 }
 function seed() {
   const profiles = defaultProfiles();
-  const p = newProject(profiles[0].id, 'Beispiel 3D');
-  p.deltas = [{ x: 150, y: 0, z: 0 }, { x: 0, y: 0, z: 120 }, { x: 0, y: 180, z: 0 }, { x: 140, y: 0, z: 0 }];
+  const p = newProject(profiles[0].id, 'Rohr 1');
   return { profiles, projects: [p], rooms: [], currentId: p.id };
 }
 function load() {
@@ -2808,11 +2808,32 @@ $('#pImportFile').addEventListener('change', e => { const f = e.target.files?.[0
 // Kleine 3D-Skizze (gleiche Blickrichtung wie die 3D-Ansicht), damit beim Tippen sichtbar ist, wohin das Rohr läuft.
 // Der bearbeitete Schenkel leuchtet orange; Richtungspfeile mit Klartext „rechts / oben / hinten“.
 const mini = $('#miniPrev'), mctx = mini.getContext('2d');
+// iPhone-Tastatur: Safari schiebt den sichtbaren Ausschnitt nach unten, „sticky“ klebt aber am ganzen Fenster.
+// Darum Vorschau an den oberen Rand des sichtbaren Ausschnitts setzen und das Eingabefeld unter ihr halten.
+const vv = window.visualViewport;
+function fitKeyboard() {
+  if (!vv) return;
+  const open = innerHeight - vv.height > 120 && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName);
+  if (document.body.classList.contains('kbd') !== open) { document.body.classList.toggle('kbd', open); drawMini(); }
+  document.documentElement.style.setProperty('--vv-top', `${open ? Math.max(0, vv.offsetTop) : 0}px`);
+  if (!open || !mini.offsetParent) return;
+  const el = document.activeElement, r = el.getBoundingClientRect(), m = mini.getBoundingClientRect();
+  const top = m.bottom + 8, bottom = vv.offsetTop + vv.height - 8;
+  if (r.top < top) scrollBy(0, r.top - top);
+  else if (r.bottom > bottom) scrollBy(0, r.bottom - bottom);
+}
+if (vv) {
+  let raf = 0;
+  const later = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(fitKeyboard); };
+  vv.addEventListener('resize', later); vv.addEventListener('scroll', later);
+  document.addEventListener('focusin', () => setTimeout(fitKeyboard, 350));
+  document.addEventListener('focusout', () => setTimeout(fitKeyboard, 50));
+}
 function drawMini() {
   const layout = curLayout();
   if (!layout || !mini.clientWidth) return;
   const dpr = window.devicePixelRatio || 1, W = mini.clientWidth, H = mini.clientHeight;
-  if (mini.width !== Math.round(W * dpr)) { mini.width = Math.round(W * dpr); mini.height = Math.round(H * dpr); }
+  if (mini.width !== Math.round(W * dpr) || mini.height !== Math.round(H * dpr)) { mini.width = Math.round(W * dpr); mini.height = Math.round(H * dpr); }
   mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H);
   const pipes = [layout, ...layout.bundle], room = layout.room;
   const pts = pipes.flatMap(L => L.samples.map(s => project(s.p)));
