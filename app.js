@@ -340,10 +340,7 @@ $('#pName').addEventListener('input', e => { proj().name = e.target.value; save(
 $('#pProf').addEventListener('change', e => { commit(); proj().profileId = e.target.value; recompute(); });
 $('#pZugA').addEventListener('input', e => { commit('zugA'); proj().zugA = num(e.target.value); recompute(); });
 $('#pZugE').addEventListener('input', e => { commit('zugE'); proj().zugE = num(e.target.value); recompute(); });
-$('#pNew').addEventListener('click', () => {
-  const p = newProject(proj().profileId, `Rohr ${db.projects.length + 1}`);
-  db.projects.push(p); db.currentId = p.id; fullRender(); resetView();
-});
+$('#pNew').addEventListener('click', openNewDlg);
 $('#pDup').addEventListener('click', () => {
   const p = { ...structuredClone(proj()), id: uid(), name: proj().name + ' (Kopie)', done: {} };
   db.projects.push(p); db.currentId = p.id; fullRender();
@@ -384,12 +381,12 @@ function wallFrame(pl, planes) {
   const ref = planes.find(q => q.kind === 'wall' && q.axis === u && Math.abs(q.c - lo) < 0.5);
   return { u, lo, refName: ref ? ref.name : 'Wandanfang' };
 }
-function wallCoords(pt, pl, room) {
-  const { u, lo } = wallFrame(pl, layout.planes);
+function wallCoords(pt, pl, room, planes = layout.planes) {
+  const { u, lo } = wallFrame(pl, planes);
   return { dist: planeDist(pl, pt), along: pt[u] - lo, height: pt[2] - (room.z0 || 0) };
 }
-function fromWallCoords(c, pl, room) {
-  const { u, lo } = wallFrame(pl, layout.planes), q = [0, 0, 0];
+function fromWallCoords(c, pl, room, planes = layout.planes) {
+  const { u, lo } = wallFrame(pl, planes), q = [0, 0, 0];
   q[pl.axis] = pl.c + pl.n * c.dist; q[u] = lo + c.along; q[2] = (room.z0 || 0) + c.height;
   return q;
 }
@@ -435,23 +432,23 @@ function renderRoomTab() {
     if (pl) {
       const wc = wallCoords(refPoint(p, place.ref), pl, room), fr = wallFrame(pl, layout.planes);
       const refs = [['A', 'Rohranfang A'], ['E', 'Rohrende'], ...points(p).slice(1, -1).map((_, i) => [`V${i + 1}`, `Schnittpunkt ${i + 1}`])];
-      h += `<div class="card"><h3>Rohr im Raum ausrichten</h3>
+      h += `<div class="card"><h3>Startpunkt</h3>
         <div class="row2">
           <label>Bezugspunkt am Rohr<select id="plRef">${refs.map(([v, t]) => `<option value="${v}"${v === place.ref ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
           <label>gemessen an<select id="plWall">${walls.map(w => `<option value="${w.id}"${w.id === pl.id ? ' selected' : ''}>${w.name}</option>`).join('')}</select></label>
         </div>
         <div class="row3">
           <label>Abstand zur Wand<input data-plc="dist" inputmode="decimal" value="${mm(wc.dist)}"></label>
-          <label>Abstand zu ${fr.refName}<input data-plc="along" inputmode="decimal" value="${mm(wc.along)}"></label>
+          <label>ab ${fr.refName}<input data-plc="along" inputmode="decimal" value="${mm(wc.along)}"></label>
           <label>Höhe über Boden<input data-plc="height" inputmode="decimal" value="${mm(wc.height)}"></label>
         </div>
         <div class="btnrow" style="margin-top:8px"><button id="plWallH">An Wand (${fmt(f.clampH)} mm)</button><button id="plRotL">↺ 90° drehen</button><button id="plRotR">↻ 90° drehen</button></div>
-        <p class="hint">Maße bis Rohrmitte. Änderungen wirken sofort – in 3D mitverfolgen.</p></div>`;
+        <p class="hint">Bezugspunkt meist der Rohranfang A. Maße bis Rohrmitte; Änderungen wirken sofort – in 3D mitverfolgen.</p></div>`;
     }
   }
 
   // Ziel-Anschluss
-  h += `<div class="card"><h3>Ziel-Anschluss</h3>`;
+  h += `<div class="card"><h3>Ziel (Endpunkt)</h3>`;
   if (!p.target) h += `<p class="hint" style="margin-top:0">Wo soll das Rohr ankommen? Die App zeigt laufend, wie weit das Rohrende noch davon entfernt ist.</p><button id="tgAdd" class="wide" style="margin:0">◎ Ziel festlegen (am aktuellen Rohrende)</button>`;
   else if (room && walls.length) {
     if (!place.tgWall || !walls.some(w => w.id === place.tgWall)) place.tgWall = nearestWall(p.target)?.id;
@@ -459,7 +456,7 @@ function renderRoomTab() {
     h += `<div class="row2"><label>gemessen an<select id="tgWall">${walls.map(w => `<option value="${w.id}"${w.id === tw.id ? ' selected' : ''}>${w.name}</option>`).join('')}</select></label><span></span></div>
       <div class="row3">
         <label>Abstand zur Wand<input data-tgc="dist" inputmode="decimal" value="${mm(tc.dist)}"></label>
-        <label>Abstand zu ${fr.refName}<input data-tgc="along" inputmode="decimal" value="${mm(tc.along)}"></label>
+        <label>ab ${fr.refName}<input data-tgc="along" inputmode="decimal" value="${mm(tc.along)}"></label>
         <label>Höhe über Boden<input data-tgc="height" inputmode="decimal" value="${mm(tc.height)}"></label>
       </div>`;
   } else {
@@ -469,7 +466,8 @@ function renderRoomTab() {
         <label>Y <small>hinten + / vorn −</small>${signed('tg.1', t[1])}</label>
         <label>Z <small>oben + / unten −</small>${signed('tg.2', t[2])}</label></div>`;
   }
-  if (p.target) h += `${targetHtml()}<div class="btnrow" style="margin-top:8px"><button id="tgFromEnd">= aktuelles Rohrende</button><button id="tgDel" class="danger">Ziel entfernen</button></div>`;
+  if (p.target) h += `${targetHtml()}<button id="tgRoute" class="primary" style="width:100%;margin-top:8px">↳ Weg vom Start zum Ziel vorschlagen</button>
+    <div class="btnrow" style="margin-top:8px"><button id="tgFromEnd">= aktuelles Rohrende</button><button id="tgDel" class="danger">Ziel entfernen</button></div>`;
   h += '</div>';
 
   // Schellen
@@ -559,6 +557,12 @@ $('#tab-room').addEventListener('click', e => {
     commit(); rotatePipe(p, b.id === 'plRotL' ? 1 : -1); renderInputs();
   } else if (b.id === 'tgAdd' || b.id === 'tgFromEnd') { commit(); p.target = [...layout.E]; }
   else if (b.id === 'tgDel') { commit(); p.target = null; }
+  else if (b.id === 'tgRoute') {
+    const legs = routeLegs(layout.A, p.target, room ? nearestWall(layout.A) : null);
+    if (!legs.length) { toast('Start und Ziel liegen aufeinander.'); return; }
+    commit(); ensureDeltas(); p.deltas = legs; p.done = {}; renderInputs();
+    toast('Rechtwinkliger Weg vorgeschlagen – Ecken und Längen jetzt anpassen.');
+  }
   else if (b.dataset.cm) {
     if (b.dataset.cm === p.clampMode) return;
     commit();
@@ -574,10 +578,20 @@ $('#tab-room').addEventListener('click', e => {
 // ---------- Schenkel als Richtung + Länge ----------
 // Jede Richtung als Knopf; schräge Schenkel als Winkel zwischen zwei Richtungen (15°-Raster); sonst frei in X/Y/Z.
 const DIRS = [
-  { v: [1, 0, 0], label: '→ rechts', word: 'rechts' }, { v: [-1, 0, 0], label: '← links', word: 'links' },
-  { v: [0, 0, 1], label: '↑ oben', word: 'oben' }, { v: [0, 0, -1], label: '↓ unten', word: 'unten' },
-  { v: [0, 1, 0], label: '↗ hinten', word: 'hinten' }, { v: [0, -1, 0], label: '↙ vorne', word: 'vorne' },
+  { v: [1, 0, 0], label: '→ rechts', word: 'rechts', ax: 'x' }, { v: [-1, 0, 0], label: '← links', word: 'links', ax: 'x' },
+  { v: [0, 0, 1], label: '↑ oben', word: 'oben', ax: 'z' }, { v: [0, 0, -1], label: '↓ unten', word: 'unten', ax: 'z' },
+  { v: [0, 1, 0], label: '↗ hinten', word: 'hinten', ax: 'y' }, { v: [0, -1, 0], label: '↙ vorne', word: 'vorne', ax: 'y' },
 ];
+const dirWord = k => `<b class="ax-${DIRS[k].ax}">${DIRS[k].word}</b>`;
+// Kleiner Pfeil, wie der Schenkel in der 3D-Ansicht liegt (gleiche Blickrichtung), Farbe nach Hauptachse
+function legGlyph(v) {
+  const L = V.len(v);
+  if (L < 1e-9) return '';
+  const q = project(V.mul(v, 1 / L)), l = Math.hypot(q.x, q.y) || 1, dx = q.x / l * 15, dy = q.y / l * 15;
+  const ax = 'xyz'[[0, 1, 2].reduce((m, k) => (Math.abs(v[k]) > Math.abs(v[m]) ? k : m), 0)];
+  const axes = [[1, 0, 0, '#e03131'], [0, 1, 0, '#2f9e44'], [0, 0, 1, '#1c7ed6']].map(([a, b, c, col]) => { const p = project([a, b, c]); return `<line x1="20" y1="20" x2="${20 + p.x * 9}" y2="${20 + p.y * 9}" stroke="${col}" stroke-width="1.5" opacity=".45"/>`; }).join('');
+  return `<svg class="glyph" viewBox="0 0 40 40" aria-hidden="true">${axes}<line x1="${20 - dx * 0.2}" y1="${20 - dy * 0.2}" x2="${20 + dx}" y2="${20 + dy}" class="ax-${ax}-stroke" stroke-width="3.5" stroke-linecap="round"/><circle cx="${20 + dx}" cy="${20 + dy}" r="3.5" class="ax-${ax}-fill"/></svg>`;
+}
 const freeLegs = new Set(); // Schenkel, die bewusst frei in X/Y/Z bearbeitet werden
 const oblPref = new Map();  // gewählte Lesart einer Schräge je Schenkel: { a, b } („von a nach b“)
 const OBL_ORDER = [0, 1, 4, 5, 2, 3]; // ohne Vorgabe zuerst waagrecht: „von rechts nach oben“ statt „von oben nach rechts“
@@ -600,9 +614,10 @@ function classifyLeg(v, pref = null) {
   return { kind: 'free', len: L };
 }
 const obliqueVec = (a, b, ang, L) => V.mul(V.add(V.mul(DIRS[a].v, Math.cos(ang * Math.PI / 180)), V.mul(DIRS[b].v, Math.sin(ang * Math.PI / 180))), L);
+// Klartext: „läuft nach rechts“ / „läuft nach rechts, 30° nach oben geneigt“
 function legSays(c) {
-  if (c.kind === 'axis') return c.dir < 0 ? 'Richtung wählen' : `läuft nach <b>${DIRS[c.dir].word}</b>`;
-  if (c.kind === 'oblique') return `läuft <b>${c.ang}°</b> von ${DIRS[c.a].word} nach ${DIRS[c.b].word}`;
+  if (c.kind === 'axis') return c.dir < 0 ? 'Richtung wählen' : `läuft nach ${dirWord(c.dir)}`;
+  if (c.kind === 'oblique') return `läuft nach ${dirWord(c.a)}, <b>${c.ang}°</b> nach ${dirWord(c.b)} geneigt`;
   return 'läuft schräg (frei in X/Y/Z)';
 }
 
@@ -615,13 +630,13 @@ function legCard(p, d, i, n) {
   let h = `<div class="leg" data-leg="${i}"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName}</span>` +
     `<button data-off="${i}" title="Versatz einfügen" aria-label="Versatz einfügen">⤳</button>` +
     `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
-    `<div class="dirpick">${DIRS.map((D, k) => `<button data-dir="${i}:${k}"${c.kind === 'axis' && c.dir === k ? ' class="on"' : ''}${blocked(k) ? ' disabled' : ''}>${D.label}</button>`).join('')}` +
+    `<div class="dirpick">${DIRS.map((D, k) => `<button data-dir="${i}:${k}" class="ax-${D.ax}${c.kind === 'axis' && c.dir === k ? ' on' : ''}"${blocked(k) ? ' disabled' : ''}>${D.label}</button>`).join('')}` +
     `<button data-dir="${i}:obl"${c.kind !== 'axis' ? ' class="on"' : ''}>∠ schräg</button></div>`;
   if (c.kind === 'oblique') {
     h += `<div class="row3 oblrow">
-      <label>von${sel('obla', DIRS.map((D, k) => [k, D.word]), c.a)}</label>
-      <label>nach${sel('oblb', perpDirs(c.a).map(k => [k, DIRS[k].word]), c.b)}</label>
-      <label>Winkel${sel('oblg', [15, 30, 45, 60, 75].map(a => [a, a + '°']), c.ang)}</label></div>
+      <label>Richtung${sel('obla', DIRS.map((D, k) => [k, D.word]), c.a)}</label>
+      <label>geneigt nach${sel('oblb', perpDirs(c.a).map(k => [k, DIRS[k].word]), c.b)}</label>
+      <label>um${sel('oblg', [15, 30, 45, 60, 75].map(a => [a, a + '°']), c.ang)}</label></div>
       <button class="linkbtn" data-free="${i}">X/Y/Z frei eingeben</button>`;
   } else if (c.kind === 'free') {
     h += `<div class="row3 oblrow">
@@ -630,7 +645,7 @@ function legCard(p, d, i, n) {
       <label>Z <small>oben + / unten −</small>${signed(`deltas.${i}.z`, d.z)}</label></div>`;
   }
   h += `<div class="lenrow"><label>Länge (Achsmaß)<span class="unit"><input data-leglen="${i}" inputmode="decimal" value="${fin(c.len)}" placeholder="0"${c.kind === 'free' ? ' disabled' : ''}><span>mm</span></span></label>
-    <div class="dirsay" data-say="${i}">${legSays(c)}</div></div></div>`;
+    <div class="dirsay" data-say="${i}">${legGlyph(v)}<span>${legSays(c)}</span></div></div></div>`;
   return h;
 }
 
@@ -660,6 +675,111 @@ function focusLeg(i) {
   $$('#legList .leg').forEach(el => el.classList.toggle('focus', +el.dataset.leg === i));
   drawMini();
 }
+
+// ---------- Neues Rohr: erst Raum, dann Start und Ziel ----------
+// Richtiger Ablauf auf der Baustelle: Raum festlegen (oder bewusst ohne), Startpunkt an der Wand,
+// optional Ziel – daraus ein erster rechtwinkliger Rohrweg entlang der Wand.
+
+// Vorschlag: rechtwinklig vom Start zum Ziel – erst entlang der Startwand, dann hoch/runter, dann quer zur Wand
+function routeLegs(A, T, startWall) {
+  const d = V.sub(T, A);
+  const u = startWall ? (startWall.axis === 0 ? 1 : 0) : (Math.abs(d[0]) >= Math.abs(d[1]) ? 0 : 1);
+  return [u, 2, 1 - u].filter(k => Math.abs(d[k]) > 0.5).map(k => { const v = [0, 0, 0]; v[k] = d[k]; return { x: v[0], y: v[1], z: v[2] }; });
+}
+// Ohne Ziel: ein Schenkel entlang der Wand in die Richtung mit mehr Platz
+function firstLegAlong(A, wall, planes) {
+  const { u, lo } = wallFrame(wall, planes), hi = wall.ext[u][1], dir = A[u] - lo < hi - A[u] ? 1 : -1;
+  const L = Math.max(200, Math.min(1000, Math.floor(Math.abs((dir > 0 ? hi : lo) - A[u]) / 20) * 10));
+  const v = [0, 0, 0]; v[u] = dir * L;
+  return [{ x: v[0], y: v[1], z: v[2] }];
+}
+
+const nw = {};
+function openNewDlg() {
+  Object.assign(nw, {
+    name: `Rohr ${db.projects.length + 1}`, room: proj().roomId || (db.rooms.length ? db.rooms.at(-1).id : 'new'),
+    W: 4000, D: 3000, H: 2600, draw: false,
+    start: { wall: null, along: 500, height: 1000 }, useEnd: false, end: { wall: null, along: 2500, height: 1500 },
+  });
+  renderNewDlg();
+  $('#newDlg').hidden = false;
+}
+// Raum, so wie er im Dialog gewählt ist (neuer Raum: Rechteck ab Ecke 0/0)
+const nwRoom = () => (nw.room === 'new' ? { id: 'neu', outline: [[0, 0], [nw.W, 0], [nw.W, nw.D], [0, nw.D]], z0: 0, height: nw.H, pass: {} }
+  : nw.room === 'none' ? null : db.rooms.find(r => r.id === nw.room));
+
+function renderNewDlg() {
+  const room = nwRoom(), planes = roomPlanes(room), walls = planes.filter(w => w.kind === 'wall'), f = prof();
+  // Vorgabe Startwand: die Wand hinter dem Raum (größte Y-Lage), sonst die erste
+  const defWall = (walls.find(w => w.axis === 1 && w.n < 0) || walls[0])?.id;
+  if (!walls.some(w => w.id === nw.start.wall)) nw.start.wall = defWall;
+  if (!walls.some(w => w.id === nw.end.wall)) nw.end.wall = defWall;
+  const wallSel = (id, val) => `<select id="${id}">${walls.map(w => `<option value="${w.id}"${w.id === val ? ' selected' : ''}>${w.name}</option>`).join('')}</select>`;
+  const refName = id => { const w = walls.find(x => x.id === id); return w ? wallFrame(w, planes).refName : ''; };
+  const point = (key, o) => `<div class="row3">
+      <label>an Wand${wallSel(`nw-${key}-wall`, o.wall)}</label>
+      <label>ab ${refName(o.wall)}<input id="nw-${key}-along" inputmode="decimal" value="${mm(o.along)}"></label>
+      <label>Höhe über Boden<input id="nw-${key}-height" inputmode="decimal" value="${mm(o.height)}"></label></div>`;
+  $('#newBody').innerHTML = `
+    <label>Name<input id="nwName" value="${esc(nw.name)}"></label>
+    <div class="lbl" style="margin-top:12px">Wo wird verlegt?</div>
+    <div class="choice">
+      ${db.rooms.map(r => `<label class="radio"><input type="radio" name="nwRoom" value="${r.id}"${nw.room === r.id ? ' checked' : ''}> ${esc(r.name)}</label>`).join('')}
+      <label class="radio"><input type="radio" name="nwRoom" value="new"${nw.room === 'new' ? ' checked' : ''}> Neuer Raum</label>
+      <label class="radio"><input type="radio" name="nwRoom" value="none"${nw.room === 'none' ? ' checked' : ''}> Ohne Raum</label>
+    </div>
+    ${nw.room === 'new' ? `<div class="row3">
+        <label>Breite (mm)<input id="nwW" inputmode="decimal" value="${mm(nw.W)}"></label>
+        <label>Tiefe (mm)<input id="nwD" inputmode="decimal" value="${mm(nw.D)}"></label>
+        <label>Höhe (mm)<input id="nwH" inputmode="decimal" value="${mm(nw.H)}"></label></div>
+      <label class="chk"><input type="checkbox" id="nwDraw"${nw.draw ? ' checked' : ''}> danach Grundriss in 3D zeichnen (L-Form, Nischen)</label>` : ''}
+    ${room ? `<h4>Startpunkt (Rohranfang)</h4>${point('start', nw.start)}
+      <label class="chk" style="margin-top:6px"><input type="checkbox" id="nwUseEnd"${nw.useEnd ? ' checked' : ''}> Ziel (Endpunkt) festlegen</label>
+      ${nw.useEnd ? `<h4>Ziel</h4>${point('end', nw.end)}` : ''}
+      <p class="hint">Maße bis Rohrmitte; Abstand zur Wand = Schellenhöhe (${fmt(f.clampH)} mm). ${nw.useEnd ? 'Die App schlägt einen rechtwinkligen Weg entlang der Wand vor.' : 'Das Rohr beginnt mit einem Schenkel entlang der Wand.'}</p>`
+    : '<p class="hint">Das Rohr liegt frei. Ein Raum lässt sich später im Reiter „Raum“ ergänzen.</p>'}`;
+}
+// Werte aus dem Dialog übernehmen; Auswahl-Änderungen bauen ihn neu auf
+$('#newDlg').addEventListener('input', e => {
+  const id = e.target.id, v = num(e.target.value);
+  if (id === 'nwName') nw.name = e.target.value;
+  else if (id === 'nwW' || id === 'nwD' || id === 'nwH') { if (v >= 500) nw[id.slice(2)] = v; }
+  else if (/^nw-(start|end)-(along|height)$/.test(id)) { const [, k, f] = id.split('-'); nw[k][f] = v; }
+});
+$('#newDlg').addEventListener('change', e => {
+  const t = e.target;
+  if (t.name === 'nwRoom') { nw.room = t.value; nw.start.wall = nw.end.wall = null; } // Wand-Kennungen gelten je Raum
+  else if (t.id === 'nwDraw') nw.draw = t.checked;
+  else if (t.id === 'nwUseEnd') nw.useEnd = t.checked;
+  else if (/^nw-(start|end)-wall$/.test(t.id)) nw[t.id.split('-')[1]].wall = t.value;
+  else if (t.id === 'nwW' || t.id === 'nwD') { /* Wände neu benennen */ } else return;
+  renderNewDlg();
+});
+function createFromDlg() {
+  const f = prof(), p = newProject(proj().profileId, nw.name.trim() || `Rohr ${db.projects.length + 1}`);
+  let room = null;
+  if (nw.room === 'new') { room = { ...nwRoom(), id: uid(), name: `Raum ${db.rooms.length + 1}` }; db.rooms.push(room); }
+  else if (nw.room !== 'none') room = db.rooms.find(r => r.id === nw.room);
+  if (room) {
+    const planes = roomPlanes(room), walls = planes.filter(w => w.kind === 'wall');
+    const wallOf = id => walls.find(w => w.id === id) || walls[0];
+    const sw = wallOf(nw.start.wall), A = fromWallCoords({ dist: f.clampH, along: nw.start.along, height: nw.start.height }, sw, room, planes);
+    p.roomId = room.id; p.origin = A; p.mode = 'deltas';
+    if (nw.useEnd) {
+      p.target = fromWallCoords({ dist: f.clampH, along: nw.end.along, height: nw.end.height }, wallOf(nw.end.wall), room, planes);
+      const legs = routeLegs(A, p.target, sw);
+      p.deltas = legs.length ? legs : firstLegAlong(A, sw, planes);
+    } else p.deltas = firstLegAlong(A, sw, planes);
+  }
+  db.projects.push(p); db.currentId = p.id;
+  $('#newDlg').hidden = true;
+  fullRender(); resetView();
+  if (room && nw.draw) startRoomDraw();
+  else toast(room ? (nw.useEnd ? 'Rohrweg vom Start zum Ziel vorgeschlagen – jetzt anpassen.' : 'Rohr beginnt an der Wand – mit dem Gimbal oder im Reiter „Rohr“ weiterführen.') : 'Neues Rohr angelegt.');
+}
+$('#newOk').addEventListener('click', createFromDlg);
+$('#newCancel').addEventListener('click', () => { $('#newDlg').hidden = true; });
+$('#newDlg').addEventListener('click', e => { if (e.target.id === 'newDlg') $('#newDlg').hidden = true; });
 
 // ---------- Berechnung & Ausgabe ----------
 function hitMessages(hits, who) {
@@ -698,20 +818,71 @@ function roomGhosts(p) {
   });
 }
 
+// ---------- Weiche Übergänge ----------
+// Nach Eingaben im Panel, Rückgängig oder Ausrichten gleiten Rohr und Raum in die neue Lage, statt zu springen.
+// Beim direkten Ziehen in 3D (light-Neuberechnung) folgt die Anzeige ohne Verzögerung.
+const ANIM_MS = 300;
+let anim = null, animLayout = null, animRunning = false, shown = null;
+const curLayout = () => animLayout || layout;
+const ease = t => 1 - Math.pow(1 - t, 3);
+const lerpN = (a, b, t) => a + (b - a) * t;
+const geomOf = p => { const r = roomOf(p); return { pid: p.id, pts: points(p), outline: r ? structuredClone(r.outline) : null, z0: r?.z0 || 0, h: r?.height || 0 }; };
+// Unterschiedliche Punktzahl (Schenkel dazu/weg): das kürzere Rohr endet in seinem letzten Punkt
+function lerpGeom(A, B, t) {
+  const n = Math.max(A.pts.length, B.pts.length), at = (P, i) => P[Math.min(i, P.length - 1)];
+  const pts = Array.from({ length: n }, (_, i) => at(A.pts, i).map((v, k) => lerpN(v, at(B.pts, i)[k], t)));
+  const outline = A.outline && B.outline && A.outline.length === B.outline.length ? A.outline.map((q, i) => q.map((v, k) => lerpN(v, B.outline[i][k], t))) : B.outline;
+  return { pid: B.pid, pts, outline, z0: lerpN(A.z0, B.z0, t), h: lerpN(A.h || B.h, B.h, t) };
+}
+const sameGeom = (A, B) => A.pid === B.pid && A.pts.length === B.pts.length && A.pts.every((q, i) => V.len(V.sub(q, B.pts[i])) < 1e-6)
+  && JSON.stringify(A.outline) === JSON.stringify(B.outline) && A.z0 === B.z0 && A.h === B.h;
+function animLayoutFor(g) {
+  const p = proj(), room = roomOf(p);
+  const L = buildLayout(p, g.pts, room && g.outline ? { ...room, outline: g.outline, z0: g.z0, height: g.h } : room);
+  L.ghosts = layout.ghosts;
+  return L;
+}
+function animateTo(p, light) {
+  const now = geomOf(p);
+  const busy = drag || gz || roomDrag || clampDrag;
+  if (light || busy || !shown || shown.pid !== p.id || matchMedia('(prefers-reduced-motion: reduce)').matches) { anim = null; animLayout = null; shown = now; return; }
+  if (sameGeom(anim ? anim.to : shown, now)) return;
+  const from = anim ? lerpGeom(anim.from, anim.to, ease(Math.min(1, (performance.now() - anim.t0) / ANIM_MS))) : shown;
+  anim = { from, to: now, t0: performance.now() };
+  shown = now;
+  animLayout = animLayoutFor(from); // erstes Bild zeigt noch den alten Stand
+  if (!animRunning) { animRunning = true; requestAnimationFrame(animFrame); }
+}
+function animFrame() {
+  if (!anim) { animRunning = false; return; }
+  const t = Math.min(1, (performance.now() - anim.t0) / ANIM_MS);
+  if (t >= 1) { anim = null; animLayout = null; }
+  else animLayout = animLayoutFor(lerpGeom(anim.from, anim.to, ease(t)));
+  render3d(); drawMini();
+  if (anim) requestAnimationFrame(animFrame); else animRunning = false;
+}
+
+// Rohrdaten für Rechnung und Anzeige: Mittellinie, Raum, Schellen, Ziel, Parallelrohre.
+// pts/room lassen sich für Zwischenbilder der Animation vorgeben.
+function buildLayout(p, pts = points(p), room = roomOf(p)) {
+  const f = prof(p);
+  const L = computeLayout(pts, { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, pickMark: b => pickMark(f, b.angle) });
+  L.collisions = selfCollisions(L.samples, f.D);
+  L.A = pts[0]; L.E = pts.at(-1);
+  L.room = room; L.planes = roomPlanes(room);
+  L.hits = room ? planeHits(L.samples, room, f.D / 2) : [];
+  L.clampS = p.clampMode === 'manual' ? p.clamps.filter(s => s >= 0 && s <= L.total).sort((a, b) => a - b) : autoClamps(L, f);
+  L.clampInfo = L.clampS.map(s => clampInfo(L.samples, s, L.planes, f));
+  L.targetDelta = p.target ? V.sub(p.target, L.E) : null;
+  L.bundle = bundleLayouts(p, f, L);
+  return L;
+}
+
 function recompute(light = false) {
-  const p = proj(), f = prof(p);
-  layout = computeLayout(points(p), { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, pickMark: b => pickMark(f, b.angle) });
-  layout.collisions = selfCollisions(layout.samples, f.D);
-  // Umgebung: Raum, Schellen, Ziel, Parallelrohre, andere Rohre im Raum
-  const raw = points(p), room = roomOf(p);
-  layout.A = raw[0]; layout.E = raw.at(-1);
-  layout.room = room; layout.planes = roomPlanes(room);
-  layout.hits = room ? planeHits(layout.samples, room, f.D / 2) : [];
-  layout.clampS = p.clampMode === 'manual' ? p.clamps.filter(s => s >= 0 && s <= layout.total).sort((a, b) => a - b) : autoClamps(layout, f);
-  layout.clampInfo = layout.clampS.map(s => clampInfo(layout.samples, s, layout.planes, f));
-  layout.targetDelta = p.target ? V.sub(p.target, layout.E) : null;
-  layout.bundle = bundleLayouts(p, f, layout);
+  const p = proj(), f = prof(p), room = roomOf(p);
+  layout = buildLayout(p);
   layout.ghosts = roomGhosts(p);
+  animateTo(p, light);
   if (light) { draw(); drawMini(); return; }
   if (layout.collisions.length) layout.errors.push(`Rohr berührt sich selbst (${layout.collisions.length}× – rot markiert).`);
   const who = layout.bundle.length ? 'Rohr 1' : 'Rohr';
@@ -1162,6 +1333,7 @@ let fit = null, lastBase = null, view = null; // fit: gesperrte Grundskalierung 
 let sel = -1, drag = null; // gewählter Schenkel, laufendes Ziehen eines Anfassers
 let camTool = 'edit';      // 'edit' = Gimbal/Anfasser, 'clamp' = Schellen setzen
 function resetView(v = 'iso') {
+  setTimeout(() => { if (!$('#legList').contains(document.activeElement)) renderInputs(); });
   [cam.yaw, cam.pitch] = VIEWS[v];
   cam.view = v; cam.zoom = 1; cam.panX = cam.panY = 0; fit = null;
   $$('.viewbtns button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
@@ -1355,6 +1527,7 @@ const viewDir = () => { const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp
 const planeVisible = pl => { const n = [0, 0, 0]; n[pl.axis] = pl.n; return V.dot(n, viewDir()) < 0.05; };
 
 function render3d() {
+  const layout = curLayout(); // während einer Animation das Zwischenbild
   if (!layout || !cv.clientWidth) return;
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
   fitCanvas(cv, ctx, W, H, dpr);
@@ -1549,7 +1722,7 @@ function render3d() {
   { const [sx, sy] = P3(S[0].p); ctx.fillText('A', sx - 14, sy - 12); } // Parallelrohre beginnen daneben – ein „A“ genügt
 
   if (camTool === 'room') { gizmo = []; drawRoomOverlay(P3); }
-  else if (camTool !== 'clamp' && !printing) {
+  else if (camTool !== 'clamp' && !printing && !animLayout) {
     if (ortho) drawEditOverlay(P3, cAcc);
     drawGizmo();
   } else gizmo = [];
@@ -2546,7 +2719,7 @@ $('#offDlg').addEventListener('click', e => { if (e.target.id === 'offDlg') $('#
 $('#offNew').addEventListener('click', () => openOffset('new'));
 $('#offLegView').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
 $('#lpOff').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#offDlg').hidden = true; $('#visPop').hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#offDlg').hidden = true; $('#newDlg').hidden = true; $('#visPop').hidden = true; } });
 
 // ---------- Version / Update ----------
 // Eigene Version aus version.js; beim Öffnen und beim Zurückkehren in die App mit dem Server vergleichen.
@@ -2631,6 +2804,7 @@ $('#pImportFile').addEventListener('change', e => { const f = e.target.files?.[0
 // Der bearbeitete Schenkel leuchtet orange; Richtungspfeile mit Klartext „rechts / oben / hinten“.
 const mini = $('#miniPrev'), mctx = mini.getContext('2d');
 function drawMini() {
+  const layout = curLayout();
   if (!layout || !mini.clientWidth) return;
   const dpr = window.devicePixelRatio || 1, W = mini.clientWidth, H = mini.clientHeight;
   if (mini.width !== Math.round(W * dpr)) { mini.width = Math.round(W * dpr); mini.height = Math.round(H * dpr); }
@@ -2715,7 +2889,7 @@ $('#bundleCard').addEventListener('click', e => {
 
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
-  window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
+  window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
 }
 
 function fullRender() { sel = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }

@@ -37,7 +37,7 @@
           <label>Zugabe Ende (mm)<input id="pZugE" inputmode="decimal" placeholder="0"></label>
         </div>
         <div class="btnrow">
-          <button id="pNew">Neues Projekt</button>
+          <button id="pNew" class="primary">+ Neues Rohr</button>
           <button id="pDup">Duplizieren</button>
           <button id="pDel" class="danger">Löschen</button>
         </div>
@@ -145,6 +145,14 @@
     <div class="offinfo" id="offInfo"></div>
     <button id="offOk" class="primary" style="width:100%">Übernehmen</button>
     </div></div>
+  </div>
+</div>
+
+<div class="modal" id="newDlg" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="newTitle">
+    <div class="lp-head"><b id="newTitle">Neues Rohr</b><button id="newCancel">Abbrechen</button></div>
+    <div id="newBody"></div>
+    <button id="newOk" class="primary" style="width:100%;margin-top:12px">Rohr anlegen</button>
   </div>
 </div>
 

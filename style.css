@@ -341,3 +341,24 @@ table.det tr.sub td { border-bottom-style: dotted; }
 label.unit { flex-direction: row; align-items: center; }
 .wallrow { grid-template-columns: 62px minmax(90px, 1fr) auto; }
 .wallrow .chk { font-size: 13px; }
+
+/* Richtungsfarben wie im 3D-Achsenkreuz: X rot (rechts/links), Y grün (hinten/vorne), Z blau (oben/unten) */
+:root { --ax-x: #e03131; --ax-y: #2f9e44; --ax-z: #1c7ed6; }
+.dirpick button.ax-x { border-left: 4px solid var(--ax-x); }
+.dirpick button.ax-y { border-left: 4px solid var(--ax-y); }
+.dirpick button.ax-z { border-left: 4px solid var(--ax-z); }
+.dirpick button.ax-x.on { background: var(--ax-x); border-color: var(--ax-x); }
+.dirpick button.ax-y.on { background: var(--ax-y); border-color: var(--ax-y); }
+.dirpick button.ax-z.on { background: var(--ax-z); border-color: var(--ax-z); }
+b.ax-x { color: var(--ax-x); } b.ax-y { color: var(--ax-y); } b.ax-z { color: var(--ax-z); }
+.ax-x-stroke { stroke: var(--ax-x); } .ax-y-stroke { stroke: var(--ax-y); } .ax-z-stroke { stroke: var(--ax-z); }
+.ax-x-fill { fill: var(--ax-x); } .ax-y-fill { fill: var(--ax-y); } .ax-z-fill { fill: var(--ax-z); }
+.dirsay { display: flex; align-items: center; gap: 8px; }
+.glyph { width: 40px; height: 40px; flex: none; background: var(--canvas); border: 1px solid var(--line); border-radius: 8px; }
+
+/* Dialog „Neues Rohr“ */
+.choice { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.radio { flex-direction: row; align-items: center; gap: 6px; font-size: 15px; color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; }
+.radio input { width: 18px; min-height: 18px; height: 18px; }
+.radio:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.sheet h4 { margin: 12px 0 6px; font-size: 15px; }
