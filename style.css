@@ -328,8 +328,9 @@ body.kbd .tabbar { display: none; }
 .unit span { color: var(--muted); font-size: 14px; }
 .bundlerow, .wallrow { display: grid; grid-template-columns: auto 1.3fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 .wallrow { grid-template-columns: 70px 1fr auto; align-items: center; }
-.bundlerow > b { padding-bottom: 12px; white-space: nowrap; }
-.bundlerow button { min-height: 42px; border: 0; background: transparent; color: var(--muted); }
+.bundlerow { align-items: start; }
+.bundlerow > b { padding-top: 32px; white-space: nowrap; }
+.bundlerow button { min-height: 42px; margin-top: 20px; border: 0; background: transparent; color: var(--muted); }
 .toolseg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--card); }
 .toolseg button { border: 0; border-radius: 0; font-size: 14px; color: var(--text); }
 .toolseg button + button { border-left: 1px solid var(--line); }

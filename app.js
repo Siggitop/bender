@@ -2909,16 +2909,24 @@ function renderBundle() {
   const p = proj(), f = prof(p), verts = layout.verts;
   const sideName = k => (verts.length > 1 ? dirName(sideDir(verts, k)) : '–');
   $('#bundleCard').innerHTML = `<h3>Parallelrohre</h3>
-    <p class="hint" style="margin-top:0">Weitere Rohre im festen Abstand (Rohrmitte zu Rohrmitte). Sie laufen bei jeder Änderung mit, als würden sie gemeinsam gebogen; die Schellen werden zu Mehrfachschellen.</p>
-    ${p.bundle.map((b, i) => `<div class="bundlerow"><b>Rohr ${i + 2}</b>
+    <p class="hint" style="margin-top:0">Weitere Rohre im festen Abstand, gemessen von Rohrmitte <b>Rohr 1</b> bis Rohrmitte. Sie laufen bei jeder Änderung mit, als würden sie gemeinsam gebogen; die Schellen werden zu Mehrfachschellen. Ein neues Rohr übernimmt den letzten Abstand zum Nachbarn.</p>
+    ${p.bundle.map((b, i) => {
+      const prev = p.bundle.slice(0, i).filter(o => o.side === b.side).at(-1), gap = b.dist - (prev ? prev.dist : 0);
+      return `<div class="bundlerow"><b>Rohr ${i + 2}</b>
       <label>Seite<select data-bs="${i}">${[0, 1, 2, 3].map(k => `<option value="${k}"${k === b.side ? ' selected' : ''}>${sideName(k)}</option>`).join('')}</select></label>
-      <label>Abstand<span class="unit"><input data-bd="${i}" inputmode="decimal" value="${fin(b.dist)}"><span>mm</span></span></label>
-      <button data-bdel="${i}" aria-label="Parallelrohr entfernen">✕</button></div>`).join('')}
+      <label>zu Rohr 1<span class="unit"><input data-bd="${i}" inputmode="decimal" value="${fin(b.dist)}"><span>mm</span></span><small data-bgap="${i}">zum Nachbarn ${fmt(gap)} mm</small></label>
+      <button data-bdel="${i}" aria-label="Parallelrohr entfernen">✕</button></div>`;
+    }).join('')}
     <button id="bAdd" class="wide" style="margin:6px 0 0">+ Parallelrohr</button>`;
 }
 $('#bundleCard').addEventListener('input', e => {
   const el = e.target, p = proj();
-  if (el.dataset.bd != null) { const v = num(el.value); if (!(v > 0)) return; commit('bd' + el.dataset.bd); p.bundle[+el.dataset.bd].dist = v; recompute(); }
+  if (el.dataset.bd != null) {
+    const v = num(el.value); if (!(v > 0)) return;
+    commit('bd' + el.dataset.bd); p.bundle[+el.dataset.bd].dist = v; recompute();
+    // Abstand zum Nachbarn mitführen, ohne das Feld neu aufzubauen
+    p.bundle.forEach((b, i) => { const prev = p.bundle.slice(0, i).filter(o => o.side === b.side).at(-1); const t = $(`[data-bgap="${i}"]`); if (t) t.textContent = `zum Nachbarn ${fmt(b.dist - (prev ? prev.dist : 0))} mm`; });
+  }
 });
 $('#bundleCard').addEventListener('change', e => {
   const el = e.target, p = proj();
@@ -2929,8 +2937,10 @@ $('#bundleCard').addEventListener('click', e => {
   if (!b) return;
   if (b.id === 'bAdd') {
     commit();
-    const step = Math.max(20, Math.ceil(f.D * 4 / 5) * 5), last = p.bundle.at(-1);
-    p.bundle.push({ id: uid(), side: last ? last.side : 0, dist: last ? last.dist + step : step });
+    // Neues Rohr im gleichen Raster wie die vorhandenen: Abstand zum Nachbarn wie zuletzt eingestellt
+    const side = p.bundle.at(-1)?.side ?? 0, same = p.bundle.filter(b => b.side === side);
+    const gap = same.length >= 2 ? same.at(-1).dist - same.at(-2).dist : same.length ? same[0].dist : Math.max(20, Math.ceil(f.D * 4 / 5) * 5);
+    p.bundle.push({ id: uid(), side, dist: r1((same.at(-1)?.dist || 0) + gap) });
   } else if (b.dataset.bdel != null) { commit(); p.bundle.splice(+b.dataset.bdel, 1); }
   else return;
   if (!isOrtho()) fit = null;
