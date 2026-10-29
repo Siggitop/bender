@@ -48,11 +48,7 @@
       </details>
 
       <canvas id="miniPrev" aria-label="Vorschau des Rohrs – antippen öffnet 3D"></canvas>
-      <div class="seg" id="modeSeg">
-        <button data-mode="deltas">Richtungen X/Y/Z</button>
-        <button data-mode="angles">Winkel &amp; Drehung</button>
-      </div>
-      <p class="hint" id="modeHint"></p>
+      <p class="hint">Je Schenkel Richtung antippen und Achsmaß eingeben (Rohrmitte bis Rohrmitte).</p>
       <div id="legList"></div>
       <button id="addLeg" class="wide">+ Schenkel hinzufügen</button>
       <div class="tpl">
@@ -62,7 +58,7 @@
         <button data-tpl="u">U-Bogen</button>
         <button data-tpl="d3">3D-Bogen</button>
       </div>
-      <div class="card labonly" id="bundleCard"></div>
+      <div class="card" id="bundleCard"></div>
       <div class="card" id="summary"></div>
     </section>
 
@@ -88,17 +84,21 @@
       <div class="viewhint" id="viewHint"></div>
       <div class="viewacts">
         <button id="visBtn" aria-label="Anzeige" title="Anzeige">👁</button>
+        <button id="endPin" title="Rohrende im Raum festhalten">📌 Ende fest</button>
         <span class="toolseg labonly"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span>
-        <button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
+        <button id="bundleRot" hidden title="Parallelrohre um das Rohr drehen (oben → vorne → unten → hinten)">⟳ Bündel</button><button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
       </div>
       <div class="popover" id="visPop" hidden>
-        <label class="chk"><input type="checkbox" data-vis="dims"> Maße &amp; Achsmaß-Linien</label>
+        <label class="chk"><input type="checkbox" data-vis="dims"> Maße</label>
+        <label class="chk"><input type="checkbox" data-vis="axis"> Achslinie</label>
+        <label class="chk"><input type="checkbox" data-vis="total"> Gesamtmaße (Versatz A → Ende)</label>
+        <label class="chk"><input type="checkbox" data-vis="angles"> Winkelmaße</label>
         <label class="chk"><input type="checkbox" data-vis="marks"> Strich-Markierungen</label>
         <label class="chk"><input type="checkbox" data-vis="grid"> Raster &amp; Schatten</label>
         <label class="chk labonly"><input type="checkbox" data-vis="planes"> Wände, Boden, Decke</label>
         <label class="chk labonly"><input type="checkbox" data-vis="clamps"> Schellen</label>
         <label class="chk labonly"><input type="checkbox" data-vis="ghosts"> Nachbarrohre</label>
-        <label class="chk"><input type="checkbox" data-vis="gizmo"> Gimbal (Pfeile &amp; Ringe)</label>
+        <label class="chk"><input type="checkbox" data-vis="extAlways"> Fortführ-Pfeile immer zeigen</label>
       </div>
       <div class="toast" id="toast" hidden></div>
       <div class="roombar" id="roomBar" hidden></div>
@@ -109,9 +109,10 @@
           <label>Richtung in Ansicht<select id="lpDir"></select></label>
         </div>
         <p class="hint" id="lpNote"></p>
+        <label id="lpBundleL" class="lpbundle" hidden>Bündel auf diesem Schenkel<select id="lpBundle"></select></label>
         <div class="btnrow"><button id="lpIns">+ Danach einfügen</button><button id="lpOff">⤳ Versatz</button><button id="lpDel" class="danger">Löschen</button></div>
       </div>
-      <div class="legend"><span class="lg-mark"></span>Markierung <span class="lg-dim"></span>Achsmaß</div>
+      <div class="legend"><span class="lg-mark"></span>Markierung <span class="lg-dim"></span>Achslinie</div>
     </div>
   </aside>
 </div>

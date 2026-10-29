@@ -171,14 +171,6 @@ export function pointAt(samples, s) {
   return samples[0]?.p || [0, 0, 0];
 }
 
-// Probebiegung 90°: Rohrlänge L, Markierung x (ab Anfang), Achsmaße A1 (Anfangsschenkel), A2 (anderer Schenkel)
-// A1 = s + R,  A1 + A2 = L - B + 2R  =>  R = (A1 + A2 - L) / (2 - π/2)
-export function calibrate({ L, x, A1, A2, R }) {
-  let Rn = R;
-  if (L > 0 && A2 > 0) Rn = (A1 + A2 - L) / (2 - Math.PI / 2);
-  return { R: Rn, k: x - (A1 - Rn) };
-}
-
 // Kürzester Abstand zweier Strecken im Raum; liefert Abstand und Punkt auf der ersten Strecke
 function segSeg(p1, q1, p2, q2) {
   const cl = v => Math.max(0, Math.min(1, v));

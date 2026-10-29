@@ -1,5 +1,5 @@
-import { roomPlanes, planeDist, planeHits, autoClamps, clampInfo, drillCoords, parallelGeometry, parallelPoints, sideDir, straightRuns, cutPlan, triangulate, cleanOutline, signedArea, pointInPoly, wallLetter } from './site.js';
-import { pointsFromDeltas, pointsFromAngles, anglesFromPoints, cleanPoints, computeLayout, calibrate, pointAt, V, rotAbout, selfCollisions, refPerp } from './geometry.js';
+import { roomPlanes, planeDist, planeHits, autoClamps, clampInfo, drillCoords, bundleGeometry, pipeGap, parallelPoints, sideDir, straightRuns, cutPlan, triangulate, cleanOutline, signedArea, pointInPoly, wallLetter } from './site.js';
+import { pointsFromDeltas, pointsFromAngles, computeLayout, pointAt, V, rotAbout, selfCollisions } from './geometry.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -14,25 +14,26 @@ const normRot = r => { let x = ((r % 360) + 360) % 360; return x > 180 ? x - 360
 // ---------- Daten ----------
 const STORE = 'biege.v1';
 
-// Zangenmarken: k = Abstand Bleistiftstrich -> Biegeanfang, side = wo der Rohranfang liegt.
-// Schätzung bis zur Kalibrierung: 0 = Biegeanfang, L/R = Schnittpunkt bei 90° (k = R).
-const defaultMarks = R => [
-  { name: '0', k: 0, side: 'links', cal: false },
-  { name: 'L', k: R, side: 'links', cal: false },
-  { name: 'R', k: R, side: 'rechts', cal: false },
+// Zangenmarken (fest): k = Abstand Bleistiftstrich -> Biegeanfang, side = wo der gemessene Teil liegt.
+// 0 = Biegeanfang, L/R = Schnittpunkt bei 90° (k = R).
+const marksOf = f => [
+  { name: '0', k: 0, side: 'links' },
+  { name: 'L', k: f.R, side: 'links' },
+  { name: 'R', k: f.R, side: 'rechts' },
 ];
 function defaultProfiles() {
-  const base = { springback: 0, pref: 'auto', ...CLAMP_DEFAULTS };
   return [
-    { ...base, id: 'es6', name: 'Edelstahl 6 mm', D: 6, R: 15, minStraight: 20, marks: defaultMarks(15) },
-    { ...base, id: 'es8', name: 'Edelstahl 8 mm', D: 8, R: 24, minStraight: 25, marks: defaultMarks(24) },
+    { ...CLAMP_DEFAULTS, id: 'es6', name: 'Edelstahl 6 mm', D: 6, R: 16, minStraight: 20 },
+    { ...CLAMP_DEFAULTS, id: 'es8', name: 'Edelstahl 8 mm', D: 8, R: 24, minStraight: 25 },
   ];
 }
 // Schellen-Regeln je Profil: größter Abstand, kleinster Abstand auf einer Geraden, Abstand zum Bogen bzw. Rohrende,
 // Schellenhöhe (Untergrund → Rohrmitte), Stangenlänge
 const CLAMP_DEFAULTS = { clampMax: 600, clampMin: 300, clampBend: 80, clampEnd: 80, clampH: 20, stock: 6000 };
 // Felder, die spätere Versionen ergänzt haben. roomId = Raum (db.rooms), bundle = Parallelrohre { id, side 0–3, dist }
-const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, roomId: null, bundle: [], target: null, clamps: [], clampMode: 'auto' };
+// bundleTx = Lagewechsel des Bündels an Biegungen { bend, rot ±1, where 'before'|'after', ang, gap }
+// endFixed = Rohrende bleibt beim Ändern von Längen/Winkeln im Raum stehen (Ausgleich über freie Schenkel)
+const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, roomId: null, bundle: [], bundleTx: [], target: null, clamps: [], clampMode: 'auto', endFixed: true };
 
 // Bis Version 14 hatte jedes Rohr eigene, unbegrenzte Flächen → daraus einen rechteckigen Raum machen
 function roomFromPlanes(p) {
@@ -54,32 +55,23 @@ function migrate(d) {
   d.projects.forEach(p => {
     for (const [k, v] of Object.entries(PROJECT_DEFAULTS)) if (p[k] === undefined) p[k] = structuredClone(v);
     if (p.planes?.length && !p.roomId) { const r = roomFromPlanes(p); d.rooms.push(r); p.roomId = r.id; }
+    // Eingabe „Winkel & Drehung“ entfällt: in Richtungen umrechnen, Lage im Raum bleibt (frame)
+    if (p.mode === 'angles') { p.deltas = toDeltas(p.legs, p.frame); p.mode = 'deltas'; }
+    if (!p.deltas?.length) p.deltas = [{ x: 500, y: 0, z: 0 }]; // leere Rohre (Version 29/30) bekommen einen geraden Anfang
     delete p.planes; delete p.group; // Rohrgruppen entfallen: Parallelrohre gehören jetzt zum Rohr (bundle)
   });
   d.profiles.forEach(f => { for (const [k, v] of Object.entries(CLAMP_DEFAULTS)) if (f[k] === undefined) f[k] = v; });
-  d.profiles.forEach(f => {
-    if (f.marks) return;
-    f.marks = defaultMarks(f.R);
-    const m = f.marks.find(x => x.name === f.mark) || f.marks[0];
-    m.k = f.k || 0; m.cal = !!f.calibrated;
-    // übrige Marken wie bei der Kalibrierung abschätzen: L/R liegen um den Radius neben „0“
-    const isVertex = n => ['L', 'R'].includes(n);
-    const k0 = isVertex(m.name) ? m.k - f.R : m.k;
-    f.marks.forEach(o => { if (o !== m) o.k = isVertex(o.name) ? k0 + f.R : k0; });
-    f.pref = 'auto';
-    delete f.k; delete f.mark; delete f.insert; delete f.calibrated;
-  });
+  // Marken, Kalibrierung und Rückfederung gibt es nicht mehr
+  d.profiles.forEach(f => { ['marks', 'pref', 'springback', 'k', 'mark', 'insert', 'calibrated'].forEach(k => delete f[k]); });
+  // Standardradius 6 mm ist 16 mm (früher 15): einmalig nachziehen, solange die Vorgabe nicht geändert wurde
+  if (!d.r16) { d.profiles.forEach(f => { if (f.id === 'es6' && f.R === 15) f.R = 16; }); d.r16 = true; }
   return d;
 }
-const anyCal = f => f.marks.some(m => m.cal);
 
-// Automatisch: 90° mit L (Strich = Schnittpunkt), sonst 0
+// 90° mit L (Strich = Schnittpunkt), sonst 0
 function pickMark(f, angle) {
-  const ms = f.marks || [];
-  const by = n => ms.find(m => m.name.trim().toUpperCase() === n);
-  if (f.pref && f.pref !== 'auto') { const m = ms.find(x => x.name === f.pref); if (m) return m; }
-  if (Math.abs(angle - 90) < 0.5 && by('L')) return by('L');
-  return by('0') || ms[0] || { name: '0', k: 0, side: 'links' };
+  const [m0, mL] = marksOf(f);
+  return Math.abs(angle - 90) < 0.5 ? mL : m0;
 }
 function newProject(profileId, name) {
   return {
@@ -92,7 +84,7 @@ function newProject(profileId, name) {
 function seed() {
   const profiles = defaultProfiles();
   const p = newProject(profiles[0].id, 'Rohr 1');
-  return { profiles, projects: [p], rooms: [], currentId: p.id };
+  return { profiles, projects: [p], rooms: [], currentId: p.id, r16: true };
 }
 function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE)); if (d?.profiles?.length && d?.projects?.length) return migrate(d); } catch {}
@@ -103,7 +95,7 @@ const save = () => { try { localStorage.setItem(STORE, JSON.stringify(db)); } ca
 const proj = () => db.projects.find(p => p.id === db.currentId) || db.projects[0];
 const prof = (p = proj()) => db.profiles.find(x => x.id === p.profileId) || db.profiles[0];
 const roomOf = (p = proj()) => db.rooms.find(r => r.id === p.roomId) || null;
-// Labor: Raum, Schellen, Ziel und Parallelrohre sind Experimente – nur sichtbar und wirksam, wenn eingeschaltet.
+// Labor: Raum, Schellen und Ziel sind Experimente – nur sichtbar und wirksam, wenn eingeschaltet.
 // Die Daten bleiben beim Ausschalten erhalten, werden aber nicht gerechnet und nicht gezeichnet.
 let lab = false;
 try { lab = localStorage.getItem('biege.lab') === '1'; } catch {}
@@ -111,6 +103,13 @@ document.body.classList.toggle('lab', lab);
 const activeRoom = (p = proj()) => (lab ? roomOf(p) : null);
 // Achs-Schnittpunkte in Raumkoordinaten; origin = Lage des Rohranfangs, frame = Ausrichtung im Winkel-Modus
 const points = p => (p.mode === 'deltas' ? pointsFromDeltas(p.deltas, p.origin) : pointsFromAngles(p.legs, p.frame, p.origin));
+
+// Lagewechsel hängen an Biegungsnummern: beim Einfügen/Löschen von Schenkeln mitschieben
+function txInsertLegs(p, at, count) { (p.bundleTx || []).forEach(t => { if (t.bend >= at) t.bend += count; }); }
+function txDeleteLeg(p, i) {
+  p.bundleTx = (p.bundleTx || []).filter(t => t.bend !== i - 1 && t.bend !== i);
+  p.bundleTx.forEach(t => { if (t.bend > i) t.bend--; });
+}
 
 function setPath(obj, path, val) {
   const ks = path.split('.');
@@ -125,14 +124,6 @@ function toDeltas(legs, frame = null) {
   const z = v => (Math.abs(v) < 1e-9 ? 0 : v); // Rundungsreste der Winkelrechnung entfernen
   return pts.slice(1).map((q, i) => ({ x: z(q[0] - pts[i][0]), y: z(q[1] - pts[i][1]), z: z(q[2] - pts[i][2]) }));
 }
-// Winkel-Darstellung samt Ausrichtung (frame), damit die Lage im Raum beim Moduswechsel erhalten bleibt
-function toLegs(deltas) {
-  const pts = cleanPoints(pointsFromDeltas(deltas));
-  if (pts.length < 2) return { legs: [{ len: 100 }], frame: null };
-  const d = V.norm(V.sub(pts[1], pts[0]));
-  return { legs: anglesFromPoints(pts).map(l => ({ len: l.len, angle: l.angle, rot: normRot(l.rot) })), frame: { d, b: refPerp(d) } };
-}
-
 const TEMPLATES = {
   w90: [{ len: 150, angle: 90, rot: 0 }, { len: 150 }],
   u: [{ len: 150, angle: 90, rot: 0 }, { len: 80, angle: 90, rot: 0 }, { len: 150 }],
@@ -144,12 +135,12 @@ const TEMPLATES = {
 // innerhalb von 1,5 s wird zu einem Schritt zusammengefasst.
 const hist = new Map();
 const histOf = p => { if (!hist.has(p.id)) hist.set(p.id, { undo: [], redo: [] }); return hist.get(p.id); };
-const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'roomId', 'bundle', 'target', 'clamps', 'clampMode'];
+const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'roomId', 'bundle', 'bundleTx', 'target', 'clamps', 'clampMode', 'endFixed'];
 const snapshot = p => structuredClone({ ...Object.fromEntries(SNAP_KEYS.map(k => [k, p[k] ?? null])), _room: roomOf(p) });
 function restoreSnapshot(p, snap) {
   const { _room, ...rest } = structuredClone(snap);
   Object.assign(p, rest);
-  p.bundle ||= [];
+  p.bundle ||= []; p.bundleTx ||= [];
   if (_room) { const i = db.rooms.findIndex(r => r.id === _room.id); if (i >= 0) db.rooms[i] = _room; else db.rooms.push(_room); }
 }
 let lastKey = null, lastTime = 0;
@@ -192,18 +183,6 @@ document.addEventListener('keydown', e => {
 let layout = null, highlight = -1;
 
 const ANGLE_STEP = 15;
-// Auswahlliste im 15°-Raster; ein Wert außerhalb bleibt als eigene Option sichtbar
-function angleSelect(path, val, from, to) {
-  let o = '', hit = false;
-  for (let a = from; a <= to; a += ANGLE_STEP) {
-    const on = Math.abs(a - val) < 0.05;
-    hit ||= on;
-    o += `<option value="${a}"${on ? ' selected' : ''}>${a}°</option>`;
-  }
-  if (!hit) o = `<option value="${val}" selected>${fmt(val)}° (außerhalb Raster)</option>` + o;
-  return `<select data-p="${path}">${o}</select>`;
-}
-
 function signed(path, val) {
   return `<span class="sgn"><button type="button" class="sgbtn" data-sign="${path}" aria-label="Vorzeichen">${val < 0 ? '−' : '+'}</button>` +
     `<input inputmode="decimal" data-p="${path}" data-signed value="${fin(Math.abs(val || 0))}" placeholder="0"></span>`;
@@ -225,34 +204,9 @@ function renderProjSum() {
 }
 
 function renderInputs() {
-  const p = proj();
-  $$('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === p.mode));
-  $('#modeHint').textContent = p.mode === 'deltas'
-    ? 'Je Schenkel Richtung antippen und Achsmaß eingeben (Rohrmitte bis Rohrmitte).'
-    : 'Achsmaß bis zum nächsten Schnittpunkt. Drehung: 0° = U-Form, 180° = Z-Form/Etage, ±90° = räumlich.';
-  const n = p.mode === 'deltas' ? p.deltas.length : p.legs.length;
-  const legName = i => legSpan(i, n);
-  let h = '';
-  if (p.mode === 'deltas') {
-    p.deltas.forEach((d, i) => {
-      h += legCard(p, d, i, n) + (i < n - 1 ? `<div class="bendrow"><div class="t" data-bend="${i}">Biegung ${i + 1}</div></div>` : '');
-    });
-  } else {
-    p.legs.forEach((l, i) => {
-      h += `<div class="leg"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName(i)}</span>` +
-        `<button data-off="${i}" title="Versatz einfügen">⤳ Versatz</button>` +
-        `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
-        `<label>Achsmaß (mm)<input inputmode="decimal" data-p="legs.${i}.len" value="${fin(l.len)}" placeholder="0"></label></div>`;
-      if (i < n - 1) {
-        h += `<div class="bendrow"><div class="t">Biegung ${i + 1}</div><div class="row2" style="margin:0">` +
-          `<label>Winkel${angleSelect(`legs.${i}.angle`, l.angle ?? 90, ANGLE_STEP, 180)}</label>` +
-          (i === 0 ? `<label>Drehung (°)<input disabled placeholder="– erste Biegung –"></label>`
-            : `<label>Drehung${angleSelect(`legs.${i}.rot`, normRot(l.rot || 0), -165, 180)}</label>`) +
-          `</div></div>`;
-      }
-    });
-  }
-  $('#legList').innerHTML = h;
+  const p = proj(), n = p.deltas.length;
+  $('#legList').innerHTML = p.deltas.map((d, i) => legCard(p, d, i, n) +
+    (i < n - 1 ? `<div class="bendrow"><div class="t" data-bend="${i}">Biegung ${i + 1}</div></div>` : '')).join('');
 }
 
 function readSigned(inp) {
@@ -270,7 +224,7 @@ $('#legList').addEventListener('input', e => {
     const i = +el.dataset.leglen, L = num(el.value);
     if (!(L > 0)) return;
     commit('len' + i);
-    setDelta(i, V.mul(V.norm(deltaVec(p.deltas[i])), L));
+    withEnd(i, () => setDelta(i, V.mul(V.norm(deltaVec(p.deltas[i])), L)));
     recompute(); return;
   }
   if (el.dataset.obla != null || el.dataset.oblb != null || el.dataset.oblg != null) {
@@ -280,12 +234,16 @@ $('#legList').addEventListener('input', e => {
     if (!perpDirs(a).includes(b)) b = perpDirs(a).includes(2) ? 2 : perpDirs(a)[0];
     oblPref.set(i, { a, b });
     commit();
-    setDelta(i, obliqueVec(a, b, g, V.len(deltaVec(p.deltas[i])) || 100));
+    // Ende fixiert und nur der Winkel geändert: Versatz (Anteil quer) bleibt, Schräge und Lauflänge passen sich an
+    const v0 = deltaVec(p.deltas[i]), off0 = V.dot(v0, DIRS[b].v);
+    const L = p.endFixed && el.dataset.oblg != null && off0 > 0.5 ? off0 / Math.sin(g * Math.PI / 180) : V.len(v0) || 100;
+    withEnd(i, () => setDelta(i, obliqueVec(a, b, g, L)));
     renderInputs(); recompute(); focusLeg(i); return;
   }
   if (!el.dataset.p) return;
   commit('f:' + el.dataset.p);
-  setPath(proj(), el.dataset.p, 'signed' in el.dataset ? readSigned(el) : num(el.value));
+  const m = /^deltas\.(\d+)\./.exec(el.dataset.p), val = 'signed' in el.dataset ? readSigned(el) : num(el.value);
+  if (m) withEnd(+m[1], () => setPath(proj(), el.dataset.p, val)); else setPath(proj(), el.dataset.p, val);
   recompute();
 });
 $('#legList').addEventListener('click', e => {
@@ -295,44 +253,33 @@ $('#legList').addEventListener('click', e => {
   if (b.dataset.sign) {
     b.textContent = b.textContent === '−' ? '+' : '−';
     commit();
-    setPath(p, b.dataset.sign, num(b.nextElementSibling.value) * (b.textContent === '−' ? -1 : 1));
+    const m = /^deltas\.(\d+)\./.exec(b.dataset.sign), val = num(b.nextElementSibling.value) * (b.textContent === '−' ? -1 : 1);
+    if (m) withEnd(+m[1], () => setPath(p, b.dataset.sign, val)); else setPath(p, b.dataset.sign, val);
     recompute();
   } else if (b.dataset.dir) {
     const [i, k] = b.dataset.dir.split(':');
     legDirClick(+i, k);
+  } else if (b.dataset.lk) {
+    const [i, f] = b.dataset.lk.split(':'), o = p.deltas[+i], on = !o[f];
+    commit(); delete o.lock; delete o.flex; if (on) o[f] = true;
+    renderInputs(); recompute();
   } else if (b.dataset.free != null) {
     freeLegs.add(+b.dataset.free); renderInputs(); focusLeg(+b.dataset.free);
   } else if (b.dataset.off != null) {
     openOffset('insert', +b.dataset.off);
   } else if (b.dataset.del != null) {
-    const arr = p.mode === 'deltas' ? p.deltas : p.legs;
     commit();
-    arr.splice(+b.dataset.del, 1);
+    txDeleteLeg(p, +b.dataset.del);
+    p.deltas.splice(+b.dataset.del, 1);
     renderInputs(); recompute();
   }
 });
-$('#legList').addEventListener('focusin', e => { const c = e.target.closest('.leg'); if (c && proj().mode === 'deltas') focusLeg(+c.dataset.leg); });
+$('#legList').addEventListener('focusin', e => { const c = e.target.closest('.leg'); if (c) focusLeg(+c.dataset.leg); });
 $('#addLeg').addEventListener('click', () => {
   const p = proj();
   commit();
-  if (p.mode === 'deltas') {
-    const last = p.deltas.at(-1) || { x: 1 };
-    p.deltas.push(Math.abs(last.z) > 0 ? { x: 100, y: 0, z: 0 } : { x: 0, y: 0, z: 100 });
-  } else {
-    const last = p.legs.at(-1);
-    if (last) { last.angle = last.angle || 90; last.rot = last.rot || 0; }
-    p.legs.push({ len: 100 });
-  }
-  renderInputs(); recompute();
-});
-$('#modeSeg').addEventListener('click', e => {
-  const m = e.target.closest('button')?.dataset.mode;
-  const p = proj();
-  if (!m || m === p.mode) return;
-  commit();
-  if (m === 'deltas') p.deltas = toDeltas(p.legs, p.frame);
-  else ({ legs: p.legs, frame: p.frame } = toLegs(p.deltas));
-  p.mode = m;
+  const last = p.deltas.at(-1) || { x: 1 };
+  p.deltas.push(Math.abs(last.z) > 0 ? { x: 100, y: 0, z: 0 } : { x: 0, y: 0, z: 100 });
   renderInputs(); recompute();
 });
 $('.tpl').addEventListener('click', e => {
@@ -340,9 +287,8 @@ $('.tpl').addEventListener('click', e => {
   if (!t) return;
   commit();
   const p = proj();
-  p.legs = structuredClone(t);
-  p.frame = null;
-  if (p.mode === 'deltas') p.deltas = toDeltas(p.legs);
+  p.deltas = toDeltas(t);
+  p.bundleTx = [];
   p.done = {};
   renderInputs(); recompute(); resetView();
 });
@@ -631,7 +577,9 @@ function legCard(p, d, i, n) {
   const prev = i > 0 ? V.norm(deltaVec(p.deltas[i - 1])) : null;
   const blocked = k => prev && Math.abs(Math.abs(V.dot(prev, DIRS[k].v)) - 1) < 1e-9; // gleiche Richtung oder zurück
   const sel = (data, opts, val) => `<select data-${data}="${i}">${opts.map(([k, t]) => `<option value="${k}"${k === val ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
-  let h = `<div class="leg" data-leg="${i}"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName}</span>` +
+  const lockBtns = p.endFixed && n > 1
+    ? `<button data-lk="${i}:lock" class="lk${d.lock ? ' on' : ''}" title="Maß festhalten – gleicht nie aus">🔒</button><button data-lk="${i}:flex" class="lk${d.flex ? ' on' : ''}" title="Ausgleichsschenkel – nimmt Änderungen auf">⇄</button>` : '';
+  let h = `<div class="leg${d.flex ? ' flex' : ''}" data-leg="${i}"><div class="leghead">Schenkel ${i + 1} <span class="meta">${legName}</span>${lockBtns}` +
     `<button data-off="${i}" title="Versatz einfügen">⤳ Versatz</button>` +
     `${n > 1 ? `<button data-del="${i}" aria-label="Schenkel löschen">✕</button>` : ''}</div>` +
     `<div class="dirpick">${DIRS.map((D, k) => `<button data-dir="${i}:${k}" class="ax-${D.ax}${c.kind === 'axis' && c.dir === k ? ' on' : ''}"${blocked(k) ? ' disabled' : ''}>${D.label}</button>`).join('')}` +
@@ -665,10 +613,10 @@ function legDirClick(i, k) {
   if (k === 'obl') {
     if (c.kind !== 'axis') return;
     const a = c.dir < 0 ? 0 : c.dir, b = perpDirs(a).includes(2) ? 2 : perpDirs(a)[0];
-    setDelta(i, obliqueVec(a, b, 45, c.len || 100));
+    withEnd(i, () => setDelta(i, obliqueVec(a, b, 45, c.len || 100)));
     oblPref.set(i, { a, b });
     freeLegs.delete(i);
-  } else { setLegDir(i, DIRS[+k].v); freeLegs.delete(i); }
+  } else { withEnd(i, () => setLegDir(i, DIRS[+k].v)); freeLegs.delete(i); }
   renderInputs(); recompute(); focusLeg(i);
 }
 
@@ -802,15 +750,26 @@ const legAt = (L, s) => Math.max(0, straightRuns(L).findIndex(r => s >= r.s0 - 0
 function bundleLayouts(p, f, main) {
   const verts = main.verts;
   if (verts.length < 2 || !p.bundle?.length) return [];
-  return p.bundle.map((b, i) => {
-    const g = parallelGeometry(verts, b.dist, sideDir(verts, b.side));
+  const txs = (p.bundleTx || []).filter(t => t.bend < verts.length - 2);
+  const out = p.bundle.map((b, i) => {
+    const g = bundleGeometry(verts, b.dist, sideDir(verts, b.side), txs, { R: f.R, minStraight: f.minStraight });
     const L = computeLayout(g.pts, { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, pickMark: bd => pickMark(f, bd.angle) });
-    Object.assign(L, { name: `Rohr ${i + 2}`, def: b, offsets: g.offsets, A: g.pts[0], E: g.pts.at(-1) });
-    L.inverted = verts.slice(1).some((q, k) => V.dot(V.sub(q, verts[k]), V.sub(g.pts[k + 1], g.pts[k])) <= 0);
+    Object.assign(L, { name: `Rohr ${i + 2}`, def: b, offsets: g.offsets, A: g.pts[0], E: g.pts.at(-1), short: g.short, turns: g.turns });
     L.clampInfo = main.clampS.map(s => clampInfo(main.samples, s, main.planes, f, g.offsets[legAt(main, s)]));
     L.hits = main.room ? planeHits(L.samples, main.room, f.D / 2) : [];
     return L;
   });
+  // Berühren sich zwei Rohre (Achsabstand unter Rohr-Ø)? Nur bei Lagewechseln nötig – sonst laufen alle im festen Abstand
+  if (txs.length) {
+    const all = [main, ...out], line = L => L.samples.map(q => q.p);
+    out.forEach((L, i) => {
+      for (let k = 0; k < all.length; k++) {
+        if (k === i + 1) continue;
+        if (pipeGap(line(L), line(all[k])) < f.D - 0.01) { L.clash = { touch: k ? all[k].name : 'Rohr 1' }; break; }
+      }
+    });
+  }
+  return out;
 }
 // Andere Rohre im selben Raum (samt ihren Parallelrohren) – werden hell dargestellt
 function roomGhosts(p) {
@@ -879,7 +838,7 @@ function buildLayout(p, pts = points(p), room = activeRoom(p)) {
   L.clampS = !lab ? [] : p.clampMode === 'manual' ? p.clamps.filter(s => s >= 0 && s <= L.total).sort((a, b) => a - b) : autoClamps(L, f);
   L.clampInfo = L.clampS.map(s => clampInfo(L.samples, s, L.planes, f));
   L.targetDelta = lab && p.target ? V.sub(p.target, L.E) : null;
-  L.bundle = lab ? bundleLayouts(p, f, L) : [];
+  L.bundle = bundleLayouts(p, f, L);
   return L;
 }
 
@@ -894,8 +853,15 @@ function recompute(light = false) {
   hitMessages(layout.hits, who);
   layout.bundle.forEach(B => {
     if (B.def.dist <= f.D) layout.errors.push(`${B.name}: Abstand muss größer als der Rohrdurchmesser (${fmt(f.D)} mm) sein.`);
-    else if (B.inverted) layout.errors.push(`${B.name}: Abstand zu groß – ein innen liegender Schenkel würde rückwärts laufen.`);
-    B.errors.forEach(m => layout.errors.push(`${B.name}: ${m}`));
+    else if (B.clash) {
+      layout.errors.push(`${B.name} (rot) läuft in ${B.clash.touch} – beim Lagewechsel unter „Lage danach“ die andere Seite wählen oder das Bündel mit ⟳ auf die Außenseite der Ecke drehen.`);
+    } else if (B.short) {
+      const s = B.short, has = s.len < 0 ? 'würde rückwärts laufen' : `wäre nur ${fmt(s.len)} mm lang`;
+      layout.errors.push(s.kind === 'drop'
+        ? `${B.name} (rot): Das senkrechte Stück an Biegung ${s.bend + 1} ist nur ${fmt(s.len)} mm, die zwei Bögen brauchen ${fmt(s.need)} mm – Rohrabstand vergrößern.`
+        : `${B.name} (rot) ist so nicht verlegbar: Schenkel ${s.leg + 1} liegt innen im Bündel und ${has}, braucht für die Bögen aber ${fmt(s.need)} mm. ` +
+          `Bündel in 3D drehen (⟳), Lagewechsel einbauen oder Schenkel ${s.leg + 1} um mindestens ${fmt(Math.ceil(s.need - s.len))} mm verlängern.`);
+    } else B.errors.forEach(m => layout.errors.push(`${B.name}: ${m}`));
     B.warnings.forEach(m => layout.warnings.push(`${B.name}: ${m}`));
     hitMessages(B.hits, B.name);
   });
@@ -905,8 +871,6 @@ function recompute(light = false) {
     const off = Math.abs(b.angle / ANGLE_STEP - Math.round(b.angle / ANGLE_STEP)) * ANGLE_STEP;
     if (off > 0.1) layout.warnings.push(`Biegung ${j + 1}: ${fmt(b.angle)}° liegt nicht im ${ANGLE_STEP}°-Raster.`);
   });
-  const uncal = [...new Set(layout.bends.filter(b => !f.marks.find(m => m.name === b.markName)?.cal).map(b => b.markName))];
-  if (uncal.length) layout.warnings.push(`Marke ${uncal.map(n => `„${n}“`).join(', ')} nicht kalibriert – Strichpositionen sind Schätzwerte.`);
   if (highlight >= layout.bends.length) highlight = -1;
   if (p.mode === 'deltas') {
     p.deltas.forEach((d, i) => {
@@ -922,7 +886,8 @@ function recompute(light = false) {
   }
   renderSummary();
   if (lab && !$('#tab-room').contains(document.activeElement)) renderRoomTab();
-  if (lab && !$('#bundleCard').contains(document.activeElement)) renderBundle();
+  if (!$('#bundleCard').contains(document.activeElement)) renderBundle();
+  renderBundleRot();
   renderGuide();
   draw();
   drawMini();
@@ -1098,8 +1063,7 @@ function renderGuide() {
     <div id="printHead" class="printonly"></div>
     ${layout.bundle.length ? `<div class="seg noprint" id="guidePipeSel" style="margin-bottom:12px">${[layout, ...layout.bundle].map((x, i) => `<button data-gp="${i}"${i === guidePipe ? ' class="on"' : ''}>Rohr ${i + 1}</button>`).join('')}</div>` : ''}
     <div class="card"><div class="kv"><span>Zuschnitt${layout.bundle.length ? ` Rohr ${guidePipe + 1}` : ''}</span></div><div class="big">${fmt(L.total)} mm</div>
-    <div class="kv"><span>Zange <b>${esc(f.name)}</b></span><span>R <b>${fmt(f.R)}</b></span><span>Rückfederung <b>${fmt(f.springback)}°/90°</b></span></div>
-    ${anyCal(f) ? '' : '<div class="msg warn">⚠ Diese Zange ist noch nicht kalibriert – Radius und Markenabstände sind Schätzwerte. Im Reiter „Zangen“ eine Probebiegung machen.</div>'}
+    <div class="kv"><span>Zange <b>${esc(f.name)}</b></span><span>R <b>${fmt(f.R)}</b></span></div>
     ${messages()}</div>`;
 
   h += `<div class="card"><h3>1. Ablängen &amp; anzeichnen</h3>
@@ -1109,7 +1073,6 @@ function renderGuide() {
 
   if (!bends.length) h += `<div class="card">Keine Biegung – gerades Rohr.</div>`;
   bends.forEach((b, j) => {
-    const scale = b.angle + (f.springback || 0) * b.angle / 90;
     const phi = normRot(b.rot);
     const k = b.mark - b.start;
     // Nach einer 90°-Biegung steht der vorige Schenkel quer: Strich direkt ab dessen Achse messen.
@@ -1122,7 +1085,7 @@ function renderGuide() {
         ? `Strich bei <b class="hl">${fmt(axisDist)} mm</b>, gemessen ab Achse von Schenkel ${j} <span class="hint">(Außenkante − ${fmt(f.D / 2)} mm)</span>
            <div class="alt">oder vorab auf dem geraden Rohr: ${fmt(b.mark)} mm ab Anfang</div>`
         : `Strich bei <b class="hl">${fmt(b.mark)} mm</b> ab Anfang <span class="hint">(vor dem ersten Biegen anzeichnen – nach einem schrägen Bogen lässt sich nicht ab Achse messen)</span>`;
-    const others = f.marks.filter(m => m.name !== b.markName);
+    const others = marksOf(f).filter(m => m.name !== b.markName);
     h += `<div class="step${highlight === j ? ' hl' : ''}${p.done[doneKey(j)] ? ' done' : ''}" data-step="${j}">
       <h3><span class="num">${j + 1}</span> Biegung ${j + 1} · ${fmt(b.angle)}°
         <label class="done-box"><input type="checkbox" data-done="${doneKey(j)}"${p.done[doneKey(j)] ? ' checked' : ''}> erledigt</label></h3>
@@ -1131,7 +1094,7 @@ function renderGuide() {
         <li>Strich auf Marke <b class="hl">„${esc(b.markName)}“</b> – der gemessene Teil liegt <b>${esc(b.markSide || 'links')}</b> von der Zange.
           ${others.length ? `<div class="alt">${others.map(m => `oder „${esc(m.name)}“ (gemessener Teil ${esc(m.side)}) → ${Math.abs(m.k - k) < 0.05 ? 'gleicher Strich' : `Strich ${fmt(Math.abs(m.k - k))} mm ${m.k > k ? 'weiter weg vom' : 'näher zum'} gemessenen Ende`}`).join(' · ')}</div>` : ''}</li>
         ${j ? `<li>${rotText(phi)}</li>` : ''}
-        <li>Biegen bis Skala <b class="hl">${fmt(scale)}°</b>${f.springback ? ` <span class="hint">(Soll ${fmt(b.angle)}° + Rückfederung)</span>` : ''}</li>
+        <li>Biegen bis Skala <b class="hl">${fmt(b.angle)}°</b></li>
         <li class="check">✓ Kontrolle: ${checkText(L, j)}</li>
       </ol>${j ? `<div class="rotbox">${rotSvg(phi)}<div><span style="color:var(--mark)">▲ Biegerichtung</span><br><span style="color:var(--accent)">━ voriger Schenkel</span><br>Blick zum freien Ende</div></div>` : ''}</div></div>`;
   });
@@ -1178,8 +1141,7 @@ let toolProfId = null;
 const PF = [
   ['name', 'Bezeichnung', 'text', ''],
   ['D', 'Rohr-Außendurchmesser (mm)', 'num', ''],
-  ['R', 'Biegeradius auf Rohrmitte (mm)', 'num', 'Steht meist auf der Zange; genauer per Probebiegung.'],
-  ['springback', 'Rückfederung (° bei 90°)', 'num', 'So viel weiter biegen. Wird für andere Winkel anteilig gerechnet.'],
+  ['R', 'Biegeradius auf Rohrmitte (mm)', 'num', 'Steht meist auf der Zange. Die Marken L/R liegen um diesen Radius neben „0“.'],
   ['minStraight', 'Mindest-Gerade zwischen Bögen (mm)', 'num', 'Kürzeste gerade Strecke, die die Zange noch greift.'],
   ['clampMax', 'Schellen: größter Abstand (mm)', 'num', 'Entlang des Rohrs, auch über Bögen hinweg.', 'lab'],
   ['clampBend', 'Schellen: Abstand vom Bogen (mm)', 'num', 'Gemessen vom Bogenende bzw. -anfang.', 'lab'],
@@ -1193,7 +1155,6 @@ const curTool = () => db.profiles.find(x => x.id === toolProfId);
 function renderTools() {
   const f = curTool() || db.profiles[0];
   toolProfId = f.id;
-  const calMark = $('[data-calmark]')?.value;
   $('#tab-tools').innerHTML = `
   <div class="card">
     <label>Zange / Rohr-Profil<select id="tSel">${db.profiles.map(x => `<option value="${x.id}"${x.id === f.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
@@ -1201,53 +1162,9 @@ function renderTools() {
   </div>
   <div class="card">${PF.filter(x => lab || !x[4]).map(([k, l, t, hlp]) => `<label style="margin-bottom:10px">${l}<input data-pf="${k}" data-t="${t}" ${t === 'num' ? 'inputmode="decimal"' : ''} value="${esc(t === 'num' ? fin(f[k]) : f[k])}">${hlp ? `<small>${hlp}</small>` : ''}</label>`).join('')}</div>
   <div class="card">
-    <h3>Marken der Zange</h3>
-    <p class="hint" style="margin-top:0">L/R: Liegt das gemessene Stück links der Zange, kommt der Strich auf L, liegt es rechts, auf R. Nach 90° liegt die neue Rohrachse genau am Strich – dann ist der Abstand Strich → Biegeanfang gleich dem Biegeradius. Die Probebiegung bestätigt das.</p>
-    <table class="marks">
-      <tr><th>Marke</th><th>Abstand (mm)</th><th>Gemessener Teil</th><th></th></tr>
-      ${f.marks.map((m, i) => `<tr>
-        <td><input data-mk="${i}.name" value="${esc(m.name)}"></td>
-        <td><input data-mk="${i}.k" inputmode="decimal" value="${String(r1(m.k)).replace('.', ',')}"></td>
-        <td><select data-mk="${i}.side"><option${m.side === 'links' ? ' selected' : ''}>links</option><option${m.side === 'rechts' ? ' selected' : ''}>rechts</option></select></td>
-        <td><span class="badge${m.cal ? ' ok' : ''}">${m.cal ? '✓' : 'Schätzung'}</span> <button data-mkdel="${i}" aria-label="Marke löschen" style="min-height:32px;padding:2px 8px;border:0;background:transparent;color:var(--muted)">✕</button></td>
-      </tr>`).join('')}
-    </table>
-    <button id="mAdd" class="wide" style="margin:0 0 10px">+ Marke</button>
-    <label>Welche Marke verwenden?<select data-pf="pref" data-t="text">
-      <option value="auto"${f.pref === 'auto' ? ' selected' : ''}>Automatisch: 90° mit „L“, sonst „0“</option>
-      ${f.marks.map(m => `<option value="${esc(m.name)}"${f.pref === m.name ? ' selected' : ''}>Immer „${esc(m.name)}“</option>`).join('')}
-    </select></label>
-  </div>
-  <div class="card">
-    <h3>Kalibrieren mit einer Probebiegung</h3>
-    <ol class="hint" style="padding-left:18px;margin-top:0">
-      <li>Gerades Stück Rohr ablängen (z. B. 300 mm), Länge eintragen.</li>
-      <li>Strich bei z. B. 100 mm ab Anfang. Gemessenes Stück auf die Seite der Marke (L = links), Strich auf die Marke.</li>
-      <li>Auf 90° biegen, Skalenwert notieren.</li>
-      <li>Achsmaße messen (Außenmaß − halber Rohr-Ø). Schenkel 1 = vom Anfang bis Achse des anderen Schenkels – bei L/R sollte das genau x sein.</li>
-      <li>Mit dem Winkelmesser den echten Winkel messen.</li>
-    </ol>
-    <label style="margin-bottom:10px">Probebiegung mit Marke<select data-calmark>${f.marks.map((m, i) => `<option value="${i}"${String(i) === calMark || (calMark == null && m.name === 'L') ? ' selected' : ''}>„${esc(m.name)}“ (gemessener Teil ${esc(m.side)})</option>`).join('')}</select></label>
-    <div class="row2">
-      <label>Rohrlänge L<input data-cal="L" inputmode="decimal"></label>
-      <label>Strich bei x<input data-cal="x" inputmode="decimal"></label>
-    </div>
-    <div class="row2">
-      <label>Achsmaß Schenkel 1<input data-cal="A1" inputmode="decimal"></label>
-      <label>Achsmaß Schenkel 2<input data-cal="A2" inputmode="decimal" placeholder="optional"></label>
-    </div>
-    <div class="row2">
-      <label>Gebogen bis Skala (°)<input data-cal="S" inputmode="decimal" placeholder="optional"></label>
-      <label>Gemessener Winkel (°)<input data-cal="M" inputmode="decimal" placeholder="optional"></label>
-    </div>
-    <div id="calRes" class="hint"></div>
-    <button id="calApply" class="primary" style="width:100%" disabled>Werte übernehmen</button>
-    <p class="hint">Noch nicht kalibrierte Marken werden aus dem Ergebnis abgeschätzt (L/R liegen um den Radius neben „0“). Am genauesten ist eine Probebiegung pro Marke.</p>
-  </div>
-  <div class="card">
     <h3>Labor</h3>
-    <label class="chk"><input type="checkbox" id="labChk"${lab ? ' checked' : ''}> Raum, Wände, Schellen &amp; Parallelrohre (experimentell)</label>
-    <p class="hint" style="margin-bottom:0">Blendet den Reiter „Raum“, Schellen, Ziel-Anschluss, Parallelrohre sowie Montage und Material in der Anleitung ein. Ausgeschaltet bleiben die Daten erhalten, werden aber nicht gerechnet.</p>
+    <label class="chk"><input type="checkbox" id="labChk"${lab ? ' checked' : ''}> Raum, Wände &amp; Schellen (experimentell)</label>
+    <p class="hint" style="margin-bottom:0">Blendet den Reiter „Raum“, Schellen, Ziel-Anschluss sowie Montage und Material in der Anleitung ein. Ausgeschaltet bleiben die Daten erhalten, werden aber nicht gerechnet.</p>
   </div>
   <div class="card">
     <h3>App</h3>
@@ -1255,25 +1172,6 @@ function renderTools() {
   </div>`;
 }
 
-function calValues() {
-  const c = {};
-  $$('[data-cal]').forEach(i => { c[i.dataset.cal] = num(i.value); });
-  return c;
-}
-function calResult() {
-  const f = curTool(), c = calValues();
-  if (!(c.x > 0 && c.A1 > 0)) return null;
-  const r = calibrate({ L: c.L, x: c.x, A1: c.A1, A2: c.A2, R: f.R });
-  if (c.S > 0 && c.M > 0) r.springback = (c.S - c.M) * 90 / c.M;
-  return r;
-}
-function showCal() {
-  const r = calResult();
-  $('#calApply').disabled = !r || !(r.R > 0);
-  $('#calRes').innerHTML = r
-    ? (r.R > 0 ? `Ergebnis: Radius <b>${fmt(r.R)} mm</b> · Abstand Strich→Biegeanfang <b>${fmt(r.k)} mm</b>${r.springback != null ? ` · Rückfederung <b>${fmt(r.springback)}°</b>` : ''}` : '<span style="color:var(--err)">Messwerte passen nicht zusammen (Radius ≤ 0).</span>')
-    : 'Mindestens Strich x und Achsmaß Schenkel 1 eintragen.';
-}
 const afterProfileChange = () => { save(); renderProjectBar(); recompute(); };
 
 $('#tab-tools').addEventListener('input', e => {
@@ -1282,18 +1180,11 @@ $('#tab-tools').addEventListener('input', e => {
     f[el.dataset.pf] = el.dataset.t === 'num' ? num(el.value) : el.value;
     if (el.dataset.pf === 'name') $('#tSel').selectedOptions[0].textContent = el.value;
     afterProfileChange();
-  } else if (el.dataset.mk) {
-    const [i, key] = el.dataset.mk.split('.');
-    const m = f.marks[+i], old = m.name;
-    m[key] = key === 'k' ? num(el.value) : el.value;
-    if (key === 'name' && f.pref === old) f.pref = el.value;
-    afterProfileChange();
-  } else if (el.dataset.cal) showCal();
+  }
 });
 $('#tab-tools').addEventListener('change', e => {
   if (e.target.id === 'labChk') { setLab(e.target.checked); return; }
   if (e.target.id === 'tSel') { toolProfId = e.target.value; renderTools(); }
-  else if (e.target.dataset.mk?.endsWith('.name')) renderTools(); // Auswahllisten aktualisieren
 });
 $('#tab-tools').addEventListener('click', e => {
   const b = e.target.closest('button');
@@ -1302,7 +1193,6 @@ $('#tab-tools').addEventListener('click', e => {
   if (b.id === 'reloadBtn') { reloadApp(); return; }
   if (b.id === 'tNew') {
     const n = { ...structuredClone(f), id: uid(), name: 'Neue Zange' };
-    n.marks.forEach(m => { m.cal = false; });
     db.profiles.push(n); toolProfId = n.id; save(); renderTools(); renderProjectBar();
   } else if (b.id === 'tDel') {
     if (db.profiles.length < 2) { alert('Das letzte Profil kann nicht gelöscht werden.'); return; }
@@ -1310,26 +1200,6 @@ $('#tab-tools').addEventListener('click', e => {
     db.profiles = db.profiles.filter(x => x.id !== f.id);
     db.projects.forEach(p => { if (p.profileId === f.id) p.profileId = db.profiles[0].id; });
     toolProfId = null; renderTools(); afterProfileChange();
-  } else if (b.id === 'mAdd') {
-    f.marks.push({ name: '?', k: 0, side: 'links', cal: false });
-    renderTools(); afterProfileChange();
-  } else if (b.dataset.mkdel != null) {
-    if (f.marks.length < 2) return;
-    const [m] = f.marks.splice(+b.dataset.mkdel, 1);
-    if (f.pref === m.name) f.pref = 'auto';
-    renderTools(); afterProfileChange();
-  } else if (b.id === 'calApply') {
-    const r = calResult();
-    if (!r) return;
-    const m = f.marks[+$('[data-calmark]').value];
-    f.R = r1(r.R);
-    m.k = r1(r.k); m.cal = true;
-    if (r.springback != null) f.springback = r1(r.springback);
-    // Nicht kalibrierte Marken aus der Theorie nachziehen: L/R = 0 + R
-    const isVertex = n => ['L', 'R'].includes(n.trim().toUpperCase());
-    const k0 = isVertex(m.name) ? m.k - f.R : m.k;
-    f.marks.forEach(o => { if (!o.cal) o.k = r1(isVertex(o.name) ? k0 + f.R : k0); });
-    renderTools(); afterProfileChange();
   }
 });
 
@@ -1344,7 +1214,9 @@ const VIEWS = {
 };
 const isOrtho = () => cam.view !== 'iso';
 let fit = null, lastBase = null, view = null; // fit: gesperrte Grundskalierung (beim Bearbeiten springt nichts)
-let sel = -1, drag = null; // gewählter Schenkel, laufendes Ziehen eines Anfassers
+// extOpen: Fortführ-Pfeile am Rohrende eingeblendet (Griff angetippt), extHover: Maus über dem Griff
+let extOpen = false, extHover = false;
+let sel = -1, selCorner = -1, drag = null; // gewählter Schenkel bzw. Eckpunkt (Schnittpunkt), laufendes Ziehen eines Anfassers
 let camTool = 'edit';      // 'edit' = Gimbal/Anfasser, 'clamp' = Schellen setzen
 function resetView(v = 'iso') {
   setTimeout(() => { if (!$('#legList').contains(document.activeElement)) renderInputs(); });
@@ -1530,7 +1402,7 @@ function fitCanvas(c, g, W, H, dpr) {
 }
 
 // Anzeige-Schalter (je Gerät gespeichert)
-const VIS_DEFAULT = { dims: true, marks: true, grid: true, planes: true, clamps: true, ghosts: true, gizmo: true };
+const VIS_DEFAULT = { dims: true, axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -1623,7 +1495,8 @@ function render3d() {
   const steel = dark ? [0.56, 0.6, 0.66] : [0.66, 0.7, 0.75], orange = [0.91, 0.36, 0.06];
   const ghostCol = dark ? [0.36, 0.4, 0.46] : [0.82, 0.85, 0.89], clampCol = dark ? [0.85, 0.86, 0.9] : [0.2, 0.22, 0.26];
   const opaque = [], add = (arr, out = opaque) => { for (let i = 0; i < arr.length; i++) out.push(arr[i]); };
-  pipes.forEach((L, k) => add(tubeMesh(L.samples, r, (a, b) => (k === guidePipe && a.b >= 0 && a.b === b.b && a.b === highlight ? orange : steel))));
+  const bad = [0.88, 0.2, 0.2]; // nicht verlegbares Parallelrohr
+  pipes.forEach((L, k) => add(tubeMesh(L.samples, r, (a, b) => (k && (L.short || L.clash) ? bad : k === guidePipe && a.b >= 0 && a.b === b.b && a.b === highlight ? orange : steel))));
   ghosts.forEach(g => add(tubeMesh(g.samples, Math.max(g.D / 2, 2.5 / sc), () => ghostCol)));
   const clampSets = pipes.map(L => L.clampInfo);
   if (vis.clamps) clampSets.flat().forEach(c => add(tubeMesh([{ p: V.sub(c.p, V.mul(c.t, 5)), b: -1 }, { p: V.add(c.p, V.mul(c.t, 5)), b: -1 }], r * 1.45 + 0.8, () => clampCol)));
@@ -1671,28 +1544,29 @@ function render3d() {
   }
 
   const ML = guidePipe ? layout.bundle[guidePipe - 1] || layout : layout; // Markierungen des Rohrs aus der Anleitung
-  if (vis.dims) {
-    // Achsmaß-Ecken: gestrichelt vom Biegeanfang zum Schnittpunkt zum Biegeende
-    ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.strokeStyle = cAcc; ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    pipes.forEach(L => L.bends.forEach(b => {
-      const [ax, ay] = P3(V.sub(b.vertex, V.mul(b.din, b.T))), [vx, vy] = P3(b.vertex), [ex2, ey2] = P3(V.add(b.vertex, V.mul(b.dout, b.T)));
-      ctx.moveTo(ax, ay); ctx.lineTo(vx, vy); ctx.lineTo(ex2, ey2);
-    }));
-    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
-    // Maße an den Schenkeln (Rohr 1 und das Rohr aus der Anleitung)
-    [...new Set([layout, ML])].forEach(L => {
-      for (let i = 1; i < L.verts.length; i++) {
-        const a = L.verts[i - 1], b = L.verts[i];
-        const [x, y] = P3([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
-        const t = fmt(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
-        const w = ctx.measureText(t).width + 10;
-        ctx.fillStyle = css('--card'); ctx.fillRect(x - w / 2, y - 26, w, 18);
-        ctx.strokeStyle = cAcc; ctx.lineWidth = 1; ctx.strokeRect(x - w / 2, y - 26, w, 18);
-        ctx.fillStyle = cAcc; ctx.fillText(t, x, y - 17);
-      }
+  if (vis.axis) {
+    // Achslinie: durchgehend von Rohranfang über alle Schnittpunkte bis zum Rohrende, mit hellem Rand gut sichtbar auf dem Rohr
+    const line = L => { ctx.beginPath(); L.verts.forEach((q, i) => { const [x, y] = P3(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); };
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    pipes.forEach(L => {
+      line(L); ctx.strokeStyle = css('--card'); ctx.lineWidth = 4.5; ctx.stroke();
+      line(L); ctx.strokeStyle = cAcc; ctx.lineWidth = 2.2; ctx.stroke();
+      L.verts.slice(1, -1).forEach(q => { const [x, y] = P3(q); ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fillStyle = cAcc; ctx.fill(); ctx.strokeStyle = css('--card'); ctx.lineWidth = 1.5; ctx.stroke(); });
     });
   }
+  // Ausgeglichene Schenkel leuchten nach einer Änderung kurz orange auf
+  const flashAge = performance.now() - adjusted.t;
+  if (flashAge < 1400 && adjusted.set.size && layout.verts.length === p.deltas.length + 1) {
+    ctx.save(); ctx.globalAlpha = 0.55 * (1 - flashAge / 1400); ctx.lineCap = 'round';
+    adjusted.set.forEach(j => { const a = layout.verts[j], b = layout.verts[j + 1]; if (a && b) polyline([P3(a), P3(b)], cMark, Math.max(12, tw * 2.2)); });
+    ctx.restore();
+    requestAnimationFrame(() => draw());
+  }
+  dimHits = []; placed = [];
+  pipeSegs = pipes.flatMap(L => L.verts.slice(1).map((q, k) => [...P3(L.verts[k]), ...P3(q)]));
+  if (vis.dims) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
+  if (vis.total) drawTotal(layout, P3, tw);
+  if (vis.angles) drawAngles(ML, P3);
 
   // Schellen: Halter zur Wand, Nummer; ohne Befestigung orange
   if (vis.clamps) clampSets.forEach((set, k) => set.forEach((c, i) => {
@@ -1743,7 +1617,7 @@ function render3d() {
   if (camTool === 'room') { gizmo = []; drawRoomOverlay(P3); }
   else if (camTool !== 'clamp' && !printing && !animLayout) {
     if (ortho) drawEditOverlay(P3, cAcc);
-    if (vis.gizmo) drawGizmo(); else gizmo = [];
+    drawGizmo();
   } else gizmo = [];
 
   // Achsenkreuz
@@ -1753,6 +1627,230 @@ function render3d() {
     ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + q.x * 22, gy + q.y * 22); ctx.stroke();
     ctx.fillStyle = c; ctx.font = '700 11px system-ui'; ctx.fillText(n, gx + q.x * 30, gy + q.y * 30);
   });
+}
+
+// ---------- Bemaßung wie in der technischen Zeichnung ----------
+// Je Schenkel eine parallele Maßlinie neben dem Rohr (Hilfslinien an den Schnittpunkten, Pfeile, Maßzahl auf der Linie).
+// Die Maße von Rohr 1 lassen sich antippen und direkt ändern (wie im Skizzenmodus von Fusion 360).
+let dimHits = [];
+// Eine Maßlinie zwischen den Bildpunkten a und b: Hilfslinien, Pfeile, Maßzahl. Die Linie liegt auf der Seite weg von away.
+// hit: Angaben fürs Antippen ({ i } = Schenkellänge, { i, k } = Anteil in Achse k), null = nur Anzeige.
+function dimLine(a, b, val, away, off, hit, style = {}) {
+  const [ax, ay] = a, [bx, by] = b, len = Math.hypot(bx - ax, by - ay);
+  const ink = style.color || (style.driven || style.minor ? css('--muted') : css('--text'));
+  if (len < 6 && style.minor) return; // Anteil zeigt in die Ansicht hinein – Hilfsmaß weglassen
+  if (style.driven) val = `(${val})`; // abgeleitetes Maß (Ausgleich) wie in Fusion in Klammern
+  if (style.lock) val += ' 🔒';
+  const mx = (ax + bx) / 2, my = (ay + by) / 2;
+  let ux = 1, uy = 0, nx = 0, ny = -1;
+  if (len > 1) { ux = (bx - ax) / len; uy = (by - ay) / len; nx = -uy; ny = ux; }
+  const side = (mx - away[0]) * nx + (my - away[1]) * ny;
+  if (side < -0.5 || (Math.abs(side) <= 0.5 && ny > 0)) { nx = -nx; ny = -ny; }
+  let ang = Math.atan2(uy, ux);
+  if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+  if (len < 14) ang = 0;
+  const fontPx = style.minor ? 11 : 12;
+  ctx.save();
+  ctx.font = `${style.minor ? 600 : 700} ${fontPx}px -apple-system, system-ui, sans-serif`;
+  const w = ctx.measureText(val).width + 8, h = fontPx + 4;
+  // Platz suchen: bevorzugte Seite, dann weiter außen, dann die andere Seite – die Maßzahl soll keine andere und kein Rohr überdecken
+  const tries = [[1, off], [1, off + 18], [-1, off], [1, off + 36], [-1, off + 18]];
+  let best = null;
+  for (const [sg, o] of tries) {
+    const tx = mx + nx * sg * o, ty = my + ny * sg * o;
+    const box = labelBox(tx, ty, w, h, ang), cost = overlapCost(box);
+    if (!best || cost < best.cost) best = { sg, o, tx, ty, box, cost };
+    if (cost === 0) break;
+  }
+  const { sg, o, tx, ty, box } = best, Nx = nx * sg, Ny = ny * sg;
+  placed.push(box);
+  if (style.faded) ctx.globalAlpha = 0.3;
+  const A = [ax + Nx * o, ay + Ny * o], B = [bx + Nx * o, by + Ny * o];
+  ctx.lineWidth = style.minor ? 0.8 : 1; ctx.strokeStyle = ink; ctx.fillStyle = ink;
+  if (len >= 14) {
+    // Hilfslinien vom Messpunkt bis etwas über die Maßlinie
+    const g = ctx.globalAlpha; ctx.globalAlpha = g * 0.45; ctx.beginPath();
+    for (const [px, py] of [[ax, ay], [bx, by]]) { ctx.moveTo(px + Nx * 5, py + Ny * 5); ctx.lineTo(px + Nx * (o + 4), py + Ny * (o + 4)); }
+    ctx.stroke(); ctx.globalAlpha = g;
+    // Maßlinie mit Pfeilen (bei kurzen Maßen Pfeile außen)
+    const inside = len > 34, ah = style.minor ? 6 : 7, aw = style.minor ? 2.2 : 2.6;
+    ctx.beginPath(); ctx.moveTo(...A); ctx.lineTo(...B);
+    if (!inside) { ctx.moveTo(A[0] - ux * 14, A[1] - uy * 14); ctx.lineTo(...A); ctx.moveTo(...B); ctx.lineTo(B[0] + ux * 14, B[1] + uy * 14); }
+    ctx.stroke();
+    const arrowHead = ([px, py], dx, dy) => { ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - dx * ah - dy * aw, py - dy * ah + dx * aw); ctx.lineTo(px - dx * ah + dy * aw, py - dy * ah - dx * aw); ctx.closePath(); ctx.fill(); };
+    if (inside) { arrowHead(A, -ux, -uy); arrowHead(B, ux, uy); } else { arrowHead(A, ux, uy); arrowHead(B, -ux, -uy); }
+  }
+  // Maßzahl auf der Linie, lesbar ausgerichtet (nie auf dem Kopf)
+  ctx.translate(tx, ty); ctx.rotate(ang);
+  ctx.fillStyle = css('--card'); ctx.fillRect(-w / 2, -h / 2, w, h);
+  if (hit && !style.minor) { ctx.strokeStyle = css('--accent'); ctx.lineWidth = 1; ctx.strokeRect(-w / 2, -h / 2, w, h); }
+  ctx.fillStyle = hit && !style.driven && !style.minor ? css('--accent') : ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(val, 0, 0.5);
+  ctx.restore();
+  if (hit) dimHits.push({ ...hit, x: tx, y: ty, w: Math.max(w, 36), h: 30, ang });
+}
+// Belegte Flächen der Maßzahlen (je Bild neu) und Rohrstrecken auf dem Bildschirm – zum Ausweichen
+let placed = [], pipeSegs = [];
+function labelBox(x, y, w, h, ang) {
+  const c = Math.abs(Math.cos(ang)), s = Math.abs(Math.sin(ang)), hx = c * w / 2 + s * h / 2 + 2, hy = s * w / 2 + c * h / 2 + 2;
+  return { x0: x - hx, x1: x + hx, y0: y - hy, y1: y + hy };
+}
+function overlapCost(b) {
+  let cost = 0;
+  for (const q of placed) cost += Math.max(0, Math.min(b.x1, q.x1) - Math.max(b.x0, q.x0)) * Math.max(0, Math.min(b.y1, q.y1) - Math.max(b.y0, q.y0));
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, r = Math.min(b.x1 - b.x0, b.y1 - b.y0) / 2 + 3;
+  for (const [x0, y0, x1, y1] of pipeSegs) { const d = segDist(cx, cy, x0, y0, x1, y1); if (d < r) cost += (r - d) * 20; }
+  return cost;
+}
+
+// Winkelmaße: an jedem Schnittpunkt der Biegewinkel – Bogen von der gestrichelten Verlängerung des ankommenden
+// Schenkels zum abgehenden Schenkel, Wert = wahrer Winkel im Raum (so weit wird gebogen)
+function drawAngles(L, P3) {
+  const ink = css('--mark'), r = 30;
+  L.bends.forEach((b, j) => {
+    const [vx, vy] = P3(b.vertex), [ix, iy] = P3(V.add(b.vertex, b.din)), [ox, oy] = P3(V.add(b.vertex, b.dout));
+    let a1 = Math.atan2(iy - vy, ix - vx), a2 = Math.atan2(oy - vy, ox - vx);
+    const l1 = Math.hypot(ix - vx, iy - vy), l2 = Math.hypot(ox - vx, oy - vy);
+    if (l1 < 1e-6 || l2 < 1e-6) return; // Schenkel zeigt genau in die Ansicht
+    let da = a2 - a1;
+    while (da > Math.PI) da -= 2 * Math.PI;
+    while (da < -Math.PI) da += 2 * Math.PI;
+    ctx.save();
+    ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.lineWidth = 1.2;
+    // Verlängerung des ankommenden Schenkels
+    ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(vx, vy); ctx.lineTo(vx + Math.cos(a1) * (r + 10), vy + Math.sin(a1) * (r + 10)); ctx.stroke(); ctx.setLineDash([]);
+    // Winkelbogen mit Pfeilen an beiden Enden
+    ctx.beginPath(); ctx.arc(vx, vy, r, a1, a1 + da, da < 0); ctx.stroke();
+    const head = (ang, dir) => {
+      const px = vx + Math.cos(ang) * r, py = vy + Math.sin(ang) * r, tx = -Math.sin(ang) * dir, ty = Math.cos(ang) * dir;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - tx * 7 - Math.cos(ang) * 2.6, py - ty * 7 - Math.sin(ang) * 2.6); ctx.lineTo(px - tx * 7 + Math.cos(ang) * 2.6, py - ty * 7 + Math.sin(ang) * 2.6); ctx.closePath(); ctx.fill();
+    };
+    if (Math.abs(da) > 0.35) { head(a1 + da, Math.sign(da)); head(a1, -Math.sign(da)); }
+    // Wert in der Mitte des Bogens, etwas außerhalb – weiter außen, falls dort schon eine Maßzahl steht
+    const am = a1 + da / 2, t = `${fmt(b.angle)}°`;
+    ctx.font = '700 12px -apple-system, system-ui, sans-serif';
+    const w = ctx.measureText(t).width + 8;
+    let tx = 0, ty = 0, bc = Infinity;
+    for (const rr of [r + 14, r + 30, r + 46]) {
+      const x = vx + Math.cos(am) * rr, y = vy + Math.sin(am) * rr, c = overlapCost(labelBox(x, y, w, 16, 0));
+      if (c < bc) { bc = c; tx = x; ty = y; }
+      if (!c) break;
+    }
+    placed.push(labelBox(tx, ty, w, 16, 0));
+    ctx.fillStyle = css('--card'); ctx.fillRect(tx - w / 2, ty - 8, w, 16);
+    ctx.fillStyle = ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, tx, ty + 0.5);
+    ctx.restore();
+  });
+}
+
+// Gesamtmaße: Versatz vom Rohranfang A bis zum Rohrende in X/Y/Z – gestrichelter Weg entlang der Achsen mit je einem Maß,
+// weiter außen als die Schenkelmaße, in den Achsfarben (X rot, Y grün, Z blau)
+function drawTotal(L, P3, tw) {
+  if (L.verts.length < 2) return;
+  const A = L.verts[0], E = L.verts.at(-1), d = V.sub(E, A), comps = [0, 1, 2].filter(k => Math.abs(d[k]) > 0.5);
+  if (!comps.length) return;
+  const cols = [css('--ax-x') || '#e03131', css('--ax-y') || '#2f9e44', css('--ax-z') || '#1c7ed6'], names = [['rechts', 'links'], ['hinten', 'vorne'], ['oben', 'unten']];
+  const path = [A];
+  comps.forEach(k => { const q = [...path.at(-1)]; q[k] += d[k]; path.push(q); });
+  const sp = path.map(q => P3(q)), pts = L.verts.map(q => P3(q));
+  const cen = [pts.reduce((a, q) => a + q[0], 0) / pts.length, pts.reduce((a, q) => a + q[1], 0) / pts.length];
+  ctx.save(); ctx.setLineDash([3, 4]); ctx.lineWidth = 1.2;
+  comps.forEach((k, j) => { ctx.strokeStyle = cols[k]; ctx.beginPath(); ctx.moveTo(...sp[j]); ctx.lineTo(...sp[j + 1]); ctx.stroke(); });
+  ctx.restore();
+  const off = Math.max(46, tw / 2 + 40);
+  comps.forEach((k, j) => dimLine(sp[j], sp[j + 1], `${fmt(Math.abs(d[k]))} ${names[k][d[k] > 0 ? 0 : 1]}`, cen, off, null, { color: cols[k] }));
+}
+
+// Je Schenkel eine parallele Maßlinie (wahre Länge). Schräge Schenkel (Etage, Versatz) zusätzlich orthogonal:
+// gestricheltes Hilfsdreieck entlang der Achsen mit je einem Maß – erst in Richtung des vorigen Schenkels, dann der Versatz.
+function drawDims(L, P3, tw, editable) {
+  const pts = L.verts.map(q => P3(q));
+  if (pts.length < 2) return;
+  const cen = [pts.reduce((a, q) => a + q[0], 0) / pts.length, pts.reduce((a, q) => a + q[1], 0) / pts.length];
+  const off = Math.max(22, tw / 2 + 16), muted = css('--muted'), p = proj();
+  const direct = editable && L.verts.length === p.deltas.length + 1;
+  // Fokus: ist ein Schenkel oder Eckpunkt gewählt, treten die übrigen Maße zurück
+  const focus = editable && (sel >= 0 || selCorner >= 1) ? (sel >= 0 ? [sel] : [selCorner - 1, selCorner]) : null;
+  const legs = [];
+  for (let i = 1; i < pts.length; i++) {
+    const A = L.verts[i - 1], B = L.verts[i], d = V.sub(B, A);
+    const fl = direct ? p.deltas[i - 1] : {};
+    const st = { lock: !!fl.lock, driven: direct && p.endFixed && (fl.flex || adjusted.set.has(i - 1)), faded: !!focus && !focus.includes(i - 1) };
+    const comps = [0, 1, 2].filter(k => Math.abs(d[k]) > 0.5);
+    let sp = null;
+    if (comps.length > 1) {
+      // Hilfsdreieck: Anteil in Richtung des vorigen Schenkels zuerst (Etage „läuft weiter, dann hoch“)
+      const prev = i > 1 ? V.norm(V.sub(A, L.verts[i - 2])) : null;
+      comps.sort((k1, k2) => (prev ? Math.abs(prev[k2]) - Math.abs(prev[k1]) : 0));
+      const path = [A];
+      comps.forEach(k => { const q = [...path.at(-1)]; q[k] += d[k]; path.push(q); });
+      sp = path.map(q => P3(q));
+    }
+    legs.push({ i, d, st, comps, sp });
+  }
+  // Erst die Hauptmaße (wahre Länge) – sie bekommen die besten Plätze –, dann die Hilfsmaße der schrägen Schenkel
+  legs.forEach(({ i, d, st, sp }) => dimLine(pts[i - 1], pts[i], fmt(V.len(d)), sp ? sp[1] : cen, off, editable ? { i: i - 1 } : null, st));
+  legs.forEach(({ i, d, st, comps, sp }) => {
+    if (!sp) return;
+    const mid = [(pts[i - 1][0] + pts[i][0]) / 2, (pts[i - 1][1] + pts[i][1]) / 2];
+    ctx.save(); ctx.setLineDash([5, 4]); ctx.lineWidth = 1; ctx.strokeStyle = muted; if (st.faded) ctx.globalAlpha = 0.3;
+    ctx.beginPath(); sp.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.restore();
+    comps.forEach((k, j) => dimLine(sp[j], sp[j + 1], fmt(Math.abs(d[k])), mid, off * 0.8, editable ? { i: i - 1, k } : null, { ...st, minor: true }));
+  });
+}
+function hitDim(x, y) {
+  for (const d of dimHits) {
+    const dx = x - d.x, dy = y - d.y, c = Math.cos(-d.ang), s = Math.sin(-d.ang);
+    const lx = dx * c - dy * s, ly = dx * s + dy * c;
+    if (Math.abs(lx) <= d.w / 2 + 4 && Math.abs(ly) <= d.h / 2) return d;
+  }
+  return null;
+}
+// Maß bearbeiten: Eingabefeld genau auf der Maßzahl; Enter/Fertig übernimmt, Esc bricht ab. Richtung bleibt, der Rest des Rohrs wandert mit.
+function editDim(d) {
+  const p = proj();
+  if (layout.verts.length !== p.deltas.length + 1 && p.mode === 'deltas') { selectLeg(d.i, true); return; }
+  ensureDeltas();
+  const box = $('#viewwrap'), inp = document.createElement('input');
+  inp.className = 'dimedit'; inp.inputMode = 'decimal'; inp.enterKeyHint = 'done';
+  const cur0 = deltaVec(p.deltas[d.i]);
+  inp.value = fin(d.k != null ? Math.abs(cur0[d.k]) : V.len(cur0));
+  inp.style.left = `${d.x}px`; inp.style.top = `${d.y}px`;
+  box.append(inp);
+  // Darunter: Maß festhalten oder als Ausgleich markieren (nur sinnvoll bei fixiertem Ende)
+  const tools = document.createElement('div');
+  tools.className = 'dimtools';
+  tools.style.left = `${d.x}px`; tools.style.top = `${d.y + 26}px`;
+  const flags = () => p.deltas[d.i] || {};
+  const paint = () => { tools.innerHTML = `<button data-f="lock" class="${flags().lock ? 'on' : ''}">🔒 Fest</button><button data-f="flex" class="${flags().flex ? 'on' : ''}">⇄ Ausgleich</button>`; };
+  paint();
+  if (p.endFixed) box.append(tools);
+  tools.addEventListener('pointerdown', e => e.preventDefault()); // Eingabefeld behält den Fokus
+  tools.addEventListener('click', e => {
+    const f = e.target.closest('[data-f]')?.dataset.f;
+    if (!f) return;
+    commit();
+    const o = p.deltas[d.i], on = !o[f];
+    delete o.lock; delete o.flex;
+    if (on) o[f] = true;
+    save(); paint(); draw(); renderInputs();
+  });
+  selectLeg(d.i);
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true;
+    const v = num(inp.value);
+    inp.remove(); tools.remove();
+    if (ok && v > 0) {
+      const cur = deltaVec(p.deltas[d.i]);
+      if (d.k != null) { // ein Achsanteil (z. B. Höhenversatz): nur diesen ändern, Vorzeichen bleibt
+        if (Math.abs(Math.abs(cur[d.k]) - v) > 0.01) { const n = [...cur]; n[d.k] = Math.sign(cur[d.k] || 1) * v; commit(); withEnd(d.i, () => setDelta(d.i, n)); renderInputs(); recompute(); }
+      } else if (Math.abs(V.len(cur) - v) > 0.01) { commit(); withEnd(d.i, () => setDelta(d.i, V.mul(V.norm(cur), v))); renderInputs(); recompute(); }
+    }
+    draw();
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
 }
 
 // ---------- Bearbeiten in den Ansichten ----------
@@ -1823,15 +1921,23 @@ function dragTo(clientX, clientY) {
   }
   const inLen = round5(Math.hypot(a, b));
   const ang = snapDir(drag.i, inLen, drag.c, Math.atan2(b, a) * 180 / Math.PI);
+  const p = proj();
+  drag.orig ||= structuredClone(p.deltas); drag.E0 ||= endOf(p);
+  p.deltas = structuredClone(drag.orig);
   setLegInView(drag.i, inLen, ang, drag.c);
+  const r = drag.i < p.deltas.length - 1 ? keepEnd(p, drag.i, drag.E0) : { ok: true, changed: [] };
+  if (!r.ok) { p.deltas = structuredClone(drag.orig); drag.fail = r.reason; } else { drag.fail = null; adjusted = { set: new Set(r.changed), t: performance.now() }; }
   drag.label = { inLen, ang };
   recompute(true);
 }
 function endDrag() {
-  const { i, committed, before } = drag;
+  const { i, committed, before, fail } = drag;
   drag = null;
+  if (fail) toast(fail);
   if (!committed) restoreSnapshot(proj(), before); // nur angetippt: auch den Moduswechsel zurücknehmen
-  renderInputs(); recompute(); selectLeg(i);
+  renderInputs(); recompute();
+  // Nur angetippt: innerer Eckpunkt → Drehringe, Rohrende → Schenkel davor
+  if (!committed && i + 1 < points(proj()).length - 1) selectCorner(i + 1); else selectLeg(i);
 }
 
 function drawEditOverlay(P3, cAcc) {
@@ -1860,11 +1966,24 @@ function drawEditOverlay(P3, cAcc) {
   }
 }
 
+// Eckpunkt (Schnittpunkt zwischen Schenkel i-1 und i) antippen: nur dort erscheinen die Drehringe
+function selectCorner(i) {
+  sel = -1; selCorner = i;
+  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  draw();
+}
+function hitCorner(x, y) {
+  const pts = points(proj());
+  let best = -1, bd = hitTol(16);
+  for (let i = 1; i < pts.length - 1; i++) { const [px, py] = view.P3(pts[i]), d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = i; } }
+  return best;
+}
+
 // Schenkel-Feld
 const DIR_OPTS = Array.from({ length: 360 / ANGLE_STEP }, (_, k) => k * ANGLE_STEP);
 // Auswahl zeigt den Gimbal; das Eingabefeld nur auf Wunsch („✎ Maße“)
 function selectLeg(i, openPanel = false) {
-  sel = i;
+  sel = i; selCorner = -1;
   $('#legPanel').hidden = !(openPanel && i >= 0);
   $('#addLegView').hidden = $('#offLegView').hidden = i < 0 || openPanel;
   if (openPanel && i >= 0) fillPanel();
@@ -1884,7 +2003,26 @@ function fillPanel() {
   const cl = V.len(L.c);
   $('#lpNote').textContent = perp ? 'Dieser Schenkel zeigt in die Ansicht hinein – in einer anderen Ansicht bearbeiten oder Richtung wählen.'
     : cl > 0.05 ? `Zusätzlich ${fmt(cl)} mm quer zur Ansicht (bleibt erhalten).` : '';
+  // Parallelrohre: Lage ab diesem Schenkel wählen = Lagewechsel an der Biegung davor
+  const p = proj(), nm = sel > 0 && p.bundle.length ? txNames(sel - 1) : null;
+  $('#lpBundleL').hidden = !nm;
+  if (nm) {
+    const cur = p.bundleTx.find(t => t.bend === sel - 1)?.rot ?? 0;
+    $('#lpBundle').innerHTML = [[0, `${nm[0]} (wie bisher)`], [1, `${nm[1]} (Lagewechsel)`], [-1, `${nm[-1]} (Lagewechsel)`]]
+      .map(([v, t]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${t}</option>`).join('');
+  }
 }
+$('#lpBundle').addEventListener('change', e => {
+  const p = proj(), r = +e.target.value, bend = sel - 1;
+  if (bend < 0) return;
+  commit();
+  const t = p.bundleTx.find(o => o.bend === bend);
+  if (!r) p.bundleTx = p.bundleTx.filter(o => o !== t);
+  else if (t) t.rot = r;
+  else addTx(p, bend, r);
+  recompute(); renderBundle(); fillPanel();
+  if (r) toast('Lagewechsel eingebaut – die Parallelrohre gehen an der Ecke senkrecht auf die neue Höhe.');
+});
 function afterViewEdit() { renderInputs(); recompute(); fillPanel(); }
 
 $('#lpLen').addEventListener('input', e => {
@@ -1895,7 +2033,7 @@ $('#lpLen').addEventListener('input', e => {
   const v = legVec(sel), l = V.len(v);
   const { r } = screenAxes();
   const n = l > 1e-6 ? V.mul(v, len / l) : V.mul(r, len);
-  proj().deltas[sel] = { x: n[0], y: n[1], z: n[2] };
+  withEnd(sel, () => setDelta(sel, n));
   afterViewEdit();
 });
 $('#lpDir').addEventListener('change', e => {
@@ -1903,8 +2041,7 @@ $('#lpDir').addEventListener('change', e => {
   commit();
   ensureDeltas();
   const L = legInView(legVec(sel));
-  if (L.inLen > 0.05) setLegInView(sel, L.inLen, +e.target.value, L.c);
-  else setLegInView(sel, L.len, +e.target.value, [0, 0, 0]);
+  withEnd(sel, () => { if (L.inLen > 0.05) setLegInView(sel, L.inLen, +e.target.value, L.c); else setLegInView(sel, L.len, +e.target.value, [0, 0, 0]); });
   afterViewEdit();
 });
 function insertLeg(at, fromLeg) {
@@ -1913,6 +2050,7 @@ function insertLeg(at, fromLeg) {
   const L = fromLeg >= 0 ? legInView(legVec(fromLeg)) : { inLen: 0, ang: 0 };
   const { r, u } = screenAxes(), t = ((L.inLen > 0.05 ? L.ang : 0) + 90) * Math.PI / 180;
   const v = V.add(V.mul(r, 100 * Math.cos(t)), V.mul(u, 100 * Math.sin(t)));
+  txInsertLegs(proj(), at, 1);
   proj().deltas.splice(at, 0, { x: v[0], y: v[1], z: v[2] });
   sel = at;
   afterViewEdit();
@@ -1924,6 +2062,7 @@ $('#lpDel').addEventListener('click', () => {
   ensureDeltas();
   const p = proj();
   if (sel < 0 || p.deltas.length < 2) return;
+  txDeleteLeg(p, sel);
   p.deltas.splice(sel, 1);
   renderInputs(); recompute(); selectLeg(-1);
 });
@@ -1943,8 +2082,82 @@ const EXT_DEAD = 18; // px
 let gizmo = [], gz = null;
 
 function setDelta(i, v) {
-  const z = c => (Math.abs(c) < 1e-9 ? 0 : c);
-  proj().deltas[i] = { x: z(v[0]), y: z(v[1]), z: z(v[2]) };
+  const z = c => (Math.abs(c) < 1e-9 ? 0 : c), o = proj().deltas[i] || {};
+  proj().deltas[i] = { ...(o.lock ? { lock: true } : {}), ...(o.flex ? { flex: true } : {}), x: z(v[0]), y: z(v[1]), z: z(v[2]) };
+}
+
+// ---------- Ende fixiert: Ausgleich über freie Schenkel ----------
+// Ändert sich ein Schenkel, muss die Summe aller Schenkel trotzdem genau von A zum alten Rohrende reichen.
+// Die Differenz nehmen andere Schenkel nur über ihre Länge auf (Richtungen bleiben, keine neuen Winkel):
+// zuerst als „Ausgleich“ markierte, sonst freie Schenkel – dahinter vor davor, nahe zuerst. „Fest“ markierte nie.
+const endOf = p => points(p).at(-1);
+let adjusted = { set: new Set(), t: 0 }; // zuletzt ausgeglichene Schenkel (kurz orange, Maße in Klammern)
+function legMinLen(j, n) {
+  const p = proj(), direct = layout && layout.verts.length === p.deltas.length + 1;
+  const T = k => (direct && layout.bends[k] ? layout.bends[k].T : prof(p).R);
+  return (j > 0 ? T(j - 1) : 0) + (j < n - 1 ? T(j) : 0) + (j > 0 && j < n - 1 ? prof(p).minStraight || 0 : 0);
+}
+// Kleinste Längenänderungen c (je Kandidat) mit Σ c·u = diff; Kandidaten werden nur aufgenommen, wenn sie den Rest verkleinern
+function solveLengths(diff, pool) {
+  const S = [];
+  const fit = dirs => {
+    const m = dirs.length;
+    if (!m) return { c: [], res: diff };
+    const A = dirs.map(u => dirs.map(w => V.dot(u, w))), b = dirs.map(u => V.dot(u, diff));
+    // Gauß-Elimination (m ≤ 3)
+    for (let k = 0; k < m; k++) {
+      let piv = k; for (let r = k + 1; r < m; r++) if (Math.abs(A[r][k]) > Math.abs(A[piv][k])) piv = r;
+      [A[k], A[piv]] = [A[piv], A[k]]; [b[k], b[piv]] = [b[piv], b[k]];
+      if (Math.abs(A[k][k]) < 1e-9) return null;
+      for (let r = 0; r < m; r++) if (r !== k) { const f = A[r][k] / A[k][k]; for (let q = k; q < m; q++) A[r][q] -= f * A[k][q]; b[r] -= f * b[k]; }
+    }
+    const c = b.map((v, k) => v / A[k][k]);
+    return { c, res: V.sub(diff, dirs.reduce((acc, u, k) => V.add(acc, V.mul(u, c[k])), [0, 0, 0])) };
+  };
+  let cur = fit([]);
+  for (const l of pool) {
+    if (V.len(cur.res) < 0.01 || S.length >= 3) break;
+    const next = fit([...S, l].map(x => x.u));
+    if (next && V.len(next.res) < V.len(cur.res) - 0.01) { S.push(l); cur = next; }
+  }
+  return { S, c: cur.c, ok: V.len(cur.res) < 0.01, res: cur.res };
+}
+function keepEnd(p, edited, E0) {
+  if (!p.endFixed || p.deltas.length < 2 || !E0) return { ok: true, changed: [] };
+  const diff = V.sub(E0, endOf(p));
+  if (V.len(diff) < 0.01) return { ok: true, changed: [] };
+  const n = p.deltas.length;
+  const order = j => (j > edited ? j - edited : 1000 + edited - j);
+  const legs = p.deltas.map((d, j) => { const v = deltaVec(d), L = V.len(v); return { j, L, u: L > 1e-9 ? V.mul(v, 1 / L) : null, d }; })
+    .filter(l => l.j !== edited && l.u && !l.d.lock).sort((a, b) => order(a.j) - order(b.j));
+  let last = null;
+  for (const pool0 of [legs.filter(l => l.d.flex), legs]) {
+    let pool = [...pool0];
+    for (let tries = 0; tries <= pool0.length && pool.length; tries++) {
+      const r = solveLengths(diff, pool);
+      last = r;
+      if (!r.ok) break;
+      // Ausgleich darf keinen Schenkel umdrehen oder unter seine Mindestlänge drücken
+      const bad = r.S.findIndex((l, k) => l.L + r.c[k] < Math.max(1, legMinLen(l.j, n)) - 0.05);
+      if (bad < 0) {
+        r.S.forEach((l, k) => setDelta(l.j, V.mul(l.u, l.L + r.c[k])));
+        return { ok: true, changed: r.S.map(l => l.j) };
+      }
+      pool = pool.filter(l => l !== r.S[bad]);
+    }
+  }
+  const miss = last && !last.ok ? dirName(V.norm(last.res)) : null;
+  return { ok: false, reason: miss ? `Ende fixiert: kein freier Schenkel, der ${miss === 'oben' || miss === 'unten' ? 'die Höhe' : `in Richtung ${miss}`} ausgleichen kann – Schenkel freigeben, einfügen oder Ende lösen.`
+    : 'Ende fixiert: Die Ausgleichsschenkel würden zu kurz – Ende lösen oder anderen Schenkel freigeben.' };
+}
+// Eine Änderung am Schenkel i mit festem Ende ausführen; geht der Ausgleich nicht, bleibt alles wie vorher
+function withEnd(i, change) {
+  const p = proj(), E0 = endOf(p), before = structuredClone(p.deltas);
+  change();
+  const r = keepEnd(p, i, E0);
+  if (!r.ok) { p.deltas = before; toast(r.reason); return false; }
+  if (r.changed.length) adjusted = { set: new Set(r.changed), t: performance.now() };
+  return true;
 }
 
 // Richtungen zum Fortführen: liegt der letzte Schenkel auf einer Achse, die Weltachsen, sonst ein Rahmen
@@ -2023,6 +2236,7 @@ function drawGizmo() {
   const pts = points(proj()), n = pts.length - 1, sc = view.sc, P3 = view.P3, cAcc = css('--accent');
   if (n < 1) return;
   if (sel >= n) sel = -1;
+  if (selCorner >= n) selCorner = -1;
 
   if (sel >= 0) { // gewählten Schenkel hervorheben
     const [ax, ay] = P3(pts[sel]), [bx, by] = P3(pts[sel + 1]);
@@ -2033,15 +2247,18 @@ function drawGizmo() {
   if (!gz || gz.type === 'ext') {
     const E = gz ? gz.E : pts[n], d = gz ? gz.d : V.norm(V.sub(pts[n], pts[n - 1]));
     const [ex, ey] = P3(E);
-    for (const c of extCandidates(E, d)) {
+    // Pfeile nur beim Fortführen: Griff angetippt, gerade gezogen, Maus darüber (blass) oder „immer zeigen“
+    const showArrows = !!gz || extOpen || vis.extAlways || extHover;
+    for (const c of showArrows ? extCandidates(E, d) : []) {
       if (V.dot(c.a, d) < -0.9999) continue; // „zurück“ nicht anzeigen, wirkt aber beim Ziehen (kürzen)
       const l = Math.hypot(c.sx, c.sy), ux = c.sx / l, uy = c.sy / l, active = gz?.choice === c.a;
-      ctx.save(); ctx.globalAlpha = gz ? (active ? 1 : 0.18) : 0.55;
+      ctx.save(); ctx.globalAlpha = gz ? (active ? 1 : 0.18) : extOpen || vis.extAlways ? 0.55 : 0.25;
       arrow(ex + ux * 16, ey + uy * 16, ex + ux * 58, ey + uy * 58, axisColor(c.a), c.straight ? 4 : 3);
       ctx.restore();
-      if (!gz) gizmo.push({ type: 'ext', a: c.a, seg: [ex + ux * 16, ey + uy * 16, ex + ux * 58, ey + uy * 58] });
+      if (!gz && (extOpen || vis.extAlways)) gizmo.push({ type: 'ext', a: c.a, seg: [ex + ux * 16, ey + uy * 16, ex + ux * 58, ey + uy * 58] });
     }
     if (!gz) {
+      if (proj().endFixed && n > 1) { ctx.beginPath(); ctx.arc(ex, ey, 17, 0, 7); ctx.strokeStyle = C_ROT; ctx.lineWidth = 3; ctx.stroke(); ctx.font = '14px system-ui'; ctx.fillText('📌', ex + 18, ey - 18); }
       knob(ex, ey, 11, cAcc);
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.moveTo(ex - 5, ey); ctx.lineTo(ex + 5, ey); ctx.moveTo(ex, ey - 5); ctx.lineTo(ex, ey + 5); ctx.stroke();
@@ -2049,9 +2266,10 @@ function drawGizmo() {
     }
   }
 
-  // Ringe am Biegepunkt des gewählten Schenkels
-  if (sel >= 1 && (!gz || gz.type === 'bend' || gz.type === 'rot')) {
-    const i = sel, A = pts[i], { p, q, w, theta } = ringBasis(i, pts);
+  // Ringe nur am angetippten Eckpunkt (Biegewinkel und Drehung des folgenden Schenkels)
+  if (selCorner >= 1 && (!gz || gz.type === 'bend' || gz.type === 'rot')) {
+    const i = selCorner, A = pts[i], { p, q, w, theta } = ringBasis(i, pts);
+    if (!gz) { const [cx, cy] = P3(A); ctx.beginPath(); ctx.arc(cx, cy, 7, 0, 7); ctx.fillStyle = cAcc; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
     // Von der Kante gesehene Ringe (nur noch ein Strich) sind nicht bedienbar und würden Anfasser verdecken
     const flat = poly => { const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]); return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < 14; };
     if ((!gz || gz.type === 'rot') && !flat(ringPts(A, q, w, 40 / sc, 0, 360, 30))) {
@@ -2071,11 +2289,14 @@ function drawGizmo() {
 
   // Längenpfeil am Ende eines inneren Schenkels (am Rohrende macht das der Griff)
   if (sel >= 0 && sel < n - 1 && (!gz || gz.type === 'len')) {
+    // Pfeil beginnt hinter dem Eckpunkt, damit der Eckpunkt selbst antippbar bleibt (Drehringe)
     const B = pts[sel + 1], d = V.norm(V.sub(B, pts[sel])), L = 34 / sc;
-    const [bx, by] = P3(B), [tx, ty] = P3(V.add(B, V.mul(d, L)));
-    if (Math.hypot(tx - bx, ty - by) > 12) {
-      arrow(bx, by, tx, ty, cAcc, 3);
-      gizmo.push({ type: 'len', i: sel, seg: [bx, by, tx, ty], pxPerMm: [(tx - bx) / L, (ty - by) / L] });
+    const [bx, by] = P3(B), [tx0, ty0] = P3(V.add(B, V.mul(d, L)));
+    const l = Math.hypot(tx0 - bx, ty0 - by);
+    if (l > 12) {
+      const ux = (tx0 - bx) / l, uy = (ty0 - by) / l, sx = bx + ux * 16, sy = by + uy * 16, tx = sx + ux * 34, ty = sy + uy * 34;
+      arrow(sx, sy, tx, ty, cAcc, 3);
+      gizmo.push({ type: 'len', i: sel, seg: [sx, sy, tx, ty], pxPerMm: [(tx0 - bx) / L, (ty0 - by) / L] });
     }
   }
 
@@ -2104,7 +2325,7 @@ function gzStart(g, e) {
   const before = snapshot(p);
   ensureDeltas();
   const pts = points(p), n = pts.length - 1;
-  gz = { ...g, before, committed: false, sx: e.clientX, sy: e.clientY, px: lx, py: ly, moved: false, orig: structuredClone(p.deltas), label: '' };
+  gz = { ...g, before, committed: false, sx: e.clientX, sy: e.clientY, px: lx, py: ly, moved: false, orig: structuredClone(p.deltas), E0: endOf(p), label: '' };
   fit = lastBase;
   if (g.type === 'ext') {
     gz.E = pts[n]; gz.d = V.norm(V.sub(pts[n], pts[n - 1])); gz.L0 = V.len(V.sub(pts[n], pts[n - 1]));
@@ -2131,9 +2352,21 @@ function ringAngle(a, b, from, to, x, y) {
   return best;
 }
 function rotateTail(axis, deg) {
-  const a = deg * Math.PI / 180;
-  proj().deltas = gz.orig.map((d, k) => (k < gz.i ? { ...d } : null));
+  const a = deg * Math.PI / 180, p = proj();
+  if (p.endFixed && gz.i < gz.orig.length - 1) {
+    // Ende fixiert: nur dieser Schenkel dreht sich, die freien Schenkel gleichen über ihre Länge aus
+    p.deltas = structuredClone(gz.orig);
+    setDelta(gz.i, rotAbout(deltaVec(gz.orig[gz.i]), axis, a));
+    gzKeep();
+    return;
+  }
+  p.deltas = gz.orig.map((d, k) => (k < gz.i ? { ...d } : null));
   gz.orig.forEach((d, k) => { if (k >= gz.i) setDelta(k, rotAbout(deltaVec(d), axis, a)); });
+}
+// Während des Ziehens: Ausgleich für das feste Ende; geht es nicht, bleibt die Form wie vor dem Ziehen
+function gzKeep() {
+  const p = proj(), r = keepEnd(p, gz.i ?? gz.idx, gz.E0);
+  if (!r.ok) { p.deltas = structuredClone(gz.orig); gz.fail = r.reason; } else { gz.fail = null; adjusted = { set: new Set(r.changed), t: performance.now() }; }
 }
 
 function extMove(lx, ly) {
@@ -2176,24 +2409,30 @@ function gzMove(e) {
     if (!gz.moved) return;
     gzChanged();
     const [mx, my] = gz.pxPerMm, L = round5(gz.L0 + (dx * mx + dy * my) / (mx * mx + my * my));
+    proj().deltas = structuredClone(gz.orig);
     setDelta(gz.idx, V.mul(gz.dir, L));
-    gz.label = `${fmt(L)} mm`;
+    gzKeep();
+    gz.label = gz.fail ? 'Ende fixiert – so nicht möglich' : `${fmt(L)} mm`;
   } else if (gz.type === 'bend') {
     const t = ringAngle(gz.p, gz.q, 0, 180, lx, ly);
     const a = Math.min(180 - ANGLE_STEP, Math.max(ANGLE_STEP, Math.round(t / ANGLE_STEP) * ANGLE_STEP));
     if (Math.abs(a - gz.theta) > 0.01 || gz.committed) { gzChanged(); rotateTail(V.norm(V.cross(gz.p, gz.q)), a - gz.theta); }
-    gz.label = `Biegung ${gz.i}: ${a}°`;
+    gz.label = gz.fail ? 'Ende fixiert – so nicht möglich' : `Biegung ${gz.i}: ${a}°`;
   } else {
     const t = normRot(Math.round(ringAngle(gz.q, gz.w, 0, 359, lx, ly) / ANGLE_STEP) * ANGLE_STEP);
     if (t !== 0 || gz.committed) { gzChanged(); rotateTail(gz.p, t); }
-    gz.label = `Drehung ${t > 0 ? '+' : ''}${t}°`;
+    gz.label = gz.fail ? 'Ende fixiert – so nicht möglich' : `Drehung ${t > 0 ? '+' : ''}${t}°`;
   }
   recompute(true);
 }
 function gzEnd() {
   const g = gz, p = proj();
   gz = null;
+  if (g.fail) toast(g.fail);
   // Antippen eines Hilfspfeils = neuer Schenkel in diese Richtung
+  if (g.type === 'ext' && !g.moved && !g.a) { // Griff nur angetippt: Pfeile ein-/ausblenden
+    extOpen = !extOpen;
+  } else if (g.type === 'ext') extOpen = true; // nach dem Fortführen bleiben die Pfeile für den nächsten Schenkel
   if (g.type === 'ext' && !g.moved && g.a) {
     commit(null, g.before);
     p.deltas = structuredClone(g.orig);
@@ -2206,7 +2445,8 @@ function gzEnd() {
   if (!isOrtho()) fit = null; // in 3D nach dem Loslassen neu einpassen
   renderInputs(); recompute();
   // Nach dem Fortführen nichts auswählen, damit gleich weitergezogen werden kann
-  selectLeg(g.type === 'ext' ? -1 : g.idx ?? g.i);
+  if (g.type === 'rot' || g.type === 'bend') selectCorner(g.i); // Ringe bleiben am Eckpunkt
+  else selectLeg(g.type === 'ext' ? -1 : g.idx ?? g.i);
 }
 
 // ---------- Einrasten an Wand und Ziel ----------
@@ -2231,6 +2471,7 @@ function snapLen(start, dir, L) {
 
 // ---------- Schellen-Werkzeug ----------
 let clampDrag = null;
+document.body.append($('#toast')); // Hinweise auch im Reiter „Rohr“ sichtbar
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg; t.hidden = false;
@@ -2548,7 +2789,9 @@ cv.addEventListener('pointerdown', e => {
     if (camTool === 'clamp') { if (clampDown(e, lx, ly)) return; }
     if (camTool === 'room') { if (roomDown(e, lx, ly)) return; }
     // Gimbal und Schnittpunkt-Anfasser gehören nur zum Werkzeug „Rohr“
-    const g = camTool === 'edit' ? hitGizmo(lx, ly) : null;
+    let g = camTool === 'edit' ? hitGizmo(lx, ly) : null;
+    // Direkt auf einem Eckpunkt hat der Eckpunkt Vorrang vor dem Längenpfeil daneben
+    if (g?.type === 'len') { const c = hitCorner(lx, ly), q = c >= 1 && view.P3(points(proj())[c]); if (q && Math.hypot(q[0] - lx, q[1] - ly) < 12) g = null; }
     if (g) { gzStart(g, e); return; }
     const i = camTool === 'edit' && isOrtho() ? hitVertex(lx, ly) : -1;
     if (i >= 0) {
@@ -2562,7 +2805,14 @@ cv.addEventListener('pointerdown', e => {
 });
 cv.addEventListener('pointermove', e => {
   const prev = ptrs.get(e.pointerId);
-  if (!prev) { if (camTool === 'room' && roomDraw && view) roomHover(...local(e)); return; } // Vorschau beim Zeichnen (Maus)
+  if (!prev) {
+    if (camTool === 'room' && roomDraw && view) roomHover(...local(e));
+    if (e.pointerType === 'mouse' && view && camTool === 'edit') {
+      const [lx, ly] = local(e), knob = gizmo.find(g => g.at), h = !!knob && Math.hypot(lx - knob.at[0], ly - knob.at[1]) < knob.r + 6;
+      if (h !== extHover) { extHover = h; draw(); }
+    }
+    return;
+  } // Vorschau beim Zeichnen (Maus)
   if (roomDrag && ptrs.size === 1) { roomMove(e); return; }
   if (clampDrag && ptrs.size === 1) { clampMove(e); return; }
   if (gz && ptrs.size === 1) { gzMove(e); return; }
@@ -2590,7 +2840,11 @@ cv.addEventListener('pointerup', e => {
   if (drag) { endDrag(); return; }
   if (pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
-    if (camTool === 'room') roomTap(lx, ly);
+    extOpen = false;
+    const dim = camTool === 'edit' ? hitDim(lx, ly) : null, corner = camTool === 'edit' && !dim ? hitCorner(lx, ly) : -1;
+    if (dim) editDim(dim);
+    else if (camTool === 'room') roomTap(lx, ly);
+    else if (corner >= 1) selectCorner(corner);
     else if (camTool === 'edit') selectLeg(hitLeg(lx, ly));
   } else if (camTool === 'room' && roomDraw && pt && e.pointerType !== 'mouse') roomHover(...local(e));
 });
@@ -2599,6 +2853,20 @@ cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clie
 $('.viewbtns').addEventListener('click', e => { const v = e.target.closest('button')?.dataset.view; if (v) resetView(v); });
 new ResizeObserver(() => draw()).observe($('#viewwrap'));
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw());
+
+// ---------- Ende fixiert ein/aus ----------
+function renderEndPin() {
+  const p = proj(), b = $('#endPin');
+  b.classList.toggle('on', !!p.endFixed);
+  b.textContent = p.endFixed ? '📌 Ende fest' : '📌 Ende frei';
+}
+$('#endPin').addEventListener('click', () => {
+  const p = proj();
+  commit(); p.endFixed = !p.endFixed;
+  adjusted = { set: new Set(), t: 0 };
+  renderEndPin(); renderInputs(); recompute();
+  toast(p.endFixed ? 'Ende fixiert: Längen- und Winkeländerungen gleichen freie Schenkel aus.' : 'Ende frei: Änderungen verschieben das Rohrende.');
+});
 
 // ---------- Labor ein/aus ----------
 function setLab(on) {
@@ -2719,8 +2987,8 @@ function applyOffset() {
     .filter(x => V.len(x) > 0.01)
     .map(x => ({ x: x[0], y: x[1], z: x[2] }));
   commit();
-  if (off.mode === 'insert') { ensureDeltas(); p.deltas.splice(off.i, 1, ...legs); }
-  else { p.mode = 'deltas'; p.deltas = legs; p.done = {}; }
+  if (off.mode === 'insert') { ensureDeltas(); txInsertLegs(p, off.i, legs.length - 1); p.deltas.splice(off.i, 1, ...legs); }
+  else { p.mode = 'deltas'; p.deltas = legs; p.bundleTx = []; p.done = {}; }
   off.V = v.v;
   $('#offDlg').hidden = true;
   if (!isOrtho()) fit = null;
@@ -2874,7 +3142,7 @@ function drawMini() {
     mctx.globalAlpha = 1;
   }
   pipes.forEach((L, k) => {
-    mctx.strokeStyle = k ? css('--tube-hi') : css('--tube'); mctx.lineWidth = k ? 3 : 5; mctx.lineCap = mctx.lineJoin = 'round';
+    mctx.strokeStyle = k && (L.short || L.clash) ? css('--err') : k ? css('--tube-hi') : css('--tube'); mctx.lineWidth = k ? 3 : 5; mctx.lineCap = mctx.lineJoin = 'round';
     mctx.beginPath(); L.samples.forEach((s, i) => { const [a, b] = P(s.p); i ? mctx.lineTo(a, b) : mctx.moveTo(a, b); }); mctx.stroke();
   });
   // bearbeiteter Schenkel: von Schnittpunkt zu Schnittpunkt
@@ -2905,11 +3173,24 @@ mini.addEventListener('click', () => $('[data-tab=view]').click());
 new ResizeObserver(() => drawMini()).observe(mini);
 
 // ---------- Parallelrohre (Eingabe) ----------
+// In 3D: Bündel um das Rohr drehen – Lage gilt ab Schenkel 1, jede Biegung folgt daraus (innen/außen oder nebeneinander)
+function renderBundleRot() {
+  const p = proj(), b = $('#bundleRot');
+  b.hidden = !p.bundle.length || layout.verts.length < 2;
+  if (!b.hidden) b.textContent = `⟳ Bündel: ${dirName(sideDir(layout.verts, p.bundle[0].side))}`;
+}
+$('#bundleRot').addEventListener('click', () => {
+  const p = proj();
+  if (!p.bundle.length) return;
+  commit();
+  p.bundle.forEach(b => { b.side = (b.side + 1) % 4; });
+  recompute(); renderBundle();
+});
 function renderBundle() {
   const p = proj(), f = prof(p), verts = layout.verts;
   const sideName = k => (verts.length > 1 ? dirName(sideDir(verts, k)) : '–');
   $('#bundleCard').innerHTML = `<h3>Parallelrohre</h3>
-    <p class="hint" style="margin-top:0">Weitere Rohre im festen Abstand, gemessen von Rohrmitte <b>Rohr 1</b> bis Rohrmitte. Sie laufen bei jeder Änderung mit, als würden sie gemeinsam gebogen; die Schellen werden zu Mehrfachschellen. Ein neues Rohr übernimmt den letzten Abstand zum Nachbarn.</p>
+    <p class="hint" style="margin-top:0">Weitere Rohre im festen Abstand, gemessen von Rohrmitte <b>Rohr 1</b> bis Rohrmitte. Sie laufen bei jeder Änderung mit. Ein neues Rohr übernimmt den letzten Abstand zum Nachbarn.</p>
     ${p.bundle.map((b, i) => {
       const prev = p.bundle.slice(0, i).filter(o => o.side === b.side).at(-1), gap = b.dist - (prev ? prev.dist : 0);
       return `<div class="bundlerow"><b>Rohr ${i + 2}</b>
@@ -2917,7 +3198,38 @@ function renderBundle() {
       <label>zu Rohr 1<span class="unit"><input data-bd="${i}" inputmode="decimal" value="${fin(b.dist)}"><span>mm</span></span><small data-bgap="${i}">zum Nachbarn ${fmt(gap)} mm</small></label>
       <button data-bdel="${i}" aria-label="Parallelrohr entfernen">✕</button></div>`;
     }).join('')}
-    <button id="bAdd" class="wide" style="margin:6px 0 0">+ Parallelrohr</button>`;
+    <button id="bAdd" class="wide" style="margin:6px 0 0">+ Parallelrohr</button>
+    ${p.bundle.length && layout.bends.length ? txHtml(p) : ''}`;
+}
+// Lagewechsel: Bündel an einer Ecke kippen (z. B. übereinander → nebeneinander). Rohr 1 biegt normal; jedes Parallelrohr
+// läuft über die Ecke hinaus, geht senkrecht auf seine neue Höhe und biegt dann weiter.
+// Lage des Bündels nach Biegung j: Name für „wie bisher“ (0) und die beiden Kipprichtungen (±1)
+function txNames(j) {
+  const t = layout.bundle[0]?.turns?.[j], nm = v => dirName(V.norm(v));
+  return t ? { 0: nm(t[0]), 1: nm(t[1]), [-1]: nm(t[-1]) } : null;
+}
+function txHtml(p) {
+  const nb = layout.bends.length, opt = (v, cur, txt) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${txt}</option>`;
+  return `<h4 class="txhead">Lagewechsel</h4>
+    <p class="hint" style="margin-top:0">Bündel an einer Ecke kippen, z. B. von übereinander auf nebeneinander. Rohr 1 biegt normal, die anderen laufen über die Ecke hinaus, gehen dort senkrecht auf die neue Höhe und biegen weiter.</p>
+    ${(p.bundleTx || []).map((t, i) => {
+      const nm = txNames(t.bend) || { 1: '–', [-1]: '–', 0: '–' };
+      return `<div class="txrow"><div class="txtop"><b>Lagewechsel ${i + 1}</b><button data-txdel="${i}" aria-label="Lagewechsel entfernen">✕</button></div>
+        <label>an Biegung<select data-txb="${i}">${Array.from({ length: nb }, (_, k) => opt(k, t.bend, `${k + 1} (${fmt(layout.bends[k].angle)}°)`)).join('')}</select></label>
+        <label>Lage danach<select data-txr="${i}">${opt(1, t.rot, nm[1])}${opt(-1, t.rot, nm[-1])}</select><small>bisher ${nm[0]}</small></label></div>`;
+    }).join('')}
+    <button id="txAdd" class="wide" style="margin:6px 0 0">+ Lagewechsel an einer Biegung</button>`;
+}
+// Lagewechsel an Biegung bend setzen; ohne Vorgabe die Seite nehmen, auf der sich keine Rohre berühren
+function addTx(p, bend, rot = 0) {
+  p.bundleTx = (p.bundleTx || []).filter(t => t.bend !== bend);
+  const t = { bend, rot: rot || 1 };
+  p.bundleTx.push(t);
+  p.bundleTx.sort((a, b) => a.bend - b.bend);
+  if (!rot) {
+    const ok = () => buildLayout(p).bundle.every(B => !B.clash);
+    if (!ok()) { t.rot = -1; if (!ok()) t.rot = 1; }
+  }
 }
 $('#bundleCard').addEventListener('input', e => {
   const el = e.target, p = proj();
@@ -2929,8 +3241,14 @@ $('#bundleCard').addEventListener('input', e => {
   }
 });
 $('#bundleCard').addEventListener('change', e => {
-  const el = e.target, p = proj();
-  if (el.dataset.bs != null) { commit(); p.bundle[+el.dataset.bs].side = +el.value; recompute(); }
+  const el = e.target, p = proj(), ds = el.dataset;
+  if (ds.bs != null) { commit(); p.bundle[+ds.bs].side = +el.value; recompute(); return; }
+  const i = +(ds.txb ?? ds.txr ?? NaN);
+  if (Number.isNaN(i)) return;
+  commit();
+  if (ds.txb != null) { p.bundleTx.splice(i, 1); addTx(p, +el.value); }
+  else p.bundleTx[i].rot = +el.value;
+  recompute(); renderBundle();
 });
 $('#bundleCard').addEventListener('click', e => {
   const b = e.target.closest('button'), p = proj(), f = prof(p);
@@ -2942,6 +3260,12 @@ $('#bundleCard').addEventListener('click', e => {
     const gap = same.length >= 2 ? same.at(-1).dist - same.at(-2).dist : same.length ? same[0].dist : Math.max(20, Math.ceil(f.D * 4 / 5) * 5);
     p.bundle.push({ id: uid(), side, dist: r1((same.at(-1)?.dist || 0) + gap) });
   } else if (b.dataset.bdel != null) { commit(); p.bundle.splice(+b.dataset.bdel, 1); }
+  else if (b.id === 'txAdd') {
+    const nb = layout.bends.length, used = new Set((p.bundleTx || []).map(t => t.bend));
+    const bend = [...Array(nb).keys()].find(k => !used.has(k));
+    if (bend == null) return;
+    commit(); addTx(p, bend);
+  } else if (b.dataset.txdel != null) { commit(); p.bundleTx.splice(+b.dataset.txdel, 1); }
   else return;
   if (!isOrtho()) fit = null;
   recompute(); renderBundle();
@@ -2952,7 +3276,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
 }
 
-function fullRender() { sel = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { extOpen = false; adjusted = { set: new Set(), t: 0 }; renderEndPin(); sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 checkUpdate();

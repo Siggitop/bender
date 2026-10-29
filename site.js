@@ -197,6 +197,71 @@ export function parallelGeometry(pts, dist, dir0) {
 }
 export const parallelPoints = (pts, dist, dir0) => parallelGeometry(pts, dist, dir0).pts;
 // Seite in 90°-Schritten um den ersten Schenkel (0 = refPerp, meist „oben“) → Startrichtung
+// Parallelrohr mit Lagewechseln des Bündels. An Biegung i (zwischen Schenkel i und i+1) dreht sich die Lage um ±90° um
+// den nächsten Schenkel – z. B. von „übereinander“ auf „nebeneinander“. Rohr 1 biegt normal; das Parallelrohr läuft bis
+// über die Ecke, geht dort senkrecht zur Biegeebene auf seine neue Höhe und biegt dann weiter (Raumecke mit zwei Bögen).
+// txs: [{ bend, rot: ±1 }]
+// Ergebnis: pts (Achspunkte), segs (Strecken mit Soll-Richtung, Schenkel, Art 'leg'|'drop'), offsets (Lage je Schenkel),
+// turns (je Biegung die Lage danach: 0 = wie bisher, ±1 = gekippt), short (erste Strecke, die für ihre Bögen zu kurz ist)
+// Kleinster Abstand zweier Strecken a0–a1 und b0–b1 (Rohrachsen) – für die Prüfung, ob sich Rohre berühren
+function segDist(a0, a1, b0, b1) {
+  const u = V.sub(a1, a0), v = V.sub(b1, b0), w = V.sub(a0, b0);
+  const a = V.dot(u, u), b = V.dot(u, v), c = V.dot(v, v), d = V.dot(u, w), e = V.dot(v, w), den = a * c - b * b;
+  let s = den > 1e-9 ? Math.max(0, Math.min(1, (b * e - c * d) / den)) : 0;
+  let t = c > 1e-9 ? (b * s + e) / c : 0;
+  if (t < 0) { t = 0; s = a > 1e-9 ? Math.max(0, Math.min(1, -d / a)) : 0; }
+  else if (t > 1) { t = 1; s = a > 1e-9 ? Math.max(0, Math.min(1, (b - d) / a)) : 0; }
+  return V.len(V.sub(V.add(w, V.mul(u, s)), V.mul(v, t)));
+}
+// Kleinster Achsabstand zweier Rohre (Abtastpunkte als Polylinien)
+export function pipeGap(A, B) {
+  let m = Infinity;
+  for (let i = 0; i < A.length - 1; i++) for (let k = 0; k < B.length - 1; k++) m = Math.min(m, segDist(A[i], A[i + 1], B[k], B[k + 1]));
+  return m;
+}
+// gapAuto(t) liefert den gemeinsamen Abstand aller Rohre des Bündels (zweiter Durchlauf, siehe needGap).
+// Ergebnis: pts (Achspunkte inkl. Etagen), segs (Strecken mit Soll-Richtung, Schenkel, Art), offsets (Lage am Schenkelanfang),
+// needGap (je Biegung: kleinster Abstand, damit zwischen Etage und Bogen die Mindest-Gerade bleibt), turns (Lage nach Biegung je rot).
+export function bundleGeometry(pts, dist, dir0, txs, { R, minStraight = 0 }) {
+  const n = pts.length - 1, d = pts.slice(1).map((p, i) => V.norm(V.sub(p, pts[i])));
+  const tx = new Map((txs || []).filter(t => t.bend >= 0 && t.bend < n - 1).map(t => [t.bend, t]));
+  const off = [], turns = [];
+  off[0] = V.mul(V.norm(V.sub(dir0, V.mul(d[0], V.dot(dir0, d[0])))), dist);
+  for (let j = 0; j < n - 1; j++) {
+    const ax = V.cross(d[j], d[j + 1]), sn = V.len(ax);
+    if (sn < 1e-9) { off[j + 1] = off[j]; continue; }
+    const nn = V.mul(ax, 1 / sn), m1 = V.cross(nn, d[j]), m2 = V.cross(nn, d[j + 1]);
+    const carried = V.add(V.mul(nn, V.dot(off[j], nn)), V.mul(m2, V.dot(off[j], m1)));
+    turns[j] = { 0: carried, 1: rotAbout(carried, d[j + 1], Math.PI / 2), [-1]: rotAbout(carried, d[j + 1], -Math.PI / 2) };
+    const t = tx.get(j);
+    off[j + 1] = t ? turns[j][t.rot > 0 ? 1 : -1] : carried;
+  }
+  // Ecken: in der Biegeebene Schnitt der beiden Geraden; quer dazu (nn) von der alten auf die neue Höhe → senkrechtes Stück
+  const out = [V.add(pts[0], off[0])], segs = [];
+  const push = (q, dir, leg, kind) => { segs.push({ a: out.length - 1, dir, leg, kind }); out.push(q); };
+  for (let i = 1; i < n; i++) {
+    const d1 = d[i - 1], d2 = d[i], ax = V.cross(d1, d2), sn = V.len(ax);
+    if (sn < 1e-9) continue;
+    const nn = V.mul(ax, 1 / sn), m1 = V.cross(nn, d1), m2 = V.cross(nn, d2), cs = V.dot(d1, d2);
+    const a1 = V.dot(off[i - 1], nn), a2 = V.dot(off[i], nn), b = V.dot(off[i - 1], m1), c = V.dot(off[i], m2), s = (b - c * cs) / sn;
+    const u = V.add(V.mul(m2, c), V.mul(d2, s));
+    push(V.add(V.add(pts[i], V.mul(nn, a1)), u), d1, i - 1, 'leg');
+    if (Math.abs(a2 - a1) > 0.01) push(V.add(V.add(pts[i], V.mul(nn, a2)), u), V.mul(nn, Math.sign(a2 - a1)), i, 'drop');
+  }
+  push(V.add(pts[n], off[n - 1]), d[n - 1], n - 1, 'leg');
+  // Soll-Länge je Strecke: Tangenten der angrenzenden Bögen (+ Mindest-Gerade zwischen zwei Bögen)
+  const Tof = a => R * Math.tan(a * Math.PI / 360);
+  const T = segs.map((sg, k) => (k ? Tof(Math.acos(Math.max(-1, Math.min(1, V.dot(segs[k - 1].dir, sg.dir)))) * 180 / Math.PI) : 0));
+  let short = null;
+  segs.forEach((sg, k) => {
+    if (short) return;
+    const len = V.dot(V.sub(out[sg.a + 1], out[sg.a]), sg.dir);
+    const need = T[k] + (T[k + 1] || 0) + (k > 0 && k < segs.length - 1 ? minStraight : 0);
+    if (len < need - 0.05) short = { ...sg, len, need, bend: sg.kind === 'drop' ? sg.leg - 1 : null };
+  });
+  return { pts: out, segs, offsets: off, turns, short };
+}
+
 export function sideDir(pts, side) {
   const d0 = V.norm(V.sub(pts[1], pts[0]));
   return rotAbout(refPerp(d0), d0, side * Math.PI / 2);
