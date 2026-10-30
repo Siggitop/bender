@@ -2443,7 +2443,7 @@ function drawGizmo() {
     [0, 1, 2].forEach(k => {
       if (Math.abs(d[k]) > 0.999) return; // in Laufrichtung geht der Längenpfeil
       const e = [0, 0, 0]; e[k] = 1;
-      if (legShift(ds, sel, e).locked) return;
+      if (legShift(ds, sel, e, !proj().endFixed).locked) return;
       const [px, py] = P3(V.add(m, V.mul(e, 100))), ax = (px - mx) / 100, ay = (py - my) / 100, l = Math.hypot(ax, ay);
       if (l < sc * 0.2) return;
       const ux = ax / l, uy = ay / l, col = rgbCss(AX_RGB[k]);
@@ -2639,37 +2639,51 @@ function gzMove(e) {
   }
   recompute(true);
 }
-// Abschnitt i um den Vektor v verschieben; alle anderen Punkte des Rohrs bleiben, wo sie sind.
-// Liegt v in der Ebene aus Nachbar und Abschnitt, gleicht der Nachbar über seine Länge aus (bei schrägen Nachbarn ändert sich
-// auch die Länge des Abschnitts). Sonst – oder am Rohranfang/-ende – entsteht ein neuer Schenkel mit zusätzlicher Biegung.
-function legShift(ds, i, v) {
-  const n = ds.length, D = deltaVec(ds[i]), d = V.norm(D);
-  const split = u => { // v = a·u + b·d
+// Abschnitt i um den Vektor v verschieben. Reihenfolge: Erst nehmen bestehende Schenkel die Verschiebung auf – auf jeder Seite
+// der nächste Schenkel, der sie über seine Länge ausgleichen kann; was dazwischen liegt, wandert unverändert mit.
+// Nur wenn es auf einer Seite keinen solchen Schenkel gibt, entsteht dort ein neuer Schenkel mit zusätzlicher Biegung
+// (bei freiem Ende wandert der Rest stattdessen samt Rohrende mit). „Fest“ markierte Schenkel gleichen nie aus.
+function legShift(ds, i, v, freeEnd = false) {
+  const n = ds.length, dir = j => V.norm(deltaVec(ds[j]));
+  const split = (u, d) => { // v = a·u + b·d
     const ud = V.dot(u, d), det = 1 - ud * ud;
     if (Math.abs(det) < 1e-9) return null;
     const a = (V.dot(u, v) - ud * V.dot(d, v)) / det, b = (V.dot(d, v) - ud * V.dot(u, v)) / det;
     return V.len(V.sub(v, V.add(V.mul(u, a), V.mul(d, b)))) < 0.01 ? a : null;
   };
-  const obj = (o, w) => ({ ...o, x: w[0], y: w[1], z: w[2] });
-  const uP = i > 0 ? V.norm(deltaVec(ds[i - 1])) : null, uN = i < n - 1 ? V.norm(deltaVec(ds[i + 1])) : null;
-  const aP = uP ? split(uP) : null, aN = uN ? split(uN) : null;
-  const moveA = aP != null ? V.mul(uP, aP) : v, moveB = aN != null ? V.mul(uN, aN) : v;
-  const Dn = V.add(D, V.sub(moveB, moveA)), head = [...ds.slice(0, Math.max(0, i - 1))], tail = ds.slice(i + 2);
-  const out = [...head], changed = [];
-  if (i > 0) { if (aP != null) { changed.push(out.length); out.push(obj(ds[i - 1], V.add(deltaVec(ds[i - 1]), moveA))); } else out.push(ds[i - 1]); }
-  const insP = aP == null, insN = aN == null;
-  if (insP) { changed.push(out.length); out.push(obj({}, v)); }
-  const newI = out.length;
-  if (V.len(V.sub(Dn, D)) > 0.01) changed.push(newI);
-  out.push(obj(ds[i], Dn));
-  if (insN) { changed.push(out.length); out.push(obj({}, V.mul(v, -1))); }
-  if (i < n - 1) { if (aN != null) { changed.push(out.length); out.push(obj(ds[i + 1], V.sub(deltaVec(ds[i + 1]), moveB))); } else out.push(ds[i + 1]); }
-  out.push(...tail);
-  const locked = (aP != null && Math.abs(aP) > 0.001 && ds[i - 1].lock) || (aN != null && Math.abs(aN) > 0.001 && ds[i + 1].lock) || (ds[i].lock && V.len(V.sub(Dn, D)) > 0.01);
-  // Kein Schenkel darf dabei seine Richtung umkehren
-  const same = (a, b) => V.dot(deltaVec(a), deltaVec(b)) > 0;
-  const flip = !same(ds[i], out[newI]) || (i > 0 && aP != null && !same(ds[i - 1], out[newI - 1])) || (i < n - 1 && aN != null && !same(ds[i + 1], out[newI + 1]));
-  return { deltas: out, newI, insP, insN, changed, locked, flip };
+  const add = ds.map(() => [0, 0, 0]), changed = new Set(), moved = new Set([i]);
+  const stretch = (j, w) => { add[j] = V.add(add[j], w); if (V.len(w) > 0.01) changed.add(j); };
+  // Davor: Schenkel j nimmt auf, der Schenkel dahinter (k) passt sich an, alles bis i wandert mit
+  let insP = true;
+  for (let k = i, j = i - 1; j >= 0; k = j, j--) {
+    const a = ds[j].lock ? null : split(dir(j), dir(k));
+    if (a != null) { const w = V.mul(dir(j), a); stretch(j, w); stretch(k, V.sub(v, w)); insP = false; break; }
+    moved.add(j);
+  }
+  if (insP) { moved.clear(); moved.add(i); }
+  // Dahinter entsprechend; ohne ausgleichenden Schenkel wandert bei freiem Ende alles mit
+  let insN = true, runN = [];
+  for (let k = i, j = i + 1; j < n; k = j, j++) {
+    const a = ds[j].lock ? null : split(dir(j), dir(k));
+    if (a != null) { const w = V.mul(dir(j), a); stretch(j, V.mul(w, -1)); stretch(k, V.sub(w, v)); insN = false; break; }
+    runN.push(j);
+  }
+  if (insN && freeEnd) insN = false;
+  else if (insN) runN = [];
+  runN.forEach(j => moved.add(j));
+  // Neue Schenkelliste
+  const out = [], index = {};
+  ds.forEach((o, j) => {
+    if (j === i && insP) { changed.add(`n${out.length}`); out.push({ x: v[0], y: v[1], z: v[2] }); }
+    index[j] = out.length;
+    const w = V.add(deltaVec(o), add[j]);
+    out.push({ ...o, x: w[0], y: w[1], z: w[2] });
+    if (j === i && insN) { changed.add(`n${out.length}`); out.push({ x: -v[0], y: -v[1], z: -v[2] }); }
+  });
+  const list = [...changed].map(c => (typeof c === 'string' ? +c.slice(1) : index[c]));
+  const flip = ds.some((o, j) => V.dot(deltaVec(o), deltaVec(out[index[j]])) <= 0);
+  const locked = !!ds[i].lock && changed.has(i);
+  return { deltas: out, newI: index[i], insP, insN, changed: list, locked, flip, moved: [...moved].map(j => [index[j], j]) };
 }
 // Ein Zwischenstand ist erlaubt, wenn alle geänderten Schenkel für ihre Bögen reichen
 function shiftOk(p, r) {
@@ -2680,14 +2694,14 @@ function shiftOk(p, r) {
 function legMoveTo(t) {
   const p = proj(), e = [0, 0, 0];
   e[gz.k] = t;
-  const r = legShift(gz.dOrig, gz.i, e);
+  const r = legShift(gz.dOrig, gz.i, e, !p.endFixed);
   if (!shiftOk(p, r)) return null;
   p.deltas = structuredClone(r.deltas);
   p.bundleTx = structuredClone(gz.txOrig);
   if (r.insP) txInsertLegs(p, gz.i, 1);
   if (r.insN) txInsertLegs(p, r.newI + 1, 1);
-  const leg = p.deltas[r.newI];
-  if (leg.ref && planeById(leg.ref.plane)?.axis === gz.k) leg.ref.off = r1(gz.dOrig[gz.i].ref.off + t);
+  // Mitwandernde Schenkel, die an einer Ebene hängen, behalten ihren Bezug: Das Maß ändert sich mit
+  r.moved.forEach(([ni, oi]) => { const leg = p.deltas[ni]; if (leg.ref && planeById(leg.ref.plane)?.axis === gz.k) leg.ref.off = r1(gz.dOrig[oi].ref.off + t); });
   return r;
 }
 // Abstand zu Rohr 1 aus der Zeigerposition (Pfeil oder Punkt zieht quer zum ersten Schenkel)
