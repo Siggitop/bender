@@ -71,7 +71,7 @@
         <button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
       </div>
       <div class="popover" id="visPop" hidden>
-        <label class="chk"><input type="checkbox" data-vis="dims"> Maße</label>
+        <div class="seg" id="dimLevel"><button data-lv="quiet">Ruhig</button><button data-lv="sel">Auswahl</button><button data-lv="all">Alle</button></div>
         <label class="chk"><input type="checkbox" data-vis="axis"> Achslinie</label>
         <label class="chk"><input type="checkbox" data-vis="total"> Gesamtmaße (Versatz A → Ende)</label>
         <label class="chk"><input type="checkbox" data-vis="angles"> Winkelmaße</label>
@@ -81,7 +81,6 @@
         <label class="chk labonly"><input type="checkbox" data-vis="clamps"> Schellen</label>
         <label class="chk"><input type="checkbox" data-vis="colors"> Rohrfarben</label>
         <label class="chk"><input type="checkbox" data-vis="refPlanes"> Referenzebenen</label>
-        <label class="chk"><input type="checkbox" data-vis="refDims"> Bezugsmaße</label>
         <label class="chk"><input type="checkbox" data-vis="extAlways"> Fortführ-Pfeile immer zeigen</label>
       </div>
       <div class="toast" id="toast" hidden></div>

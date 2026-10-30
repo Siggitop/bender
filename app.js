@@ -1456,7 +1456,7 @@ function fitCanvas(c, g, W, H, dpr) {
 const PIPE_COLORS = [[0.13, 0.45, 0.85], [0.84, 0.2, 0.2], [0.15, 0.6, 0.33], [0.93, 0.55, 0.1], [0.55, 0.3, 0.8], [0.05, 0.63, 0.68], [0.85, 0.3, 0.6], [0.5, 0.38, 0.25]];
 const rgbCss = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
 const lighter = (c, t) => c.map(v => v + (1 - v) * t);
-const VIS_DEFAULT = { colors: true, refPlanes: true, refDims: true, dims: true, axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
+const VIS_DEFAULT = { colors: true, refPlanes: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -1568,7 +1568,10 @@ function render3d() {
     }
   });
   const refPl = [];
-  if (vis.refPlanes) scene(p).planes.forEach(pl => { const n = [0, 0, 0]; n[pl.axis] = 1; add(quadMesh(planeCorners(pl), n, AX_RGB[pl.axis]), refPl); });
+  if (vis.refPlanes) scene(p).planes.forEach(pl => { // gefüllt nur, wenn gewählt oder gerade Ziel eines Maßes
+    if (selPlane !== pl.id && !pick) return;
+    const n = [0, 0, 0]; n[pl.axis] = 1; add(quadMesh(planeCorners(pl), n, AX_RGB[pl.axis]), refPl);
+  });
   if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans, refPl })) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = tw; ctx.strokeStyle = css('--tube');
     pipes.forEach(L => { ctx.beginPath(); L.samples.forEach((s, i) => { const [x, y] = P3(s.p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); });
@@ -1629,11 +1632,14 @@ function render3d() {
   }
   dimHits = []; placed = [];
   pipeSegs = pipes.flatMap(L => L.verts.slice(1).map((q, k) => [...P3(L.verts[k]), ...P3(q)]));
-  if (vis.dims && !p.unrouted) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
-  if (vis.dims && camTool === 'edit') drawBundleDims(layout, P3);
-  if (vis.refDims && camTool === 'edit') drawRefDims(P3);
-  if (vis.total) drawTotal(layout, P3, tw);
-  if (vis.angles) drawAngles(ML, P3);
+  // Stufe: Ruhig = nur das Angetippte, Auswahl = dazu kleine Längen, Alle = alles
+  const allDims = vis.dimLevel === 'all';
+  if (!p.unrouted) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
+  if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
+  if (camTool === 'edit') drawRefDims(P3, allDims);
+  if (vis.total || allDims) drawTotal(layout, P3, tw);
+  if (vis.angles || allDims) drawAngles(ML, P3);
+  else if (selCorner >= 1 && layout.bends[selCorner - 1]) drawAngles(layout, P3, selCorner - 1);
 
   // Schellen: Halter zur Wand, Nummer; ohne Befestigung orange
   if (vis.clamps) clampSets.forEach((set, k) => set.forEach((c, i) => {
@@ -1647,7 +1653,7 @@ function render3d() {
     const big = camTool === 'clamp' && k === 0;
     ctx.fillStyle = c.mount || !room ? (dark ? '#d0d4da' : '#3b4048') : '#f08c00';
     ctx.beginPath(); ctx.arc(x, y, big ? 9 : 6, 0, 7); ctx.fill();
-    if (k === 0 && (big || vis.dims)) { ctx.fillStyle = cText; ctx.font = '600 10px system-ui'; ctx.fillText(`S${i + 1}`, x + 14, y - 10); ctx.font = '600 12px -apple-system, system-ui, sans-serif'; }
+    if (k === 0 && (big || vis.dimLevel !== 'quiet')) { ctx.fillStyle = cText; ctx.font = '600 10px system-ui'; ctx.fillText(`S${i + 1}`, x + 14, y - 10); ctx.font = '600 12px -apple-system, system-ui, sans-serif'; }
   }));
 
   // Selbstberührungen und Raum-Treffer
@@ -1679,7 +1685,7 @@ function render3d() {
     ctx.fillStyle = '#fff'; ctx.font = '700 12px -apple-system, system-ui, sans-serif'; ctx.fillText(j + 1, x, y + 0.5);
   });
   ctx.fillStyle = cText; ctx.font = '700 13px -apple-system, system-ui, sans-serif';
-  { const [sx, sy] = P3(S[0].p); ctx.fillText('A', sx - 14, sy - 12); } // Parallelrohre beginnen daneben – ein „A“ genügt
+  if (scenePipes(p).length < 2) { const [sx, sy] = P3(S[0].p); ctx.fillText('A', sx - 14, sy - 12); } // Parallelrohre beginnen daneben – ein „A“ genügt
 
   if (camTool === 'room') { gizmo = []; drawRoomOverlay(P3); }
   else if (camTool !== 'clamp' && !printing && !animLayout) {
@@ -1716,7 +1722,7 @@ function dimLine(a, b, val, away, off, hit, style = {}) {
   let ang = Math.atan2(uy, ux);
   if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
   if (len < 14) ang = 0;
-  const fontPx = style.minor ? 11 : 12;
+  const fontPx = style.minor || style.plain ? 11 : 12;
   ctx.save();
   ctx.font = `${style.minor ? 600 : 700} ${fontPx}px -apple-system, system-ui, sans-serif`;
   const w = ctx.measureText(val).width + 8, h = fontPx + 4;
@@ -1731,13 +1737,14 @@ function dimLine(a, b, val, away, off, hit, style = {}) {
   }
   const { sg, o, tx, ty, box } = best, Nx = nx * sg, Ny = ny * sg;
   placed.push(box);
-  if (style.faded) ctx.globalAlpha = 0.3;
   const A = [ax + Nx * o, ay + Ny * o], B = [bx + Nx * o, by + Ny * o];
-  ctx.lineWidth = style.minor ? 0.8 : 1; ctx.strokeStyle = ink; ctx.fillStyle = ink;
-  if (len >= 14) {
+  ctx.lineWidth = style.plain || style.minor ? 0.7 : 1; ctx.strokeStyle = ink; ctx.fillStyle = ink;
+  if (style.plain) ctx.globalAlpha = 0.6;
+  if (len >= (style.plain ? 40 : 14)) { // bei kurzen, nicht gewählten Maßen genügt die Zahl
     // Hilfslinien vom Messpunkt bis etwas über die Maßlinie
     const g = ctx.globalAlpha; ctx.globalAlpha = g * 0.45; ctx.beginPath();
-    for (const [px, py] of [[ax, ay], [bx, by]]) { ctx.moveTo(px + Nx * 5, py + Ny * 5); ctx.lineTo(px + Nx * (o + 4), py + Ny * (o + 4)); }
+    const from = style.plain ? o - 8 : 5;
+    for (const [px, py] of [[ax, ay], [bx, by]]) { ctx.moveTo(px + Nx * from, py + Ny * from); ctx.lineTo(px + Nx * (o + 4), py + Ny * (o + 4)); }
     ctx.stroke(); ctx.globalAlpha = g;
     // Maßlinie mit Pfeilen (bei kurzen Maßen Pfeile außen)
     const inside = len > 34, ah = style.minor ? 6 : 7, aw = style.minor ? 2.2 : 2.6;
@@ -1748,10 +1755,15 @@ function dimLine(a, b, val, away, off, hit, style = {}) {
     if (inside) { arrowHead(A, -ux, -uy); arrowHead(B, ux, uy); } else { arrowHead(A, ux, uy); arrowHead(B, -ux, -uy); }
   }
   // Maßzahl auf der Linie, lesbar ausgerichtet (nie auf dem Kopf)
+  ctx.globalAlpha = 1;
   ctx.translate(tx, ty); ctx.rotate(ang);
-  ctx.fillStyle = css('--card'); ctx.fillRect(-w / 2, -h / 2, w, h);
-  if (hit && !style.minor) { ctx.strokeStyle = css('--accent'); ctx.lineWidth = 1; ctx.strokeRect(-w / 2, -h / 2, w, h); }
-  ctx.fillStyle = hit && !style.driven && !style.minor ? css('--accent') : ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(val, 0, 0.5);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (style.plain || style.minor) { ctx.strokeStyle = css('--card'); ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeText(val, 0, 0.5); } // nur Text mit hellem Rand
+  else {
+    ctx.fillStyle = css('--card'); ctx.fillRect(-w / 2, -h / 2, w, h);
+    if (hit) { ctx.strokeStyle = css('--accent'); ctx.lineWidth = 1; ctx.strokeRect(-w / 2, -h / 2, w, h); }
+  }
+  ctx.fillStyle = hit && !style.driven && !style.minor && !style.color ? css('--accent') : ink; ctx.fillText(val, 0, 0.5);
   ctx.restore();
   if (hit) dimHits.push({ ...hit, x: tx, y: ty, w: Math.max(w, 36), h: 30, ang });
 }
@@ -1777,15 +1789,16 @@ function drawBundleDims(L, P3) {
   p.bundle.forEach((b, i) => {
     const B = L.bundle[i], prev = p.bundle.slice(0, i).map((o, k) => k).filter(k => p.bundle[k].side === b.side).at(-1);
     if (!B) return;
-    dimLine(P3(prev == null ? A : L.bundle[prev].A), P3(B.A), fmt(bundleGapOf(p, i)), away, 24, { bgap: i }, { faded: bundleSel >= 0 && bundleSel !== i });
+    dimLine(P3(prev == null ? A : L.bundle[prev].A), P3(B.A), fmt(bundleGapOf(p, i)), away, 24, { bgap: i }, { plain: bundleSel !== i });
   });
 }
 
 // Winkelmaße: an jedem Schnittpunkt der Biegewinkel – Bogen von der gestrichelten Verlängerung des ankommenden
 // Schenkels zum abgehenden Schenkel, Wert = wahrer Winkel im Raum (so weit wird gebogen)
-function drawAngles(L, P3) {
+function drawAngles(L, P3, only = -1) {
   const ink = css('--mark'), r = 30;
   L.bends.forEach((b, j) => {
+    if (only >= 0 && j !== only) return;
     const [vx, vy] = P3(b.vertex), [ix, iy] = P3(V.add(b.vertex, b.din)), [ox, oy] = P3(V.add(b.vertex, b.dout));
     let a1 = Math.atan2(iy - vy, ix - vx), a2 = Math.atan2(oy - vy, ox - vx);
     const l1 = Math.hypot(ix - vx, iy - vy), l2 = Math.hypot(ox - vx, oy - vy);
@@ -1853,7 +1866,8 @@ function drawDims(L, P3, tw, editable) {
   for (let i = 1; i < pts.length; i++) {
     const A = L.verts[i - 1], B = L.verts[i], d = V.sub(B, A);
     const fl = direct ? p.deltas[i - 1] : {};
-    const st = { lock: !!fl.lock, driven: direct && p.endFixed && (fl.flex || adjusted.set.has(i - 1)), faded: bundleSel >= 0 || (!!focus && !focus.includes(i - 1)) };
+    const on = !!focus && focus.includes(i - 1);
+    const st = { lock: !!fl.lock, driven: direct && p.endFixed && (fl.flex || adjusted.set.has(i - 1)), plain: !on };
     const comps = [0, 1, 2].filter(k => Math.abs(d[k]) > 0.5);
     let sp = null;
     if (comps.length > 1) {
@@ -1864,14 +1878,14 @@ function drawDims(L, P3, tw, editable) {
       comps.forEach(k => { const q = [...path.at(-1)]; q[k] += d[k]; path.push(q); });
       sp = path.map(q => P3(q));
     }
-    legs.push({ i, d, st, comps, sp });
+    legs.push({ i, d, st, comps, sp, on });
   }
   // Erst die Hauptmaße (wahre Länge) – sie bekommen die besten Plätze –, dann die Hilfsmaße der schrägen Schenkel
-  legs.forEach(({ i, d, st, sp }) => dimLine(pts[i - 1], pts[i], fmt(V.len(d)), sp ? sp[1] : cen, off, editable ? { i: i - 1 } : null, st));
-  legs.forEach(({ i, d, st, comps, sp }) => {
-    if (!sp) return;
+  legs.forEach(({ i, d, st, sp, on }) => { if (on || vis.dimLevel !== 'quiet') dimLine(pts[i - 1], pts[i], fmt(V.len(d)), sp ? sp[1] : cen, off, editable ? { i: i - 1 } : null, st); });
+  legs.forEach(({ i, d, st, comps, sp, on }) => {
+    if (!sp || !(on || vis.dimLevel === 'all')) return;
     const mid = [(pts[i - 1][0] + pts[i][0]) / 2, (pts[i - 1][1] + pts[i][1]) / 2];
-    ctx.save(); ctx.setLineDash([5, 4]); ctx.lineWidth = 1; ctx.strokeStyle = muted; if (st.faded) ctx.globalAlpha = 0.3;
+    ctx.save(); ctx.setLineDash([5, 4]); ctx.lineWidth = 1; ctx.strokeStyle = muted;
     ctx.beginPath(); sp.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); ctx.restore();
     comps.forEach((k, j) => dimLine(sp[j], sp[j + 1], fmt(Math.abs(d[k])), mid, off * 0.8, editable ? { i: i - 1, k } : null, { ...st, minor: true }));
   });
@@ -2090,7 +2104,13 @@ function selectBundle(i) {
 function hitCorner(x, y) {
   const pts = points(proj());
   let best = -1, bd = hitTol(16);
-  for (let i = 1; i < pts.length - 1; i++) { const [px, py] = view.P3(pts[i]), d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = i; } }
+  const sc = pts.map(q => view.P3(q));
+  for (let i = 1; i < pts.length - 1; i++) {
+    // Bei kurzen Schenkeln bleibt die Mitte für die Gerade frei
+    const lim = Math.min(Math.hypot(sc[i][0] - sc[i - 1][0], sc[i][1] - sc[i - 1][1]), Math.hypot(sc[i + 1][0] - sc[i][0], sc[i + 1][1] - sc[i][1])) * 0.35;
+    const d = Math.hypot(sc[i][0] - x, sc[i][1] - y);
+    if (d < bd && d < Math.max(8, lim)) { bd = d; best = i; }
+  }
   return best;
 }
 
@@ -2801,10 +2821,17 @@ function setTool(tool) {
   draw();
 }
 $('.toolseg').addEventListener('click', e => { const t = e.target.closest('button')?.dataset.tool; if (t) setTool(t); });
+const renderDimLevel = () => $$('#dimLevel button').forEach(b => b.classList.toggle('on', b.dataset.lv === vis.dimLevel));
 $('#visBtn').addEventListener('click', () => {
   const pop = $('#visPop');
   pop.hidden = !pop.hidden;
   $$('[data-vis]', pop).forEach(i => { i.checked = !!vis[i.dataset.vis]; });
+  renderDimLevel();
+});
+$('#dimLevel').addEventListener('click', e => {
+  const lv = e.target.closest('button')?.dataset.lv;
+  if (!lv) return;
+  vis.dimLevel = lv; saveVis(); renderDimLevel(); draw();
 });
 $('#visPop').addEventListener('change', e => {
   const k = e.target.dataset.vis;
@@ -3093,7 +3120,10 @@ function hitGhost(x, y) {
 // Ebene unter dem Finger: die ganze Fläche zählt; von der Kante gesehen bleibt nur der Griff in der Mitte
 function hitPlane(x, y) {
   if (!vis.refPlanes) return null;
-  for (const pl of scene().planes) if (pointInPoly(planeCorners(pl).map(q => view.P3(q)), x, y)) return pl.id;
+  for (const pl of scene().planes) {
+    const c = planeCorners(pl).map(q => view.P3(q));
+    if (pointInPoly(c, x, y) || c.some((q, i) => segDist(x, y, ...q, ...c[(i + 1) % 4]) < hitTol(10))) return pl.id;
+  }
   return null;
 }
 function hitLeg(x, y) {
@@ -3121,7 +3151,7 @@ cv.addEventListener('pointerdown', e => {
     // Gimbal und Schnittpunkt-Anfasser gehören nur zum Werkzeug „Rohr“
     let g = camTool === 'edit' ? hitGizmo(lx, ly) : null;
     // Direkt auf einem Eckpunkt hat der Eckpunkt Vorrang vor dem Längenpfeil daneben
-    if (g?.type === 'len') { const c = hitCorner(lx, ly), q = c >= 1 && view.P3(points(proj())[c]); if (q && Math.hypot(q[0] - lx, q[1] - ly) < 12) g = null; }
+    if (g?.type === 'len' || g?.type === 'lmove') { const c = hitCorner(lx, ly), q = c >= 1 && view.P3(points(proj())[c]); if (q && Math.hypot(q[0] - lx, q[1] - ly) < 12) g = null; }
     if (g) { gzStart(g, e); return; }
     const i = camTool === 'edit' && isOrtho() ? hitVertex(lx, ly) : -1;
     if (i >= 0) {
@@ -3745,9 +3775,9 @@ const AX_RGB = [[0.88, 0.19, 0.19], [0.18, 0.62, 0.27], [0.11, 0.49, 0.84]];
 function drawPlanesOverlay(P3) {
   scene().planes.forEach((pl, i) => {
     const c = planeCorners(pl).map(q => P3(q)), col = rgbCss(AX_RGB[pl.axis]), on = selPlane === pl.id;
-    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = on ? 2 : 1; ctx.globalAlpha = on ? 0.9 : 0.5;
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = on ? 1.5 : 0.8; ctx.globalAlpha = on ? 0.9 : 0.35;
     ctx.beginPath(); c.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
-    ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.font = '700 12px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`R${i + 1}`, c[2][0] + 4, c[2][1] - 4);
+    ctx.globalAlpha = on ? 1 : 0.55; ctx.fillStyle = col; ctx.font = '600 10px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`R${i + 1}`, c[2][0] + 4, c[2][1] - 4);
     ctx.restore();
   });
 }
@@ -3756,15 +3786,16 @@ function drawSceneHandles() {
   const p = proj(), P3 = view.P3, sc = scene(p), cAcc = css('--accent');
   (vis.refPlanes ? sc.planes : []).forEach(pl => {
     const c = planeCorners(pl).map(q => P3(q)), x = (c[0][0] + c[2][0]) / 2, y = (c[0][1] + c[2][1]) / 2, col = rgbCss(AX_RGB[pl.axis]);
+    if (selPlane !== pl.id) return;
     knob(x, y, 7, col);
     gizmo.push({ type: 'plane', id: pl.id, at: [x, y], r: 12 });
-    if (selPlane === pl.id) moveArrows(`R:${pl.id}`, [0, 1, 2], [x, y]);
+    moveArrows(`R:${pl.id}`, [0, 1, 2], [x, y]);
   });
   scenePipes(p).forEach((q, n) => {
     for (const w of ['S', 'E']) {
       const key = `${w}:${q.id}`, A = nodePos(key), [x, y] = P3(A), mine = q === p;
       if (!mine) { knob(x, y, 7, q.color != null && vis.colors ? rgbCss(PIPE_COLORS[q.color]) : css('--muted')); gizmo.push({ type: 'pt', pid: q.id, w, at: [x, y], r: 12 }); }
-      ctx.save(); ctx.font = '700 12px system-ui'; ctx.fillStyle = css('--text'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(`${w}${n + 1}`, x - (mine ? 20 : 14), y + (mine ? 20 : 14)); ctx.restore();
+      if (scenePipes(p).length > 1 || pick) { ctx.save(); ctx.font = '700 12px system-ui'; ctx.fillStyle = css('--text'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(`${w}${n + 1}`, x - (mine ? 20 : 14), y + (mine ? 20 : 14)); ctx.restore(); }
       if (selPoint?.pid === q.id && selPoint.w === w) {
         ctx.beginPath(); ctx.arc(x, y, 15, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2.5; ctx.stroke();
         if (pointMove) moveArrows(key, [0, 1, 2], [x, y]);
@@ -3787,11 +3818,13 @@ function moveArrows(key, axes, [x, y]) {
   });
 }
 // Maße der Bezüge: je Achse eine Linie vom Bezug zum Punkt, antippbar; 0 heißt fluchtend/gleiche Höhe
-function drawRefDims(P3) {
+function drawRefDims(P3, all) {
   const p = proj(), sc = scene(p), cols = ['--ax-x', '--ax-y', '--ax-z'].map(css);
+  const selKey = selPoint ? `${selPoint.w}:${selPoint.pid}` : selPlane ? `R:${selPlane}` : null;
+  const shown = (key, r) => all || key === selKey || r.to === selKey;
   const cen = P3(points(p)[0]);
   const one = (key, k, r) => {
-    if (!nodeExists(r.to)) return;
+    if (!nodeExists(r.to) || !shown(key, r)) return;
     const a = nodePos(key), b = [...a];
     b[k] = nodeVal(r.to, k);
     if (r.to[0] === 'R') planeMark(P3(b), r.to, k);
@@ -3799,7 +3832,7 @@ function drawRefDims(P3) {
   };
   scenePipes(p).forEach(q => ['S', 'E'].forEach(w => q.refs?.[w]?.forEach((r, k) => { if (r) one(`${w}:${q.id}`, k, r); })));
   sc.planes.forEach(pl => {
-    if (!pl.ref || !nodeExists(pl.ref.to)) return;
+    if (!pl.ref || !nodeExists(pl.ref.to) || !shown(`R:${pl.id}`, pl.ref)) return;
     const c = planeCorners(pl), m = [0, 1, 2].map(i => (c[0][i] + c[2][i]) / 2), b = [...m];
     b[pl.axis] = nodeVal(pl.ref.to, pl.axis);
     if (pl.ref.to[0] === 'R') planeMark(P3(b), pl.ref.to, pl.axis);
@@ -3807,7 +3840,7 @@ function drawRefDims(P3) {
   });
   p.deltas.forEach((d, j) => {
     const pl = d.ref && planeById(d.ref.plane);
-    if (!pl) return;
+    if (!pl || !(all || sel === j || selPlane === pl.id)) return;
     const a = points(p)[j], b = [...a];
     b[pl.axis] = pl.c;
     planeMark(P3(b), `R:${pl.id}`, pl.axis);

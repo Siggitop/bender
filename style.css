@@ -417,3 +417,4 @@ body:not(.lab) .labonly { display: none !important; }
 #bundleBar button { flex: none; min-height: 38px; padding: 4px 8px; font-size: 13px; }
 @media (max-width: 420px) { .viewacts { gap: 4px; left: 6px; right: 6px; } .viewacts button { padding: 6px 8px; font-size: 13px; } }
 @media (orientation: landscape) and (max-height: 520px) { .tabbar button { font-size: 10px; padding: 4px 2px; } }
+#dimLevel button { min-height: 36px; font-size: 13px; padding: 2px 8px; }
