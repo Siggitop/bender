@@ -54,7 +54,7 @@
       <canvas id="cvBg" aria-hidden="true"></canvas>
       <canvas id="cvGL" aria-hidden="true"></canvas>
       <canvas id="cv" aria-label="3D-Ansicht des gebogenen Rohrs"></canvas>
-      <div class="viewbtns">
+      <div class="viewbtns closed" id="viewBtns">
         <button data-view="iso" title="3D drehen">3D</button>
         <button data-view="front" title="Ansicht von vorne">Vorne</button>
         <button data-view="back" title="Ansicht von hinten">Hinten</button>
@@ -64,12 +64,16 @@
         <button data-view="right" title="Ansicht von rechts">Rechts</button>
       </div>
       <div class="viewhint" id="viewHint"></div>
+      <div class="pipecol" id="pipeCol" hidden><button id="colBtn" aria-label="Rohrfarbe" title="Rohrfarbe"></button><div class="colpop" id="colPop" hidden></div></div>
       <div class="viewacts">
         <button id="visBtn" aria-label="Anzeige" title="Anzeige">👁</button>
-        <button id="endPin" title="Rohrende im Raum festhalten">Ende fest</button><button id="addPipe" title="Weiteres Rohr in dieses Projekt">+ Rohr</button><button id="addPlane" title="Referenzebene anlegen">+ Ebene</button>
-        <span class="toolseg labonly"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span>
-        <button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
+        <button id="addBtn" aria-label="Hinzufügen" title="Hinzufügen">+</button>
+        <button id="moreBtn" class="labonly" aria-label="Werkzeuge" title="Werkzeuge">⋯</button>
+        <span class="acts-more" id="actsMore" hidden>
+        <span class="toolseg labonly"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span></span>
+        <button id="offLegView" hidden>⤳ Versatz</button>
       </div>
+      <div class="popover addpop" id="addPop" hidden><button id="addPipe" title="Weiteres Rohr in dieses Projekt">Rohr</button><button id="addPar" title="Parallelrohr im Abstand des ersten">Parallelrohr</button><button id="addPlane" title="Referenzebene anlegen">Ebene</button></div>
       <div class="popover" id="visPop" hidden>
         <div class="seg" id="dimLevel"><button data-lv="quiet">Ruhig</button><button data-lv="sel">Auswahl</button><button data-lv="all">Alle</button></div>
         <label class="chk"><input type="checkbox" data-vis="axis"> Achslinie</label>
@@ -82,6 +86,7 @@
         <label class="chk"><input type="checkbox" data-vis="colors"> Rohrfarben</label>
         <label class="chk"><input type="checkbox" data-vis="refPlanes"> Referenzebenen</label>
         <label class="chk"><input type="checkbox" data-vis="extAlways"> Fortführ-Pfeile immer zeigen</label>
+        <div class="legend"><span class="lg-mark"></span>Markierung <span class="lg-dim"></span>Achslinie</div>
       </div>
       <div class="toast" id="toast" hidden></div>
       <div class="roombar" id="roomBar" hidden></div>
@@ -97,7 +102,6 @@
         <label id="lpBundleL" class="lpbundle" hidden>Bündel auf diesem Schenkel<select id="lpBundle"></select></label>
         <div class="btnrow"><button id="lpIns">+ Danach einfügen</button><button id="lpOff">⤳ Versatz</button><button id="lpDel" class="danger">Löschen</button></div>
       </div>
-      <div class="legend"><span class="lg-mark"></span>Markierung <span class="lg-dim"></span>Achslinie</div>
     </div>
   </aside>
 </div>

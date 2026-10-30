@@ -33,7 +33,8 @@ const CLAMP_DEFAULTS = { clampMax: 600, clampMin: 300, clampBend: 80, clampEnd: 
 // Felder, die spätere Versionen ergänzt haben. roomId = Raum (db.rooms), bundle = Parallelrohre { id, side 0–3, dist }
 // bundleTx = Lagewechsel des Bündels an Biegungen { bend, rot ±1, where 'before'|'after', ang, gap }
 // endFixed = Rohrende bleibt beim Ändern von Längen/Winkeln im Raum stehen (Ausgleich über freie Schenkel)
-const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, roomId: null, bundle: [], bundleTx: [], target: null, clamps: [], clampMode: 'auto', endFixed: true, color: null, sceneId: null, refs: null, unrouted: false };
+// startFixed = Rohranfang bleibt stehen; ist er lose und das Ende fest, wandert das ganze Rohr, bis das Ende wieder stimmt
+const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, roomId: null, bundle: [], bundleTx: [], target: null, clamps: [], clampMode: 'auto', endFixed: true, startFixed: true, color: null, sceneId: null, refs: null, unrouted: false };
 
 // Bis Version 14 hatte jedes Rohr eigene, unbegrenzte Flächen → daraus einen rechteckigen Raum machen
 function roomFromPlanes(p) {
@@ -150,12 +151,15 @@ const TEMPLATES = {
 // innerhalb von 1,5 s wird zu einem Schritt zusammengefasst.
 const hist = new Map();
 const histOf = p => { if (!hist.has(p.id)) hist.set(p.id, { undo: [], redo: [] }); return hist.get(p.id); };
-const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'roomId', 'bundle', 'bundleTx', 'target', 'clamps', 'clampMode', 'endFixed', 'color', 'refs', 'unrouted'];
+const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'roomId', 'bundle', 'bundleTx', 'target', 'clamps', 'clampMode', 'endFixed', 'startFixed', 'color', 'refs', 'unrouted'];
 const snapshot = p => structuredClone({ ...Object.fromEntries(SNAP_KEYS.map(k => [k, p[k] ?? null])), _room: roomOf(p), _scene: sceneState(p) });
 function restoreSnapshot(p, snap) {
-  const { _room, _scene, ...rest } = structuredClone(snap);
+  const { _room, _scene, _drop, _add, ...rest } = structuredClone(snap);
   Object.assign(p, rest);
+  if (_drop) db.projects = db.projects.filter(q => !_drop.includes(q.id));
+  if (_add) db.projects.push(..._add);
   if (_scene) restoreSceneState(p, _scene);
+  if (_drop) scenePipes(p).forEach(q => ['S', 'E'].forEach(w => q.refs?.[w]?.forEach((r, k) => { if (_drop.some(id => r?.to?.endsWith(`:${id}`))) q.refs[w][k] = null; })));
   p.bundle ||= []; p.bundleTx ||= [];
   if (_room) { const i = db.rooms.findIndex(r => r.id === _room.id); if (i >= 0) db.rooms[i] = _room; else db.rooms.push(_room); }
 }
@@ -173,10 +177,14 @@ function commit(key = null, snap = null) {
 function undoRedo(dir) {
   const p = proj(), h = histOf(p), from = dir < 0 ? h.undo : h.redo, to = dir < 0 ? h.redo : h.undo;
   if (!from.length || gz || drag) return;
-  to.push(snapshot(p));
-  restoreSnapshot(p, from.pop());
+  const snap = from.pop(), cur = snapshot(p);
+  // Umwandlung in eigene Rohre: Rückgängig entfernt sie, Wiederholen legt sie wieder an
+  if (snap._drop) { cur._add = structuredClone(db.projects.filter(q => snap._drop.includes(q.id))); cur.done = structuredClone(p.done); }
+  if (snap._add) { cur._drop = snap._add.map(q => q.id); cur.done = structuredClone(p.done); }
+  to.push(cur);
+  restoreSnapshot(p, snap);
   lastKey = null;
-  if (!isOrtho()) fit = null;
+  refit();
   renderProjectBar(); renderInputs(); recompute();
   const keepPlane = selPlane && scene(p).planes.some(x => x.id === selPlane) ? selPlane : null, keepPoint = selPoint;
   selectLeg(sel < points(p).length - 1 ? sel : -1);
@@ -494,7 +502,7 @@ $('#tab-room').addEventListener('input', e => {
     c[el.dataset.plc || el.dataset.tgc] = num(el.value);
     const q = fromWallCoords(c, pl, room);
     if (isT) p.target = q; else p.origin = V.add(p.origin, V.sub(q, pt));
-    if (!isOrtho()) fit = null;
+    refit();
   } else if (el.dataset.p?.startsWith('tg.')) {
     commit('tg' + el.dataset.p);
     p.target[+el.dataset.p.split('.')[1]] = layout.A[+el.dataset.p.split('.')[1]] + readSigned(el);
@@ -546,7 +554,7 @@ $('#tab-room').addEventListener('click', e => {
   } else if (b.id === 'clampRedo') { commit(); p.clamps = autoClamps(layout, f); }
   else if (b.id === 'clampClear') { commit(); p.clamps = []; }
   else return;
-  if (!isOrtho()) fit = null;
+  refit();
   recompute(); renderRoomTab();
 });
 
@@ -1253,6 +1261,9 @@ const VIEWS = {
 };
 const isOrtho = () => cam.view !== 'iso';
 let fit = null, lastBase = null, view = null; // fit: gesperrte Grundskalierung (beim Bearbeiten springt nichts)
+// Nach dem Bearbeiten neu einpassen – außer der Nutzer hat selbst gedreht, geschoben oder gezoomt (cam.held)
+const refit = () => { if (!isOrtho() && !cam.held) fit = null; };
+const holdView = () => { fit ||= lastBase; cam.held = true; };
 // extOpen: Fortführ-Pfeile am Rohrende eingeblendet (Griff angetippt), extHover: Maus über dem Griff
 let extOpen = false, extHover = false;
 // startOpen: Pfeile am Griff des Rohranfangs offen, bundleSel: gewähltes Parallelrohr (Index in p.bundle)
@@ -1265,7 +1276,7 @@ let camTool = 'edit';      // 'edit' = Gimbal/Anfasser, 'clamp' = Schellen setze
 function resetView(v = 'iso') {
   setTimeout(() => { if (!$('#legList').contains(document.activeElement)) renderInputs(); });
   [cam.yaw, cam.pitch] = VIEWS[v];
-  cam.view = v; cam.zoom = 1; cam.panX = cam.panY = 0; fit = null;
+  cam.view = v; cam.zoom = 1; cam.panX = cam.panY = 0; cam.held = false; fit = null;
   $$('.viewbtns button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
   $('#viewHint').textContent = isOrtho() ? 'Pfeile ziehen · Punkte ziehen · Schenkel antippen' : 'Pfeile am Ende ziehen · Schenkel antippen';
   if (sel >= 0 && !$('#legPanel').hidden) fillPanel();
@@ -1456,7 +1467,7 @@ function fitCanvas(c, g, W, H, dpr) {
 const PIPE_COLORS = [[0.13, 0.45, 0.85], [0.84, 0.2, 0.2], [0.15, 0.6, 0.33], [0.93, 0.55, 0.1], [0.55, 0.3, 0.8], [0.05, 0.63, 0.68], [0.85, 0.3, 0.6], [0.5, 0.38, 0.25]];
 const rgbCss = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
 const lighter = (c, t) => c.map(v => v + (1 - v) * t);
-const VIS_DEFAULT = { colors: true, refPlanes: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
+const VIS_DEFAULT = { actsOpen: false, colors: true, refPlanes: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -1505,7 +1516,7 @@ function render3d() {
   const cx = W / 2 + cam.panX - base.mx * sc, cyy = H / 2 + base.dy + cam.panY - base.my * sc;
   const P = q => [cx + q.x * sc, cyy + q.y * sc];
   const P3 = q => P(project(q));
-  view = { P3, sc, cx, cyy };
+  view = { P3, sc, cx, cyy, mid: mn.map((v, k) => (v + mx[k]) / 2) };
   const tw = Math.max(5, f.D * sc);
 
   if (vis.grid && ortho) {
@@ -1630,17 +1641,6 @@ function render3d() {
     ctx.restore();
     requestAnimationFrame(() => draw());
   }
-  dimHits = []; placed = [];
-  pipeSegs = pipes.flatMap(L => L.verts.slice(1).map((q, k) => [...P3(L.verts[k]), ...P3(q)]));
-  // Stufe: Ruhig = nur das Angetippte, Auswahl = dazu kleine Längen, Alle = alles
-  const allDims = vis.dimLevel === 'all';
-  if (!p.unrouted) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
-  if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
-  if (camTool === 'edit') drawRefDims(P3, allDims);
-  if (vis.total || allDims) drawTotal(layout, P3, tw);
-  if (vis.angles || allDims) drawAngles(ML, P3);
-  else if (selCorner >= 1 && layout.bends[selCorner - 1]) drawAngles(layout, P3, selCorner - 1);
-
   // Schellen: Halter zur Wand, Nummer; ohne Befestigung orange
   if (vis.clamps) clampSets.forEach((set, k) => set.forEach((c, i) => {
     const [x, y] = P3(c.p);
@@ -1693,6 +1693,20 @@ function render3d() {
     drawGizmo();
   } else gizmo = [];
 
+  // Maße nach dem Gimbal: Sie weichen den Griffen aus und liegen obenauf, damit sie lesbar und antippbar bleiben
+  dimHits = []; placed = [];
+  pipeSegs = pipes.flatMap(L => L.verts.slice(1).map((q, k) => [...P3(L.verts[k]), ...P3(q)]));
+  // Stufe: Ruhig = nur das Angetippte, Auswahl = dazu kleine Längen, Alle = alles
+  const allDims = vis.dimLevel === 'all';
+  if (!p.unrouted) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
+  if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
+  if (camTool === 'edit') drawRefDims(P3, allDims);
+  if (vis.total || allDims) drawTotal(layout, P3, tw);
+  if (vis.angles || allDims) drawAngles(ML, P3);
+  else if (selCorner >= 1 && layout.bends[selCorner - 1]) drawAngles(layout, P3, selCorner - 1);
+
+  if (gz?.label) pill(gz.label, gz.px, gz.py, gz.type === 'bend' ? C_BEND : gz.type === 'rot' ? C_ROT : css('--accent'));
+
   // Achsenkreuz
   const gx = 34, gy = H - 34;
   [['X', [1, 0, 0], '#e03131'], ['Y', [0, 1, 0], '#2f9e44'], ['Z', [0, 0, 1], '#1c7ed6']].forEach(([n, v, c]) => {
@@ -1727,10 +1741,12 @@ function dimLine(a, b, val, away, off, hit, style = {}) {
   ctx.font = `${style.minor ? 600 : 700} ${fontPx}px -apple-system, system-ui, sans-serif`;
   const w = ctx.measureText(val).width + 8, h = fontPx + 4;
   // Platz suchen: bevorzugte Seite, dann weiter außen, dann die andere Seite – die Maßzahl soll keine andere und kein Rohr überdecken
-  const tries = [[1, off], [1, off + 18], [-1, off], [1, off + 36], [-1, off + 18]];
+  // Reicht das nicht (Griffe sitzen meist auf der Mitte), rutscht die Zahl auf der Maßlinie zur Seite
+  const spots = [[1, off], [1, off + 18], [-1, off], [1, off + 36], [-1, off + 18]];
+  const tries = [0, ...(len > 70 ? [0.3, -0.3] : [])].flatMap(t => spots.map(q => [...q, t * len]));
   let best = null;
-  for (const [sg, o] of tries) {
-    const tx = mx + nx * sg * o, ty = my + ny * sg * o;
+  for (const [sg, o, t] of tries) {
+    const tx = mx + ux * t + nx * sg * o, ty = my + uy * t + ny * sg * o;
     const box = labelBox(tx, ty, w, h, ang), cost = overlapCost(box);
     if (!best || cost < best.cost) best = { sg, o, tx, ty, box, cost };
     if (cost === 0) break;
@@ -1778,6 +1794,13 @@ function overlapCost(b) {
   for (const q of placed) cost += Math.max(0, Math.min(b.x1, q.x1) - Math.max(b.x0, q.x0)) * Math.max(0, Math.min(b.y1, q.y1) - Math.max(b.y0, q.y0));
   const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, r = Math.min(b.x1 - b.x0, b.y1 - b.y0) / 2 + 3;
   for (const [x0, y0, x1, y1] of pipeSegs) { const d = segDist(cx, cy, x0, y0, x1, y1); if (d < r) cost += (r - d) * 20; }
+  if (b.x0 < 2 || b.y0 < 2 || b.x1 > cv.clientWidth - 2 || b.y1 > cv.clientHeight - 2) cost += 3000; // außerhalb nicht antippbar
+  // Griffe, Pfeile und Ringe des Gimbals
+  const near = (x, y, m) => x > b.x0 - m && x < b.x1 + m && y > b.y0 - m && y < b.y1 + m;
+  for (const g of gizmo) {
+    const hit = g.at ? near(...g.at, 14) : g.seg ? [0, 0.25, 0.5, 0.75, 1].some(t => near(g.seg[0] + (g.seg[2] - g.seg[0]) * t, g.seg[1] + (g.seg[3] - g.seg[1]) * t, 5)) : g.poly.some(q => near(...q, 5));
+    if (hit) cost += 2000;
+  }
   return cost;
 }
 
@@ -2093,12 +2116,12 @@ function drawEditOverlay(P3, cAcc) {
 // Eckpunkt (Schnittpunkt zwischen Schenkel i-1 und i) antippen: nur dort erscheinen die Drehringe
 function selectCorner(i) {
   sel = -1; selCorner = i; bundleSel = -1; clearSel();
-  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  $('#legPanel').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
 function selectBundle(i) {
   sel = -1; selCorner = -1; bundleSel = i; clearSel();
-  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  $('#legPanel').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
 function hitCorner(x, y) {
@@ -2116,11 +2139,11 @@ function hitCorner(x, y) {
 
 // Schenkel-Feld
 const DIR_OPTS = Array.from({ length: 360 / ANGLE_STEP }, (_, k) => k * ANGLE_STEP);
-// Auswahl zeigt den Gimbal; das Eingabefeld nur auf Wunsch („✎ Maße“)
+// Auswahl zeigt den Gimbal; das Eingabefeld nur als Rückfall (Maße tippt man direkt an)
 function selectLeg(i, openPanel = false) {
   sel = i; selCorner = -1; bundleSel = -1; clearSel(); renderBundleBar();
   $('#legPanel').hidden = !(openPanel && i >= 0);
-  $('#addLegView').hidden = $('#offLegView').hidden = i < 0 || openPanel;
+  $('#offLegView').hidden = i < 0 || openPanel;
   if (openPanel && i >= 0) fillPanel();
   draw();
 }
@@ -2186,8 +2209,7 @@ function insertLeg(at, fromLeg) {
   afterViewEdit();
 }
 $('#lpIns').addEventListener('click', () => { if (sel >= 0) insertLeg(sel + 1, sel); });
-$('#addLegView').addEventListener('click', () => selectLeg(sel, true));
-$('#lpDel').addEventListener('click', () => {
+const delLeg = () => {
   commit();
   ensureDeltas();
   const p = proj();
@@ -2195,7 +2217,8 @@ $('#lpDel').addEventListener('click', () => {
   txDeleteLeg(p, sel);
   p.deltas.splice(sel, 1);
   renderInputs(); recompute(); selectLeg(-1);
-});
+};
+$('#lpDel').addEventListener('click', delLeg);
 $('#lpClose').addEventListener('click', () => selectLeg(sel));
 
 // ---------- Gimbal ----------
@@ -2253,6 +2276,8 @@ function solveLengths(diff, pool) {
   return { S, c: cur.c, ok: V.len(cur.res) < 0.01, res: cur.res };
 }
 function keepEnd(p, edited, E0, force = false) {
+  // Anfang lose: nicht ausgleichen, sondern das ganze Rohr so schieben, dass das Ende stehen bleibt
+  if (!force && p.endFixed && !p.startFixed && E0) { p.origin = V.add(p.origin, V.sub(E0, endOf(p))); return { ok: true, changed: [] }; }
   if ((!p.endFixed && !force) || p.deltas.length < 2 || !E0) return { ok: true, changed: [] };
   const diff = V.sub(E0, endOf(p));
   if (V.len(diff) < 0.01) return { ok: true, changed: [] };
@@ -2447,7 +2472,7 @@ function drawGizmo() {
     [0, 1, 2].forEach(k => {
       if (Math.abs(d[k]) > 0.999) return; // in Laufrichtung geht der Längenpfeil
       const e = [0, 0, 0]; e[k] = 1;
-      if (legShift(ds, sel, e, !proj().endFixed).locked) return;
+      if (legShift(ds, sel, e, !proj().endFixed, !proj().startFixed).locked) return;
       const [px, py] = P3(V.add(m, V.mul(e, 100))), ax = (px - mx) / 100, ay = (py - my) / 100, l = Math.hypot(ax, ay);
       if (l < sc * 0.2) return;
       const ux = ax / l, uy = ay / l, col = rgbCss(AX_RGB[k]);
@@ -2460,7 +2485,6 @@ function drawGizmo() {
     });
   }
 
-  if (gz?.label) pill(gz.label, gz.px, gz.py, gz.type === 'bend' ? C_BEND : gz.type === 'rot' ? C_ROT : cAcc);
 }
 
 // Griff am Rohranfang: Parallelrohre anlegen (Pfeile quer zum ersten Schenkel), Bündel drehen (Ring), Abstand ziehen (Punkte)
@@ -2505,6 +2529,7 @@ function drawStartHandle() {
       for (const dy of [-2.5, 0, 2.5]) { ctx.moveTo(ax - 3.5, ay + dy); ctx.lineTo(ax + 3.5, ay + dy); }
       ctx.stroke();
     } else { ctx.beginPath(); ctx.arc(ax, ay, 3, 0, 7); ctx.fillStyle = css('--muted'); ctx.fill(); }
+    if (p.startFixed && p.deltas.length > 1) { ctx.beginPath(); ctx.arc(ax, ay, on ? 11 : 6, 0, 7); ctx.strokeStyle = css('--muted'); ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1; } // Anfang fest: dünner Ring
     if (on && p.bundle.length) { ctx.font = '700 11px system-ui'; ctx.fillStyle = cAcc; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.bundle.length + 1, ax + 16, ay - 14); }
     gizmo.push({ type: 'start', at: [ax, ay], r: 22 });
   }
@@ -2543,7 +2568,7 @@ function gzStart(g, e) {
     gz.bOrig = structuredClone(p.bundle); gz.As = view.P3(layout.verts[0]);
     if (g.type === 'pmove') { gz.sOrig = sceneState(p); gz.dOrig = structuredClone(p.deltas); gz.oOrig = [...p.origin]; gz.v0 = g.key[0] === 'R' ? (pl => pl[planeKey(pl, g.k)])(planeById(g.key.slice(2))) : nodePos(g.key)[g.k]; }
     gz.gx = lx; gz.gy = ly;
-    if (g.type === 'lmove') { gz.dOrig = structuredClone(p.deltas); gz.txOrig = structuredClone(p.bundleTx); gz.t = 0; gz.res = null; }
+    if (g.type === 'lmove') { gz.oOrig = [...p.origin]; gz.dOrig = structuredClone(p.deltas); gz.txOrig = structuredClone(p.bundleTx); gz.t = 0; gz.res = null; }
     if (g.type === 'bnew') gz.base = p.bundle.filter(b => b.side === g.side).at(-1)?.dist || 0;
     if (g.type === 'brot') { gz.A = layout.verts[0]; gz.r = 74 / view.sc; gz.t0 = ringAngle(g.q, g.w, 0, 359, lx, ly); }
     return;
@@ -2650,8 +2675,9 @@ function gzMove(e) {
 // Abschnitt i um den Vektor v verschieben. Reihenfolge: Erst nehmen bestehende Schenkel die Verschiebung auf – auf jeder Seite
 // der nächste Schenkel, der sie über seine Länge ausgleichen kann; was dazwischen liegt, wandert unverändert mit.
 // Nur wenn es auf einer Seite keinen solchen Schenkel gibt, entsteht dort ein neuer Schenkel mit zusätzlicher Biegung
-// (bei freiem Ende wandert der Rest stattdessen samt Rohrende mit). „Fest“ markierte Schenkel gleichen nie aus.
-function legShift(ds, i, v, freeEnd = false) {
+// (bei freiem Ende wandert der Rest stattdessen samt Rohrende mit, bei losem Anfang samt Rohranfang: shiftStart).
+// „Fest“ markierte Schenkel gleichen nie aus.
+function legShift(ds, i, v, freeEnd = false, freeStart = false) {
   const n = ds.length, dir = j => V.norm(deltaVec(ds[j]));
   const split = (u, d) => { // v = a·u + b·d
     const ud = V.dot(u, d), det = 1 - ud * ud;
@@ -2668,7 +2694,9 @@ function legShift(ds, i, v, freeEnd = false) {
     if (a != null) { const w = V.mul(dir(j), a); stretch(j, w); stretch(k, V.sub(v, w)); insP = false; break; }
     moved.add(j);
   }
-  if (insP) { moved.clear(); moved.add(i); }
+  const shiftStart = insP && freeStart;
+  if (shiftStart) insP = false;
+  else if (insP) { moved.clear(); moved.add(i); }
   // Dahinter entsprechend; ohne ausgleichenden Schenkel wandert bei freiem Ende alles mit
   let insN = true, runN = [];
   for (let k = i, j = i + 1; j < n; k = j, j++) {
@@ -2691,7 +2719,7 @@ function legShift(ds, i, v, freeEnd = false) {
   const list = [...changed].map(c => (typeof c === 'string' ? +c.slice(1) : index[c]));
   const flip = ds.some((o, j) => V.dot(deltaVec(o), deltaVec(out[index[j]])) <= 0);
   const locked = !!ds[i].lock && changed.has(i);
-  return { deltas: out, newI: index[i], insP, insN, changed: list, locked, flip, index, moved: [...moved].map(j => [index[j], j]) };
+  return { deltas: out, newI: index[i], insP, insN, shiftStart, changed: list, locked, flip, index, moved: [...moved].map(j => [index[j], j]) };
 }
 // Ein Zwischenstand ist erlaubt, wenn alle geänderten Schenkel für ihre Bögen reichen
 function shiftOk(p, r) {
@@ -2738,17 +2766,18 @@ function collapseLegs(r) {
 function legMoveTo(t) {
   const p = proj(), e = [0, 0, 0], ds = gz.dOrig;
   e[gz.k] = t;
-  let r = legShift(ds, gz.i, e, !p.endFixed);
+  let r = legShift(ds, gz.i, e, !p.endFixed, !p.startFixed);
   if (!shiftOk(p, r)) {
     const t0 = t ? vanishAt(ds, r, t) : null;
     if (t0 == null) return null;
     e[gz.k] = t0;
-    r = collapseLegs(legShift(ds, gz.i, e, !p.endFixed));
+    r = collapseLegs(legShift(ds, gz.i, e, !p.endFixed, !p.startFixed));
     if (!r || !shiftOk(p, r)) return null;
     t = t0;
   }
   r.t = t;
   p.deltas = structuredClone(r.deltas);
+  p.origin = r.shiftStart ? V.add(gz.oOrig, e) : [...gz.oOrig];
   p.bundleTx = structuredClone(gz.txOrig);
   if (r.insP) txInsertLegs(p, gz.i, 1);
   if (r.insN) txInsertLegs(p, r.newI + 1, 1);
@@ -2812,7 +2841,7 @@ function bundleEnd(g) {
   if (g.type === 'lmove') {
     if (!g.moved) return;
     if (g.res) adjusted = { set: new Set(g.res.changed), t: performance.now() };
-    if (!isOrtho()) fit = null;
+    refit();
     renderInputs(); recompute(); selectLeg(g.res ? g.res.newI : g.i);
     return;
   }
@@ -2821,7 +2850,7 @@ function bundleEnd(g) {
   else if (g.type === 'plane' && !g.moved) { if (pick) pickNode(`R:${g.id}`); else selectPlane(g.id); }
   else if (g.type === 'bnew' && !g.moved) { commit(null, g.before); p.bundle.push({ id: uid(), side: g.side, dist: nextBundleDist(p, g.side) }); }
   else if (g.type === 'bdist' && !g.moved) { selectBundle(g.i); }
-  if (!isOrtho()) fit = null;
+  refit();
   recompute();
 }
 function gzEnd() {
@@ -2842,7 +2871,7 @@ function gzEnd() {
   } else if (!g.committed) {
     restoreSnapshot(p, g.before); // nichts geändert: auch den Moduswechsel zurücknehmen
   }
-  if (!isOrtho()) fit = null; // in 3D nach dem Loslassen neu einpassen
+  refit(); // in 3D nach dem Loslassen neu einpassen
   renderInputs(); recompute();
   // Nach dem Fortführen nichts auswählen, damit gleich weitergezogen werden kann
   if (g.type === 'rot' || g.type === 'bend') selectCorner(g.i); // Ringe bleiben am Eckpunkt
@@ -2966,7 +2995,7 @@ function clampUp() {
     else p.clamps.push(c.s);
   }
   p.clamps.sort((a, b) => a - b);
-  if (!isOrtho()) fit = null;
+  refit();
   recompute();
 }
 
@@ -3161,10 +3190,25 @@ function drawRoomOverlay(P3) {
 const ptrs = new Map();
 let touchUI = false; // letzter Zeiger war Finger/Stift → größere Trefferflächen
 const hitTol = px => (touchUI ? px * 1.6 : px);
+// Drehpunkt der Navigation: die aktuelle Auswahl (Schenkel und Rohr in der Mitte); null = nichts gewählt
+function selPivot() {
+  const p = proj(), pts = points(p);
+  if (selCorner >= 1 && pts[selCorner]) return pts[selCorner];
+  if (sel >= 0 && pts[sel + 1]) return V.mul(V.add(pts[sel], pts[sel + 1]), 0.5);
+  if (bundleSel >= 0 && layout.bundle[bundleSel]) { const S = layout.bundle[bundleSel].samples; return S[S.length >> 1].p; }
+  const q = selPoint && pipeById(selPoint.pid);
+  if (q) return selPoint.w === 'S' ? points(q)[0] : endOf(q);
+  const pl = selPlane && planeById(selPlane);
+  if (pl) { const c = planeCorners(pl); return c.reduce(V.add).map(v => v / c.length); }
+  return null;
+}
+// Zoom zur Auswahl, ohne Auswahl zum Zeiger
 function zoomAt(clientX, clientY, ratio) {
-  const r = cv.getBoundingClientRect(), z = Math.max(0.3, Math.min(20, cam.zoom * ratio));
+  holdView();
+  const r = cv.getBoundingClientRect(), z = Math.max(0.3, Math.min(20, cam.zoom * ratio)), c = selPivot();
   ratio = z / cam.zoom;
-  const ox = clientX - r.left - r.width / 2, oy = clientY - r.top - r.height / 2;
+  let ox = clientX - r.left - r.width / 2, oy = clientY - r.top - r.height / 2 - fit.dy;
+  if (c) { const q = project(c), s = fit.sc * cam.zoom; ox = cam.panX + (q.x - fit.mx) * s; oy = cam.panY + (q.y - fit.my) * s; }
   cam.panX = ox - (ox - cam.panX) * ratio; cam.panY = oy - (oy - cam.panY) * ratio;
   cam.zoom = z;
 }
@@ -3213,7 +3257,7 @@ cv.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') ptrs.clear(); // Maus hat nur einen Zeiger – hängengebliebene Einträge verwerfen
   try { cv.setPointerCapture(e.pointerId); } catch {} // synthetische Testereignisse haben keinen echten Zeiger
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pan: e.shiftKey || e.button === 2 || isOrtho() });
-  $('#visPop').hidden = true;
+  $('#visPop').hidden = $('#addPop').hidden = $('#colPop').hidden = true; $('.viewbtns').classList.add('closed');
   if (ptrs.size === 1 && view) {
     const [lx, ly] = local(e);
     if (camTool === 'clamp') { if (clampDown(e, lx, ly)) return; }
@@ -3222,8 +3266,11 @@ cv.addEventListener('pointerdown', e => {
     let g = camTool === 'edit' ? hitGizmo(lx, ly) : null;
     // Direkt auf einem Eckpunkt hat der Eckpunkt Vorrang vor dem Längenpfeil daneben
     if (g?.type === 'len' || g?.type === 'lmove') { const c = hitCorner(lx, ly), q = c >= 1 && view.P3(points(proj())[c]); if (q && Math.hypot(q[0] - lx, q[1] - ly) < 12) g = null; }
+    // Liegt ein Maß unter dem Finger, gilt Tippen dem Maß; erst Ziehen greift den Griff darunter
+    const onDim = camTool === 'edit' && !pick && !!hitDim(lx, ly);
+    if (g && onDim) { ptrs.get(e.pointerId).grab = g; return; }
     if (g) { gzStart(g, e); return; }
-    const i = camTool === 'edit' && isOrtho() ? hitVertex(lx, ly) : -1;
+    const i = camTool === 'edit' && isOrtho() && !onDim ? hitVertex(lx, ly) : -1;
     if (i >= 0) {
       const before = snapshot(proj());
       ensureDeltas();
@@ -3245,20 +3292,27 @@ cv.addEventListener('pointermove', e => {
   } // Vorschau beim Zeichnen (Maus)
   if (roomDrag && ptrs.size === 1) { roomMove(e); return; }
   if (clampDrag && ptrs.size === 1) { clampMove(e); return; }
+  if (prev.grab && ptrs.size === 1 && Math.hypot(e.clientX - prev.x0, e.clientY - prev.y0) >= 6) { gzStart(prev.grab, { clientX: prev.x0, clientY: prev.y0 }); prev.grab = null; }
   if (gz && ptrs.size === 1) { gzMove(e); return; }
   if (drag && ptrs.size === 1) { dragTo(e.clientX, e.clientY); return; }
+  if (ptrs.size === 1 && !prev.moved && Math.hypot(e.clientX - prev.x0, e.clientY - prev.y0) < 6) return; // Zittern beim Antippen bewegt nichts
   const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  holdView();
   if (ptrs.size === 1 && prev.pan) { cam.panX += dx; cam.panY += dy; }
   else if (ptrs.size === 1) {
+    // Drehen um die Auswahl: ihr Bildpunkt bleibt stehen
+    const c = selPivot() || view.mid, a = project(c), s = fit.sc * cam.zoom;
     cam.yaw += dx * 0.01;
     cam.pitch = Math.max(-H90, Math.min(H90, cam.pitch + dy * 0.01));
+    const b = project(c);
+    cam.panX -= (b.x - a.x) * s; cam.panY -= (b.y - a.y) * s;
   } else if (ptrs.size === 2) {
     const other = [...ptrs.entries()].find(([id]) => id !== e.pointerId)[1];
     const d0 = Math.hypot(prev.x - other.x, prev.y - other.y), d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
     cam.panX += dx / 2; cam.panY += dy / 2;
     if (d0 > 0) zoomAt((e.clientX + other.x) / 2, (e.clientY + other.y) / 2, d1 / d0);
   }
-  ptrs.set(e.pointerId, { ...prev, x: e.clientX, y: e.clientY });
+  ptrs.set(e.pointerId, { ...prev, x: e.clientX, y: e.clientY, moved: true });
   draw();
 });
 cv.addEventListener('pointerup', e => {
@@ -3286,23 +3340,29 @@ cv.addEventListener('pointerup', e => {
 });
 cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); if (clampDrag) clampUp(); if (roomDrag) roomUp(); if (gz) gzEnd(); if (drag) endDrag(); });
 cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); draw(); }, { passive: false });
-$('.viewbtns').addEventListener('click', e => { const v = e.target.closest('button')?.dataset.view; if (v) resetView(v); });
+// Ansichten eingeklappt: nur die aktuelle; Antippen klappt die Liste auf, die Wahl klappt sie wieder zu
+$('.viewbtns').addEventListener('click', e => {
+  const v = e.target.closest('button')?.dataset.view, box = $('.viewbtns');
+  if (!v) return;
+  if (box.classList.contains('closed')) { box.classList.remove('closed'); return; }
+  box.classList.add('closed');
+  resetView(v);
+});
+const renderMore = () => { $('#actsMore').hidden = !vis.actsOpen; $('#moreBtn').classList.toggle('on', !!vis.actsOpen); };
+$('#moreBtn').addEventListener('click', () => { vis.actsOpen = !vis.actsOpen; saveVis(); renderMore(); });
+renderMore();
 new ResizeObserver(() => draw()).observe($('#viewwrap'));
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw());
 
-// ---------- Ende fixiert ein/aus ----------
-function renderEndPin() {
-  const p = proj(), b = $('#endPin');
-  b.classList.toggle('on', !!p.endFixed);
-  b.textContent = p.endFixed ? 'Ende fest' : 'Ende frei';
-}
-$('#endPin').addEventListener('click', () => {
-  const p = proj();
-  commit(); p.endFixed = !p.endFixed;
+// ---------- Anfang und Ende fest/lose ----------
+const pipeLocks = q => [['S', 'startFixed', 'Anfang'], ['E', 'endFixed', 'Ende']].map(([w, k, t]) => `<button class="lockbtn${q[k] ? '' : ' open'}" data-lock="${k}" data-pid="${q.id}" title="${t} ${q[k] ? 'fest' : 'lose'}">${q[k] ? '🔒' : '🔓'} ${t}</button>`).join('');
+function toggleLock(q, k) {
+  if (q === proj()) commit();
+  q[k] = !q[k];
   adjusted = { set: new Set(), t: 0 };
-  renderEndPin(); renderInputs(); recompute();
-  toast(p.endFixed ? 'Ende fixiert: Längen- und Winkeländerungen gleichen freie Schenkel aus.' : 'Ende frei: Änderungen verschieben das Rohrende.');
-});
+  renderInputs(); recompute(); renderBundleBar();
+  toast(k === 'endFixed' ? (q[k] ? 'Ende fest: Änderungen verschieben das Rohrende nicht.' : 'Ende lose: Änderungen verschieben das Rohrende.') : q[k] ? 'Anfang fest: Änderungen verschieben den Rohranfang nicht.' : 'Anfang lose: Ist das Ende fest, wandert das Rohr mit, und der Anfang gibt nach.');
+}
 
 // ---------- Labor ein/aus ----------
 function setLab(on) {
@@ -3428,7 +3488,7 @@ function applyOffset() {
   else { p.mode = 'deltas'; p.deltas = legs; p.bundleTx = []; p.done = {}; }
   off.V = v.v;
   $('#offDlg').hidden = true;
-  if (!isOrtho()) fit = null;
+  refit();
   renderInputs(); recompute(); selectLeg(-1);
 }
 
@@ -3647,6 +3707,9 @@ function setPoint(q, w, tgt) {
     q.origin = [...a]; q.deltas = [{ ...(q.deltas[0]?.lock ? { lock: true } : {}), x: v[0], y: v[1], z: v[2] }];
     return true;
   }
+  // Ist der andere Punkt lose, wandert das ganze Rohr mit
+  if (w === 'S' && !q.endFixed) { q.origin = [...tgt]; return true; }
+  if (w === 'E' && !q.startFixed) { q.origin = V.add(q.origin, V.sub(tgt, E)); return true; }
   const before = structuredClone(q.deltas), o0 = q.origin;
   return withPipe(q, () => {
     if (w === 'S') q.origin = [...tgt];
@@ -3718,12 +3781,12 @@ function selectPoint(pid, w) {
   sel = -1; selCorner = -1; bundleSel = -1; startOpen = false;
   selPlane = null; pointMove = false; selPoint = { pid, w };
   if (w === 'S') extOpen = false;
-  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  $('#legPanel').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
 function selectPlane(id) {
   sel = -1; selCorner = -1; bundleSel = -1; startOpen = false; selPoint = null; pointMove = false; selPlane = id;
-  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  $('#legPanel').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
 // Maß festlegen: Quelle gewählt, jetzt wird das Gegenstück angetippt
@@ -3774,7 +3837,7 @@ function renderSceneBar(bar) {
     bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span>${[0, 1, 2].map(k => `<button data-plk="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(pl[planeKey(pl, k)])}</button>`).join('')}<button data-plk="w">B ${fmt(pl.w)}</button><button data-plk="h">H ${fmt(pl.h)}</button><button data-pm="${key}">Maß</button><button data-bb="pldel" class="danger">Löschen</button>`;
   } else if (selPoint && pipeById(selPoint.pid)) {
     const q = pipeById(selPoint.pid), key = `${selPoint.w}:${q.id}`, isS = selPoint.w === 'S', ways = routeOptions(V.sub(endOf(q), points(q)[0])).length;
-    bar.innerHTML = `<span>${nodeName(key)}</span>${isS ? `<button data-bb="par"${startOpen ? ' class="on"' : ''}>Parallelrohr</button>` : ''}<button data-bb="move"${pointMove ? ' class="on"' : ''}>Verschieben</button>${pointMove ? xyz(key) + (isS ? `<button data-bb="whole"${sc.moveWhole ? ' class="on"' : ''}>Rohr mitnehmen</button>` : '') : ''}<button data-pm="${key}">Maß</button>${ways ? `<button data-bb="route">${q.unrouted ? 'Weg vorschlagen' : 'Anderer Weg'}</button>` : ''}${q.unrouted && scenePipes(q).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
+    bar.innerHTML = `<span>${nodeName(key)}</span>${pipeLocks(q)}${isS ? `<button data-bb="par"${startOpen ? ' class="on"' : ''}>Parallelrohr</button>${q === p && p.bundle.length ? '<button data-bb="paradd">+ Parallelrohr</button>' : ''}` : ''}<button data-bb="move"${pointMove ? ' class="on"' : ''}>Verschieben</button>${pointMove ? xyz(key) + (isS ? `<button data-bb="whole"${sc.moveWhole ? ' class="on"' : ''}>Rohr mitnehmen</button>` : '') : ''}<button data-pm="${key}">Maß</button>${ways ? `<button data-bb="route">${q.unrouted ? 'Weg vorschlagen' : 'Anderer Weg'}</button>` : ''}${q.unrouted && scenePipes(q).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
   } else return false;
   bar.hidden = false;
   return true;
@@ -3824,6 +3887,9 @@ $('#bundleBar').addEventListener('click', e => {
     commit(); d.ref = { plane: pl.id, off: r1(points(p)[sel][pl.axis] - pl.c) }; recompute(); toast(`Schenkel ${sel + 1} hängt jetzt an R${planeNo(pl)}.`);
   }
 });
+$('#addBtn').addEventListener('click', () => { $('#addPop').hidden = !$('#addPop').hidden; $('#visPop').hidden = $('#planePop').hidden = true; });
+$('#addPop').addEventListener('click', () => { $('#addPop').hidden = true; });
+$('#addPar').addEventListener('click', () => { const p = proj(); if (p.unrouted) toast('Erst den Weg des Rohrs festlegen.'); else addBundlePipe(p); });
 $('#addPlane').addEventListener('click', () => {
   $('#planePop').hidden = !$('#planePop').hidden;
 });
@@ -3834,7 +3900,8 @@ $('#planePop').addEventListener('click', e => {
   commit();
   sc.planes.push({ id, axis: a, c: A[a], w: 1000, h: 1000, u: A[u], v: A[v], ref: null });
   $('#planePop').hidden = true;
-  fit = null; selectPlane(id); recompute();
+  if (!cam.held) fit = null;
+  selectPlane(id); recompute();
 });
 // Ebene als Rechteck: Mitte (u, v) in den beiden anderen Achsen
 function planeCorners(pl) {
@@ -3957,24 +4024,77 @@ function editRef(d) {
 // ---------- Parallelrohre (Eingabe) ----------
 // In 3D: Bündel um das Rohr drehen – Lage gilt ab Schenkel 1, jede Biegung folgt daraus (innen/außen oder nebeneinander)
 const bundleGapOf = (p, i) => { const b = p.bundle[i], prev = p.bundle.slice(0, i).filter(o => o.side === b.side).at(-1); return b.dist - (prev ? prev.dist : 0); };
-// Neues Rohr im gleichen Raster: Abstand zum Nachbarn wie zuletzt eingestellt
+// Neues Rohr im gleichen Raster: Abstand wie beim ersten Parallelrohr
 function nextBundleDist(p, side) {
-  const f = prof(p), same = p.bundle.filter(b => b.side === side), n = p.bundle.length;
-  const gap = same.length >= 2 ? same.at(-1).dist - same.at(-2).dist : same.length ? same[0].dist : n ? bundleGapOf(p, n - 1) : Math.max(20, Math.ceil(f.D * 4 / 5) * 5);
+  const f = prof(p), same = p.bundle.filter(b => b.side === side);
+  const gap = same[0]?.dist ?? p.bundle[0]?.dist ?? Math.max(20, Math.ceil(f.D * 4 / 5) * 5);
   return r1((same.at(-1)?.dist || 0) + gap);
 }
+// Ein Klick: weiteres Parallelrohr auf derselben Seite; es bleibt gewählt, der nächste Klick setzt das nächste
+function addBundlePipe(p) {
+  const side = p.bundle[bundleSel]?.side ?? p.bundle.at(-1)?.side ?? 0;
+  commit();
+  p.bundle.push({ id: uid(), side, dist: nextBundleDist(p, side) });
+  bundleSel = p.bundle.length - 1; sel = -1; selCorner = -1; clearSel();
+  $('#legPanel').hidden = $('#offLegView').hidden = true;
+  recompute(); renderBundleBar();
+}
+// Parallelrohre werden eigene Rohre der Szene: Lage bleibt, die Kopplung ans Hauptrohr fällt weg. Rückgängig nimmt sie wieder zurück
+function bundleToPipes(p, idx) {
+  const L = buildLayout(p), snap = snapshot(p), used = new Set(scenePipes(p).map(q => q.name));
+  const done = {}, tail = o => o.includes(':') ? [+o.split(':')[0] - 1, o.split(':')[1]] : [-1, o];
+  const made = idx.map(i => {
+    const verts = L.bundle[i].verts, q = newProject(p.profileId, '');
+    for (let n = 2; !q.name; n++) if (!used.has(`Rohr ${n}`)) { q.name = `Rohr ${n}`; used.add(q.name); }
+    const legs = verts.slice(1).map((v, k) => V.sub(v, verts[k])).filter(d => V.len(d) > 0.01);
+    q.origin = [...verts[0]]; q.color = p.color; q.zugA = p.zugA; q.zugE = p.zugE; q.endFixed = p.endFixed; q.startFixed = p.startFixed; q.roomId = p.roomId;
+    const same = legs.length === p.deltas.length; // mit Lagewechsel hat das Rohr andere Schenkel
+    q.deltas = legs.map(([x, y, z], k) => ({ x, y, z, ...(same && p.deltas[k].lock ? { lock: true } : {}), ...(same && p.deltas[k].flex ? { flex: true } : {}) }));
+    q.done = {}; q.sceneId = p.sceneId;
+    return [i, q];
+  });
+  // Fortschritt beim Biegen wandert mit, die übrigen Parallelrohre rücken in der Nummerierung nach
+  const rest = p.bundle.map((b, i) => i).filter(i => !idx.includes(i));
+  Object.entries(p.done).forEach(([k, v]) => {
+    const [i, j] = tail(k), q = made.find(m => m[0] === i)?.[1];
+    if (q) q.done[j] = v; else done[i < 0 ? j : `${rest.indexOf(i) + 1}:${j}`] = v;
+  });
+  snap.done = structuredClone(p.done); snap._drop = made.map(m => m[1].id);
+  commit(null, snap);
+  db.projects.push(...made.map(m => m[1]));
+  p.bundle = rest.map(i => p.bundle[i]); p.done = done;
+  if (!p.bundle.length) p.bundleTx = [];
+  bundleSel = -1; recompute(); renderBundleBar();
+  toast(made.length > 1 ? `${made.length} eigene Rohre angelegt.` : `${made[0][1].name} ist jetzt ein eigenes Rohr.`);
+}
+// Rohrfarbe: nur ein Icon oben rechts, die Auswahl klappt auf
+function renderPipeCol(p) {
+  const on = sel >= 0, c = p.color;
+  $('#pipeCol').hidden = !on;
+  if (!on) { $('#colPop').hidden = true; return; }
+  const css1 = k => (k == null ? 'var(--tube)' : rgbCss(PIPE_COLORS[k]));
+  $('#colBtn').style.background = css1(c);
+  $('#colPop').innerHTML = [null, 0, 1, 2, 3, 4, 5, 6, 7].map(k => `<button class="swatch${c === k ? ' on' : ''}" data-col="${k}" aria-label="Farbe" style="background:${css1(k)}"></button>`).join('');
+}
+$('#colBtn').addEventListener('click', () => { $('#colPop').hidden = !$('#colPop').hidden; });
+$('#colPop').addEventListener('click', e => {
+  const c = e.target.closest('[data-col]')?.dataset.col, p = proj();
+  if (c == null) return;
+  commit(); p.color = c === 'null' ? null : +c; $('#colPop').hidden = true; recompute(); renderPipeCol(p);
+});
 // Leiste in 3D: gewähltes Parallelrohr oder Lage des Bündels nach dem gewählten Eckpunkt
 function renderBundleBar() {
   const p = proj(), bar = $('#bundleBar');
   if (bundleSel >= p.bundle.length) bundleSel = -1;
+  renderPipeCol(p);
   if (renderSceneBar(bar)) return;
   const nm = selCorner >= 1 && p.bundle.length ? txNames(selCorner - 1) : null;
   bar.hidden = bundleSel < 0 && !nm && sel < 0;
   if (bundleSel < 0 && !nm && sel >= 0) {
-    bar.innerHTML = `<span>${esc(p.name)}</span>${[null, 0, 1, 2, 3, 4, 5, 6, 7].map(c => `<button class="swatch${p.color === c ? ' on' : ''}" data-col="${c}" aria-label="Farbe" style="background:${c == null ? 'var(--tube)' : rgbCss(PIPE_COLORS[c])}"></button>`).join('')}${sel > 0 && sel < p.deltas.length - 1 ? scene(p).planes.filter(pl => Math.abs(deltaVec(p.deltas[sel])[pl.axis]) < 0.5).map(pl => `<button data-la="${pl.id}">An R${planeNo(pl)}</button>`).join('') : ''}${scenePipes(p).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
+    bar.innerHTML = `<span>${esc(p.name)}</span>${pipeLocks(p)}<button data-bb="legins">Einfügen</button>${p.deltas.length > 1 ? '<button data-bb="legdel" class="danger">Schenkel löschen</button>' : ''}${p.bundle.length ? '<button data-bb="paradd">+ Parallelrohr</button><button data-bb="ownall">Alle als eigene Rohre</button>' : ''}${sel > 0 && sel < p.deltas.length - 1 ? scene(p).planes.filter(pl => Math.abs(deltaVec(p.deltas[sel])[pl.axis]) < 0.5).map(pl => `<button data-la="${pl.id}">An R${planeNo(pl)}</button>`).join('') : ''}${scenePipes(p).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
     return;
   }
-  if (bundleSel >= 0) bar.innerHTML = `<span>Rohr ${bundleSel + 2} · ${fmt(bundleGapOf(p, bundleSel))} mm zum Nachbarn</span><button data-bb="guide">In Anleitung zeigen</button><button data-bb="del" class="danger">Löschen</button>`;
+  if (bundleSel >= 0) bar.innerHTML = `<span>Rohr ${bundleSel + 2} · ${fmt(bundleGapOf(p, bundleSel))} mm zum Nachbarn</span><button data-bb="paradd">+ Parallelrohr</button><button data-bb="own">Als eigenes Rohr</button>${p.bundle.length > 1 ? '<button data-bb="ownall">Alle als eigene Rohre</button>' : ''}<button data-bb="guide">In Anleitung zeigen</button><button data-bb="del" class="danger">Löschen</button>`;
   else if (nm) {
     const cur = p.bundleTx.find(t => t.bend === selCorner - 1)?.rot ?? 0;
     bar.innerHTML = `<span>Bündel danach:</span>${[[0, nm[0]], [1, nm[1]], [-1, nm[-1]]].map(([r, t]) => `<button data-tx="${r}"${r === cur ? ' class="on"' : ''}>${t}</button>`).join('')}`;
@@ -4000,7 +4120,9 @@ $('#bundleBar').addEventListener('click', e => {
   const b = e.target.closest('button'), p = proj();
   if (!b) return;
   if (b.dataset.tx != null) { setTx(selCorner - 1, +b.dataset.tx); return; }
-  if (b.dataset.col != null) { commit(); p.color = b.dataset.col === 'null' ? null : +b.dataset.col; recompute(); return; }
+  if (b.dataset.lock) { toggleLock(pipeById(b.dataset.pid), b.dataset.lock); return; }
+  if (b.dataset.bb === 'legins') { if (sel >= 0) insertLeg(sel + 1, sel); return; }
+  if (b.dataset.bb === 'legdel') { delLeg(); return; }
   if (b.dataset.bb === 'pipedel') {
     if (!confirm(`„${p.name}“ löschen?`)) return;
     const others = scenePipes(p).filter(q => q !== p), dead = r => r?.to?.endsWith(`:${p.id}`) && r.to[0] !== 'R';
@@ -4008,14 +4130,17 @@ $('#bundleBar').addEventListener('click', e => {
     scene(p).planes.forEach(pl => { if (dead(pl.ref)) pl.ref = null; });
     db.projects = db.projects.filter(q => q !== p); db.currentId = others[0].id; fullRender(); return;
   }
-  if (b.dataset.bb === 'del') { commit(); p.bundle.splice(bundleSel, 1); bundleSel = -1; recompute(); }
+  if (b.dataset.bb === 'paradd') addBundlePipe(p);
+  else if (b.dataset.bb === 'own') bundleToPipes(p, [bundleSel]);
+  else if (b.dataset.bb === 'ownall') { if (confirm(`Alle ${p.bundle.length} Parallelrohre in eigene Rohre umwandeln?`)) bundleToPipes(p, p.bundle.map((_, i) => i)); }
+  else if (b.dataset.bb === 'del') { commit(); p.bundle.splice(bundleSel, 1); bundleSel = -1; recompute(); }
   else if (b.dataset.bb === 'guide') { guidePipe = bundleSel + 1; highlight = -1; $('[data-tab=guide]').click(); }
 });
 function renderBundle() {
   const p = proj(), f = prof(p), verts = layout.verts;
   const sideName = k => (verts.length > 1 ? dirName(sideDir(verts, k)) : '–');
   $('#bundleCard').innerHTML = `<h3>Parallelrohre</h3>
-    <p class="hint" style="margin-top:0">Weitere Rohre im festen Abstand, gemessen von Rohrmitte <b>Rohr 1</b> bis Rohrmitte. Sie laufen bei jeder Änderung mit. Ein neues Rohr übernimmt den letzten Abstand zum Nachbarn.</p>
+    <p class="hint" style="margin-top:0">Weitere Rohre im festen Abstand, gemessen von Rohrmitte <b>Rohr 1</b> bis Rohrmitte. Sie laufen bei jeder Änderung mit. Ein neues Rohr übernimmt den Abstand des ersten Parallelrohrs.</p>
     ${p.bundle.map((b, i) => {
       const prev = p.bundle.slice(0, i).filter(o => o.side === b.side).at(-1), gap = b.dist - (prev ? prev.dist : 0);
       return `<div class="bundlerow"><b>Rohr ${i + 2}</b>
@@ -4090,16 +4215,16 @@ $('#bundleCard').addEventListener('click', e => {
     commit(); addTx(p, bend);
   } else if (b.dataset.txdel != null) { commit(); p.bundleTx.splice(+b.dataset.txdel, 1); }
   else return;
-  if (!isOrtho()) fit = null;
+  refit();
   recompute(); renderBundle();
 });
 
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
-  window.biegeDebug = { editDim, get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
+  window.biegeDebug = { editDim, get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get dimHits() { return dimHits; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
 }
 
-function fullRender() { extOpen = false; startOpen = false; bundleSel = -1; pick = null; clearSel(); adjusted = { set: new Set(), t: 0 }; renderEndPin(); sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { extOpen = false; startOpen = false; bundleSel = -1; pick = null; clearSel(); adjusted = { set: new Set(), t: 0 }; sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 checkUpdate();
