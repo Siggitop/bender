@@ -37,7 +37,7 @@ Bei jeder Änderung die Versionsnummer in `version.js` um 1 erhöhen. Die App ze
 ## Bedienung in Kürze
 
 - **Rohr:** Schenkel mit Richtungsknöpfen und Achsmaß; Vorschau zeigt den bearbeiteten Schenkel. „＋“ oben legt ein neues gerades Rohr an.
-- **Parallelrohre:** feste Abstände zu Rohr 1, laufen bei jeder Änderung mit. In 3D dreht „⟳ Bündel“ die Lage um das Rohr; nicht verlegbare Rohre werden rot.
+- **Parallelrohre:** feste Abstände zu Rohr 1, laufen bei jeder Änderung mit. In 3D über den Griff am Rohranfang: Pfeile legen Rohre an, der Ring dreht das Bündel, Punkte und Maße ändern Abstände; nicht verlegbare Rohre werden rot.
 - **Lagewechsel:** Bündel an einer Ecke kippen (z. B. übereinander → nebeneinander). Rohr 1 biegt normal, die Parallelrohre laufen über die Ecke hinaus, gehen senkrecht auf die neue Höhe und biegen weiter. Im Bündel-Kasten oder in 3D unter „✎ Maße“ → „Bündel auf diesem Schenkel“.
 - **3D:** Gerade antippen = Längenpfeil, Eckpunkt antippen = Drehringe, Griff am Ende: antippen oder ziehen zeigt die Fortführ-Pfeile (am Rechner beim Darüberfahren blass); „Fortführ-Pfeile immer zeigen“ im 👁-Menü. Maße als technische Bemaßung (schräge Schenkel zusätzlich orthogonal), antippen = Wert ändern. Optional „Gesamtmaße“: Versatz vom Rohranfang bis zum Rohrende in X/Y/Z. Optional „Winkelmaße“: Biegewinkel an jedem Schnittpunkt.
 - **Ende fixiert (📌, Standard):** A und Rohrende bleiben im Raum stehen. Ändert sich eine Länge oder ein Winkel, gleichen freie Schenkel über ihre Länge aus – zuerst als „⇄ Ausgleich“ markierte, nie „🔒 Fest“ markierte. Ausgeglichene Maße stehen in Klammern. Geht es nicht, bleibt alles wie vorher und ein Hinweis nennt den Grund.

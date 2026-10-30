@@ -854,13 +854,13 @@ function recompute(light = false) {
   layout.bundle.forEach(B => {
     if (B.def.dist <= f.D) layout.errors.push(`${B.name}: Abstand muss größer als der Rohrdurchmesser (${fmt(f.D)} mm) sein.`);
     else if (B.clash) {
-      layout.errors.push(`${B.name} (rot) läuft in ${B.clash.touch} – beim Lagewechsel unter „Lage danach“ die andere Seite wählen oder das Bündel mit ⟳ auf die Außenseite der Ecke drehen.`);
+      layout.errors.push(`${B.name} (rot) läuft in ${B.clash.touch} – beim Lagewechsel unter „Lage danach“ die andere Seite wählen oder das Bündel am Griff des Rohranfangs auf die Außenseite der Ecke drehen.`);
     } else if (B.short) {
       const s = B.short, has = s.len < 0 ? 'würde rückwärts laufen' : `wäre nur ${fmt(s.len)} mm lang`;
       layout.errors.push(s.kind === 'drop'
         ? `${B.name} (rot): Das senkrechte Stück an Biegung ${s.bend + 1} ist nur ${fmt(s.len)} mm, die zwei Bögen brauchen ${fmt(s.need)} mm – Rohrabstand vergrößern.`
         : `${B.name} (rot) ist so nicht verlegbar: Schenkel ${s.leg + 1} liegt innen im Bündel und ${has}, braucht für die Bögen aber ${fmt(s.need)} mm. ` +
-          `Bündel in 3D drehen (⟳), Lagewechsel einbauen oder Schenkel ${s.leg + 1} um mindestens ${fmt(Math.ceil(s.need - s.len))} mm verlängern.`);
+          `Bündel am Griff des Rohranfangs drehen, Lagewechsel einbauen oder Schenkel ${s.leg + 1} um mindestens ${fmt(Math.ceil(s.need - s.len))} mm verlängern.`);
     } else B.errors.forEach(m => layout.errors.push(`${B.name}: ${m}`));
     B.warnings.forEach(m => layout.warnings.push(`${B.name}: ${m}`));
     hitMessages(B.hits, B.name);
@@ -887,7 +887,7 @@ function recompute(light = false) {
   renderSummary();
   if (lab && !$('#tab-room').contains(document.activeElement)) renderRoomTab();
   if (!$('#bundleCard').contains(document.activeElement)) renderBundle();
-  renderBundleRot();
+  renderBundleBar();
   renderGuide();
   draw();
   drawMini();
@@ -1216,6 +1216,9 @@ const isOrtho = () => cam.view !== 'iso';
 let fit = null, lastBase = null, view = null; // fit: gesperrte Grundskalierung (beim Bearbeiten springt nichts)
 // extOpen: Fortführ-Pfeile am Rohrende eingeblendet (Griff angetippt), extHover: Maus über dem Griff
 let extOpen = false, extHover = false;
+// startOpen: Pfeile am Griff des Rohranfangs offen, bundleSel: gewähltes Parallelrohr (Index in p.bundle)
+let startOpen = false, bundleSel = -1;
+const BUNDLE_GZ = ['start', 'bnew', 'bdist', 'brot'];
 let sel = -1, selCorner = -1, drag = null; // gewählter Schenkel bzw. Eckpunkt (Schnittpunkt), laufendes Ziehen eines Anfassers
 let camTool = 'edit';      // 'edit' = Gimbal/Anfasser, 'clamp' = Schellen setzen
 function resetView(v = 'iso') {
@@ -1565,6 +1568,7 @@ function render3d() {
   dimHits = []; placed = [];
   pipeSegs = pipes.flatMap(L => L.verts.slice(1).map((q, k) => [...P3(L.verts[k]), ...P3(q)]));
   if (vis.dims) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
+  if (vis.dims && camTool === 'edit') drawBundleDims(layout, P3);
   if (vis.total) drawTotal(layout, P3, tw);
   if (vis.angles) drawAngles(ML, P3);
 
@@ -1702,6 +1706,18 @@ function overlapCost(b) {
   return cost;
 }
 
+// Abstände am Rohranfang: je ein Maß von Rohr zu Rohr (zum Nachbarn), antippbar; liegt hinter dem Anfang, weg vom Rohr
+function drawBundleDims(L, P3) {
+  const p = proj();
+  if (!L.bundle?.length || L.verts.length < 2) return;
+  const A = L.verts[0], away = P3(V.add(A, V.mul(V.norm(V.sub(L.verts[1], A)), 100)));
+  p.bundle.forEach((b, i) => {
+    const B = L.bundle[i], prev = p.bundle.slice(0, i).map((o, k) => k).filter(k => p.bundle[k].side === b.side).at(-1);
+    if (!B) return;
+    dimLine(P3(prev == null ? A : L.bundle[prev].A), P3(B.A), fmt(bundleGapOf(p, i)), away, 24, { bgap: i }, { faded: bundleSel >= 0 && bundleSel !== i });
+  });
+}
+
 // Winkelmaße: an jedem Schnittpunkt der Biegewinkel – Bogen von der gestrichelten Verlängerung des ankommenden
 // Schenkels zum abgehenden Schenkel, Wert = wahrer Winkel im Raum (so weit wird gebogen)
 function drawAngles(L, P3) {
@@ -1774,7 +1790,7 @@ function drawDims(L, P3, tw, editable) {
   for (let i = 1; i < pts.length; i++) {
     const A = L.verts[i - 1], B = L.verts[i], d = V.sub(B, A);
     const fl = direct ? p.deltas[i - 1] : {};
-    const st = { lock: !!fl.lock, driven: direct && p.endFixed && (fl.flex || adjusted.set.has(i - 1)), faded: !!focus && !focus.includes(i - 1) };
+    const st = { lock: !!fl.lock, driven: direct && p.endFixed && (fl.flex || adjusted.set.has(i - 1)), faded: bundleSel >= 0 || (!!focus && !focus.includes(i - 1)) };
     const comps = [0, 1, 2].filter(k => Math.abs(d[k]) > 0.5);
     let sp = null;
     if (comps.length > 1) {
@@ -1806,24 +1822,54 @@ function hitDim(x, y) {
   return null;
 }
 // Maß bearbeiten: Eingabefeld genau auf der Maßzahl; Enter/Fertig übernimmt, Esc bricht ab. Richtung bleibt, der Rest des Rohrs wandert mit.
+// Eingabefeld für ein Maß: eigene Box über allem, die auf dem Handy oberhalb der Tastatur bleibt – die Ansicht selbst bewegt sich nicht.
+// Solange die Tastaturhöhe noch unbekannt ist, wird sie geschätzt, damit Safari die Seite beim Fokussieren nicht hochschiebt.
+function dimBox(d, value) {
+  const vv = window.visualViewport, box = document.createElement('div'), inp = document.createElement('input'), r = cv.getBoundingClientRect();
+  box.className = 'dimbox';
+  inp.className = 'dimedit'; inp.inputMode = 'decimal'; inp.enterKeyHint = 'done'; inp.value = fin(value);
+  box.append(inp);
+  const sx = r.left + d.x, sy = r.top + d.y;
+  const place = () => {
+    const vt = vv?.offsetTop || 0, vl = vv?.offsetLeft || 0, vw = vv?.width || innerWidth, vh = vv?.height || innerHeight;
+    const coarse = matchMedia('(pointer: coarse)').matches, keyboardOpen = innerHeight - vh > 120;
+    const free = coarse && !keyboardOpen ? vh * (innerWidth > innerHeight ? 0.42 : 0.52) : vh; // Tastatur kommt gleich
+    const bw = box.offsetWidth, bh = box.offsetHeight;
+    box.style.left = `${Math.max(vl + 8, Math.min(sx - bw / 2, vl + vw - bw - 8))}px`;
+    box.style.top = `${Math.max(vt + 8, Math.min(sy - 18, vt + free - bh - 8))}px`;
+  };
+  document.body.append(box);
+  place();
+  vv?.addEventListener('resize', place); vv?.addEventListener('scroll', place);
+  return { box, inp, place, close() { vv?.removeEventListener('resize', place); vv?.removeEventListener('scroll', place); box.remove(); } };
+}
+function editGap(d) {
+  const p = proj(), gap = bundleGapOf(p, d.bgap), { inp, close } = dimBox(d, gap);
+  inp.focus({ preventScroll: true }); inp.select();
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true;
+    const v = num(inp.value);
+    close();
+    if (ok && v > 0 && Math.abs(v - gap) > 0.01) { commit(); shiftBundle(p.bundle, structuredClone(p.bundle), d.bgap, v - gap); recompute(); renderBundle(); }
+    draw();
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
+}
 function editDim(d) {
+  if (d.bgap != null) { editGap(d); return; }
   const p = proj();
   if (layout.verts.length !== p.deltas.length + 1 && p.mode === 'deltas') { selectLeg(d.i, true); return; }
   ensureDeltas();
-  const box = $('#viewwrap'), inp = document.createElement('input');
-  inp.className = 'dimedit'; inp.inputMode = 'decimal'; inp.enterKeyHint = 'done';
-  const cur0 = deltaVec(p.deltas[d.i]);
-  inp.value = fin(d.k != null ? Math.abs(cur0[d.k]) : V.len(cur0));
-  inp.style.left = `${d.x}px`; inp.style.top = `${d.y}px`;
-  box.append(inp);
+  const cur0 = deltaVec(p.deltas[d.i]), { box, inp, place, close } = dimBox(d, d.k != null ? Math.abs(cur0[d.k]) : V.len(cur0));
   // Darunter: Maß festhalten oder als Ausgleich markieren (nur sinnvoll bei fixiertem Ende)
   const tools = document.createElement('div');
   tools.className = 'dimtools';
-  tools.style.left = `${d.x}px`; tools.style.top = `${d.y + 26}px`;
   const flags = () => p.deltas[d.i] || {};
   const paint = () => { tools.innerHTML = `<button data-f="lock" class="${flags().lock ? 'on' : ''}">🔒 Fest</button><button data-f="flex" class="${flags().flex ? 'on' : ''}">⇄ Ausgleich</button>`; };
   paint();
-  if (p.endFixed) box.append(tools);
+  if (p.endFixed) { box.append(tools); place(); }
   tools.addEventListener('pointerdown', e => e.preventDefault()); // Eingabefeld behält den Fokus
   tools.addEventListener('click', e => {
     const f = e.target.closest('[data-f]')?.dataset.f;
@@ -1835,12 +1881,12 @@ function editDim(d) {
     save(); paint(); draw(); renderInputs();
   });
   selectLeg(d.i);
-  inp.focus(); inp.select();
+  inp.focus({ preventScroll: true }); inp.select();
   let done = false;
   const finish = ok => {
     if (done) return; done = true;
     const v = num(inp.value);
-    inp.remove(); tools.remove();
+    close();
     if (ok && v > 0) {
       const cur = deltaVec(p.deltas[d.i]);
       if (d.k != null) { // ein Achsanteil (z. B. Höhenversatz): nur diesen ändern, Vorzeichen bleibt
@@ -1968,9 +2014,14 @@ function drawEditOverlay(P3, cAcc) {
 
 // Eckpunkt (Schnittpunkt zwischen Schenkel i-1 und i) antippen: nur dort erscheinen die Drehringe
 function selectCorner(i) {
-  sel = -1; selCorner = i;
+  sel = -1; selCorner = i; bundleSel = -1;
   $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
-  draw();
+  renderBundleBar(); draw();
+}
+function selectBundle(i) {
+  sel = -1; selCorner = -1; bundleSel = i;
+  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  renderBundleBar(); draw();
 }
 function hitCorner(x, y) {
   const pts = points(proj());
@@ -1983,7 +2034,7 @@ function hitCorner(x, y) {
 const DIR_OPTS = Array.from({ length: 360 / ANGLE_STEP }, (_, k) => k * ANGLE_STEP);
 // Auswahl zeigt den Gimbal; das Eingabefeld nur auf Wunsch („✎ Maße“)
 function selectLeg(i, openPanel = false) {
-  sel = i; selCorner = -1;
+  sel = i; selCorner = -1; bundleSel = -1; renderBundleBar();
   $('#legPanel').hidden = !(openPanel && i >= 0);
   $('#addLegView').hidden = $('#offLegView').hidden = i < 0 || openPanel;
   if (openPanel && i >= 0) fillPanel();
@@ -2013,14 +2064,9 @@ function fillPanel() {
   }
 }
 $('#lpBundle').addEventListener('change', e => {
-  const p = proj(), r = +e.target.value, bend = sel - 1;
+  const r = +e.target.value, bend = sel - 1;
   if (bend < 0) return;
-  commit();
-  const t = p.bundleTx.find(o => o.bend === bend);
-  if (!r) p.bundleTx = p.bundleTx.filter(o => o !== t);
-  else if (t) t.rot = r;
-  else addTx(p, bend, r);
-  recompute(); renderBundle(); fillPanel();
+  setTx(bend, r); renderBundle(); fillPanel();
   if (r) toast('Lagewechsel eingebaut – die Parallelrohre gehen an der Ecke senkrecht auf die neue Höhe.');
 });
 function afterViewEdit() { renderInputs(); recompute(); fillPanel(); }
@@ -2243,6 +2289,8 @@ function drawGizmo() {
     ctx.save(); ctx.globalAlpha = 0.3; polyline([[ax, ay], [bx, by]], cAcc, 16); ctx.restore();
   }
 
+  if (!gz || BUNDLE_GZ.includes(gz.type)) drawStartHandle();
+
   // Fortführen: Hilfspfeile (blass, beim Ziehen die gewählte Richtung kräftig) + Griff am Ende
   if (!gz || gz.type === 'ext') {
     const E = gz ? gz.E : pts[n], d = gz ? gz.d : V.norm(V.sub(pts[n], pts[n - 1]));
@@ -2303,6 +2351,49 @@ function drawGizmo() {
   if (gz?.label) pill(gz.label, gz.px, gz.py, gz.type === 'bend' ? C_BEND : gz.type === 'rot' ? C_ROT : cAcc);
 }
 
+// Griff am Rohranfang: Parallelrohre anlegen (Pfeile quer zum ersten Schenkel), Bündel drehen (Ring), Abstand ziehen (Punkte)
+function drawStartHandle() {
+  const verts = layout.verts, p = proj(), P3 = view.P3, cAcc = css('--accent');
+  if (verts.length < 2) return;
+  const A = verts[0], d0 = V.norm(V.sub(verts[1], A)), [ax, ay] = P3(A), mmPx = v => { const [x, y] = P3(V.add(A, V.mul(v, 100))); return [(x - ax) / 100, (y - ay) / 100]; };
+  if (bundleSel >= 0 && layout.bundle[bundleSel]) { ctx.save(); ctx.globalAlpha = 0.3; polyline(layout.bundle[bundleSel].verts.map(q => P3(q)), cAcc, 16); ctx.restore(); }
+  if (startOpen && (!gz || gz.type === 'bnew')) {
+    [0, 1, 2, 3].forEach(k => {
+      const v = sideDir(verts, k), [mx, my] = mmPx(v), l = Math.hypot(mx, my);
+      if (l < view.sc * 0.2) return; // Richtung zeigt in die Ansicht hinein
+      const ux = mx / l, uy = my / l, active = gz?.side === k;
+      ctx.save(); ctx.globalAlpha = gz ? (active ? 1 : 0.18) : 0.7;
+      arrow(ax + ux * 18, ay + uy * 18, ax + ux * 60, ay + uy * 60, axisColor(v), 4);
+      ctx.restore();
+      if (!gz) gizmo.push({ type: 'bnew', side: k, seg: [ax + ux * 18, ay + uy * 18, ax + ux * 60, ay + uy * 60], pxPerMm: [mx, my] });
+    });
+  }
+  if (startOpen && p.bundle.length && (!gz || gz.type === 'brot')) {
+    const q = sideDir(verts, 0), w = sideDir(verts, 1), r = 74 / view.sc, ring = ringPts(A, q, w, r, 0, 360, 4);
+    const xs = ring.map(c => c[0]), ys = ring.map(c => c[1]);
+    if (Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) >= 14) { // von der Kante gesehen nicht bedienbar
+      ctx.save(); ctx.globalAlpha = 0.85; polyline(ring, C_ROT, 3); ctx.restore();
+      knob(...ring[0], 8, C_ROT);
+      gizmo.push({ type: 'brot', poly: ring, q, w });
+    }
+  }
+  if (!gz || gz.type === 'bdist') p.bundle.forEach((b, i) => {
+    const B = layout.bundle[i];
+    if (!B) return;
+    const [x, y] = P3(B.A), v = sideDir(verts, b.side);
+    knob(x, y, i === bundleSel ? 8 : 6, cAcc);
+    if (!gz) gizmo.push({ type: 'bdist', i, at: [x, y], r: 12, pxPerMm: mmPx(v) });
+  });
+  if (!gz) {
+    knob(ax, ay, 11, cAcc);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
+    for (const dy of [-3.5, 0, 3.5]) { ctx.moveTo(ax - 5, ay + dy); ctx.lineTo(ax + 5, ay + dy); }
+    ctx.stroke();
+    if (p.bundle.length) { ctx.font = '700 11px system-ui'; ctx.fillStyle = cAcc; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.bundle.length + 1, ax + 16, ay - 14); }
+    gizmo.push({ type: 'start', at: [ax, ay], r: 22 });
+  }
+}
+
 function segDist(x, y, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy;
   const t = l2 ? Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / l2)) : 0;
@@ -2317,6 +2408,11 @@ function hitGizmo(x, y) {
     else for (let k = 1; k < g.poly.length; k++) d = Math.min(d, segDist(x, y, ...g.poly[k - 1], ...g.poly[k]));
     if (d < bd) { bd = d; best = g; }
   }
+  // Bei kleinem Maßstab liegen die Punkte der Parallelrohre im Griff: es zählt, was dem Finger am nächsten ist
+  if (best?.type === 'start') {
+    const raw = g => Math.hypot(x - g.at[0], y - g.at[1]);
+    for (const g of gizmo) if (g.type === 'bdist' && raw(g) < hitTol(14) && raw(g) < raw(best)) best = g;
+  }
   return best;
 }
 
@@ -2327,6 +2423,12 @@ function gzStart(g, e) {
   const pts = points(p), n = pts.length - 1;
   gz = { ...g, before, committed: false, sx: e.clientX, sy: e.clientY, px: lx, py: ly, moved: false, orig: structuredClone(p.deltas), E0: endOf(p), label: '' };
   fit = lastBase;
+  if (BUNDLE_GZ.includes(g.type)) {
+    gz.bOrig = structuredClone(p.bundle); gz.As = view.P3(layout.verts[0]);
+    if (g.type === 'bnew') gz.base = p.bundle.filter(b => b.side === g.side).at(-1)?.dist || 0;
+    if (g.type === 'brot') { gz.A = layout.verts[0]; gz.r = 74 / view.sc; gz.t0 = ringAngle(g.q, g.w, 0, 359, lx, ly); }
+    return;
+  }
   if (g.type === 'ext') {
     gz.E = pts[n]; gz.d = V.norm(V.sub(pts[n], pts[n - 1])); gz.L0 = V.len(V.sub(pts[n], pts[n - 1]));
     gz.Es = view.P3(gz.E); gz.min = minLengths();
@@ -2403,6 +2505,7 @@ function gzMove(e) {
   const dx = e.clientX - gz.sx, dy = e.clientY - gz.sy, [lx, ly] = local(e);
   if (Math.hypot(dx, dy) > 4) gz.moved = true;
   gz.px = lx; gz.py = ly;
+  if (BUNDLE_GZ.includes(gz.type)) { bundleMove(lx, ly); return; }
   if (gz.type === 'ext') {
     extMove(lx, ly);
   } else if (gz.type === 'len') {
@@ -2425,9 +2528,46 @@ function gzMove(e) {
   }
   recompute(true);
 }
+// Abstand zu Rohr 1 aus der Zeigerposition (Pfeil oder Punkt zieht quer zum ersten Schenkel)
+const pointerMm = (lx, ly, [mx, my]) => ((lx - gz.As[0]) * mx + (ly - gz.As[1]) * my) / (mx * mx + my * my);
+// Gap ändern: dieses Rohr und alle weiter außen auf derselben Seite wandern mit, die anderen Abstände bleiben
+function shiftBundle(bs, orig, i, delta) {
+  bs.forEach((b, k) => { if (k >= i && orig[k].side === orig[i].side) b.dist = r1(orig[k].dist + delta); });
+}
+function bundleMove(lx, ly) {
+  const p = proj(), D = prof(p).D;
+  if (!gz.moved) return;
+  if (gz.type === 'bnew') {
+    gzChanged();
+    if (gz.newI == null) { p.bundle.push({ id: uid(), side: gz.side, dist: gz.base + D + 1 }); gz.newI = p.bundle.length - 1; }
+    const dist = Math.round(Math.max(gz.base + D + 1, pointerMm(lx, ly, gz.pxPerMm)));
+    p.bundle[gz.newI].dist = dist;
+    gz.label = `Rohr ${gz.newI + 2}: ${fmt(dist - gz.base)} mm zum Nachbarn`;
+  } else if (gz.type === 'bdist') {
+    gzChanged();
+    const orig = gz.bOrig, base = orig.slice(0, gz.i).filter(b => b.side === orig[gz.i].side).at(-1)?.dist || 0;
+    const dist = Math.round(Math.max(base + D + 1, pointerMm(lx, ly, gz.pxPerMm)));
+    shiftBundle(p.bundle, orig, gz.i, dist - orig[gz.i].dist);
+    gz.label = `Rohr ${gz.i + 2}: ${fmt(dist - base)} mm zum Nachbarn`;
+  } else if (gz.type === 'brot') {
+    const steps = Math.round(normRot(ringAngle(gz.q, gz.w, 0, 359, lx, ly) - gz.t0) / 90);
+    if (steps || gz.committed) { gzChanged(); p.bundle.forEach((b, k) => { b.side = (((gz.bOrig[k].side + steps) % 4) + 4) % 4; }); }
+    gz.label = `Bündel: ${dirName(sideDir(layout.verts, p.bundle[0].side))}`;
+  }
+  recompute(true);
+}
+function bundleEnd(g) {
+  const p = proj();
+  if (g.type === 'start' && !g.moved) { startOpen = !startOpen; bundleSel = -1; }
+  else if (g.type === 'bnew' && !g.moved) { commit(null, g.before); p.bundle.push({ id: uid(), side: g.side, dist: nextBundleDist(p, g.side) }); }
+  else if (g.type === 'bdist' && !g.moved) { selectBundle(g.i); }
+  if (!isOrtho()) fit = null;
+  recompute();
+}
 function gzEnd() {
   const g = gz, p = proj();
   gz = null;
+  if (BUNDLE_GZ.includes(g.type)) { bundleEnd(g); return; }
   if (g.fail) toast(g.fail);
   // Antippen eines Hilfspfeils = neuer Schenkel in diese Richtung
   if (g.type === 'ext' && !g.moved && !g.a) { // Griff nur angetippt: Pfeile ein-/ausblenden
@@ -2766,6 +2906,13 @@ function hitVertex(x, y) {
   for (let i = pts.length - 1; i >= 1; i--) { const [px, py] = view.P3(pts[i]); if (Math.hypot(px - x, py - y) < hitTol(22)) return i - 1; }
   return -1;
 }
+// Parallelrohr unter dem Finger – nur wenn es näher liegt als Rohr 1
+function hitBundle(x, y) {
+  const near = L => L.verts.slice(1).reduce((m, q, k) => Math.min(m, segDist(x, y, ...view.P3(L.verts[k]), ...view.P3(q))), Infinity);
+  let best = -1, bd = Math.min(hitTol(14), near(layout));
+  layout.bundle.forEach((L, i) => { const d = near(L); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
 function hitLeg(x, y) {
   const pts = points(proj());
   let best = -1, bd = hitTol(18);
@@ -2808,7 +2955,7 @@ cv.addEventListener('pointermove', e => {
   if (!prev) {
     if (camTool === 'room' && roomDraw && view) roomHover(...local(e));
     if (e.pointerType === 'mouse' && view && camTool === 'edit') {
-      const [lx, ly] = local(e), knob = gizmo.find(g => g.at), h = !!knob && Math.hypot(lx - knob.at[0], ly - knob.at[1]) < knob.r + 6;
+      const [lx, ly] = local(e), knob = gizmo.find(g => g.type === 'ext' && g.at), h = !!knob && Math.hypot(lx - knob.at[0], ly - knob.at[1]) < knob.r + 6;
       if (h !== extHover) { extHover = h; draw(); }
     }
     return;
@@ -2840,12 +2987,12 @@ cv.addEventListener('pointerup', e => {
   if (drag) { endDrag(); return; }
   if (pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
-    extOpen = false;
+    extOpen = false; startOpen = false;
     const dim = camTool === 'edit' ? hitDim(lx, ly) : null, corner = camTool === 'edit' && !dim ? hitCorner(lx, ly) : -1;
     if (dim) editDim(dim);
     else if (camTool === 'room') roomTap(lx, ly);
     else if (corner >= 1) selectCorner(corner);
-    else if (camTool === 'edit') selectLeg(hitLeg(lx, ly));
+    else if (camTool === 'edit') { const b = hitBundle(lx, ly); if (b >= 0) selectBundle(b); else selectLeg(hitLeg(lx, ly)); }
   } else if (camTool === 'room' && roomDraw && pt && e.pointerType !== 'mouse') roomHover(...local(e));
 });
 cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); if (clampDrag) clampUp(); if (roomDrag) roomUp(); if (gz) gzEnd(); if (drag) endDrag(); });
@@ -3174,17 +3321,40 @@ new ResizeObserver(() => drawMini()).observe(mini);
 
 // ---------- Parallelrohre (Eingabe) ----------
 // In 3D: Bündel um das Rohr drehen – Lage gilt ab Schenkel 1, jede Biegung folgt daraus (innen/außen oder nebeneinander)
-function renderBundleRot() {
-  const p = proj(), b = $('#bundleRot');
-  b.hidden = !p.bundle.length || layout.verts.length < 2;
-  if (!b.hidden) b.textContent = `⟳ Bündel: ${dirName(sideDir(layout.verts, p.bundle[0].side))}`;
+const bundleGapOf = (p, i) => { const b = p.bundle[i], prev = p.bundle.slice(0, i).filter(o => o.side === b.side).at(-1); return b.dist - (prev ? prev.dist : 0); };
+// Neues Rohr im gleichen Raster: Abstand zum Nachbarn wie zuletzt eingestellt
+function nextBundleDist(p, side) {
+  const f = prof(p), same = p.bundle.filter(b => b.side === side), n = p.bundle.length;
+  const gap = same.length >= 2 ? same.at(-1).dist - same.at(-2).dist : same.length ? same[0].dist : n ? bundleGapOf(p, n - 1) : Math.max(20, Math.ceil(f.D * 4 / 5) * 5);
+  return r1((same.at(-1)?.dist || 0) + gap);
 }
-$('#bundleRot').addEventListener('click', () => {
-  const p = proj();
-  if (!p.bundle.length) return;
+// Leiste in 3D: gewähltes Parallelrohr oder Lage des Bündels nach dem gewählten Eckpunkt
+function renderBundleBar() {
+  const p = proj(), bar = $('#bundleBar');
+  if (bundleSel >= p.bundle.length) bundleSel = -1;
+  const nm = selCorner >= 1 && p.bundle.length ? txNames(selCorner - 1) : null;
+  bar.hidden = bundleSel < 0 && !nm;
+  if (bundleSel >= 0) bar.innerHTML = `<span>Rohr ${bundleSel + 2} · ${fmt(bundleGapOf(p, bundleSel))} mm zum Nachbarn</span><button data-bb="guide">In Anleitung zeigen</button><button data-bb="del" class="danger">Löschen</button>`;
+  else if (nm) {
+    const cur = p.bundleTx.find(t => t.bend === selCorner - 1)?.rot ?? 0;
+    bar.innerHTML = `<span>Bündel danach:</span>${[[0, nm[0]], [1, nm[1]], [-1, nm[-1]]].map(([r, t]) => `<button data-tx="${r}"${r === cur ? ' class="on"' : ''}>${t}</button>`).join('')}`;
+  }
+}
+// Lagewechsel an Biegung bend setzen (0 = wie bisher)
+function setTx(bend, r) {
+  const p = proj(), t = p.bundleTx.find(o => o.bend === bend);
   commit();
-  p.bundle.forEach(b => { b.side = (b.side + 1) % 4; });
-  recompute(); renderBundle();
+  if (!r) p.bundleTx = p.bundleTx.filter(o => o !== t);
+  else if (t) t.rot = r;
+  else addTx(p, bend, r);
+  recompute();
+}
+$('#bundleBar').addEventListener('click', e => {
+  const b = e.target.closest('button'), p = proj();
+  if (!b) return;
+  if (b.dataset.tx != null) { setTx(selCorner - 1, +b.dataset.tx); return; }
+  if (b.dataset.bb === 'del') { commit(); p.bundle.splice(bundleSel, 1); bundleSel = -1; recompute(); }
+  else if (b.dataset.bb === 'guide') { guidePipe = bundleSel + 1; highlight = -1; $('[data-tab=guide]').click(); }
 });
 function renderBundle() {
   const p = proj(), f = prof(p), verts = layout.verts;
@@ -3255,10 +3425,8 @@ $('#bundleCard').addEventListener('click', e => {
   if (!b) return;
   if (b.id === 'bAdd') {
     commit();
-    // Neues Rohr im gleichen Raster wie die vorhandenen: Abstand zum Nachbarn wie zuletzt eingestellt
-    const side = p.bundle.at(-1)?.side ?? 0, same = p.bundle.filter(b => b.side === side);
-    const gap = same.length >= 2 ? same.at(-1).dist - same.at(-2).dist : same.length ? same[0].dist : Math.max(20, Math.ceil(f.D * 4 / 5) * 5);
-    p.bundle.push({ id: uid(), side, dist: r1((same.at(-1)?.dist || 0) + gap) });
+    const side = p.bundle.at(-1)?.side ?? 0;
+    p.bundle.push({ id: uid(), side, dist: nextBundleDist(p, side) });
   } else if (b.dataset.bdel != null) { commit(); p.bundle.splice(+b.dataset.bdel, 1); }
   else if (b.id === 'txAdd') {
     const nb = layout.bends.length, used = new Set((p.bundleTx || []).map(t => t.bend));
@@ -3273,10 +3441,10 @@ $('#bundleCard').addEventListener('click', e => {
 
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
-  window.biegeDebug = { get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
+  window.biegeDebug = { editDim, get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
 }
 
-function fullRender() { extOpen = false; adjusted = { set: new Set(), t: 0 }; renderEndPin(); sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { extOpen = false; startOpen = false; bundleSel = -1; adjusted = { set: new Set(), t: 0 }; renderEndPin(); sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 checkUpdate();

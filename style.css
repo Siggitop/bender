@@ -381,14 +381,16 @@ body:not(.lab) .labonly { display: none !important; }
 .lpbundle { margin-bottom: 10px; }
 
 /* Maß direkt in der 3D-Ansicht ändern */
-.dimedit { position: absolute; z-index: 5; transform: translate(-50%, -50%); width: 92px; min-height: 36px; padding: 4px 8px; text-align: center;
+.dimbox { position: fixed; z-index: 45; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.dimedit { width: 92px; min-height: 36px; padding: 4px 8px; text-align: center;
   font-size: 17px; font-weight: 700; color: var(--accent); background: var(--card); border: 2px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
 
 /* Ende fixiert: Fest / Ausgleich */
 .toast { position: fixed; top: calc(70px + env(safe-area-inset-top)); z-index: 50; }
-.dimtools { position: absolute; z-index: 5; transform: translate(-50%, 0); display: flex; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 4px 16px rgba(0, 0, 0, .18); }
+.dimtools { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 4px 16px rgba(0, 0, 0, .18); }
 .dimtools button { min-height: 34px; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
 .dimtools button.on, .leghead .lk.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .leghead .lk { min-width: 34px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 8px; }
 .leg.flex { border-style: dashed; }
 #endPin.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.roombar button.on { background: var(--accent); border-color: var(--accent); color: #fff; }

@@ -86,7 +86,7 @@
         <button id="visBtn" aria-label="Anzeige" title="Anzeige">👁</button>
         <button id="endPin" title="Rohrende im Raum festhalten">📌 Ende fest</button>
         <span class="toolseg labonly"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span>
-        <button id="bundleRot" hidden title="Parallelrohre um das Rohr drehen (oben → vorne → unten → hinten)">⟳ Bündel</button><button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
+        <button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
       </div>
       <div class="popover" id="visPop" hidden>
         <label class="chk"><input type="checkbox" data-vis="dims"> Maße</label>
@@ -102,6 +102,7 @@
       </div>
       <div class="toast" id="toast" hidden></div>
       <div class="roombar" id="roomBar" hidden></div>
+      <div class="roombar" id="bundleBar" hidden></div>
       <div class="legpanel" id="legPanel" hidden>
         <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Schließen">Fertig</button></div>
         <div class="row2">
