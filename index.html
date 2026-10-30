@@ -27,25 +27,7 @@
 
 <div class="layout">
   <main>
-    <section class="tab active" id="tab-input">
-      <details class="card projcard" id="projCard">
-        <summary><span class="pc-t">Projekt &amp; Zange</span><span class="pc-s" id="projSum"></span></summary>
-        <div class="row2">
-          <label>Name<input id="pName" autocomplete="off"></label>
-          <label>Zange / Rohr<select id="pProf"></select></label>
-        </div>
-        <div class="row2">
-          <label>Zugabe Anfang (mm)<input id="pZugA" inputmode="decimal" placeholder="0"></label>
-          <label>Zugabe Ende (mm)<input id="pZugE" inputmode="decimal" placeholder="0"></label>
-        </div>
-        <div class="btnrow">
-          <button id="pDup">Duplizieren</button>
-          <button id="pExport">Teilen / Export</button>
-          <button id="pImport">Import</button>
-          <button id="pDel" class="danger">Löschen</button>
-          <input type="file" id="pImportFile" accept=".json,application/json" hidden>
-        </div>
-      </details>
+    <section class="tab" id="tab-input">
 
       <canvas id="miniPrev" aria-label="Vorschau des Rohrs – antippen öffnet 3D"></canvas>
       <p class="hint">Je Schenkel Richtung antippen und Achsmaß eingeben (Rohrmitte bis Rohrmitte).</p>
@@ -67,7 +49,7 @@
     <section class="tab" id="tab-tools"></section>
   </main>
 
-  <aside class="tab" id="tab-view">
+  <aside class="tab active" id="tab-view">
     <div class="viewwrap" id="viewwrap">
       <canvas id="cvBg" aria-hidden="true"></canvas>
       <canvas id="cvGL" aria-hidden="true"></canvas>
@@ -84,7 +66,7 @@
       <div class="viewhint" id="viewHint"></div>
       <div class="viewacts">
         <button id="visBtn" aria-label="Anzeige" title="Anzeige">👁</button>
-        <button id="endPin" title="Rohrende im Raum festhalten">📌 Ende fest</button>
+        <button id="endPin" title="Rohrende im Raum festhalten">📌 Ende fest</button><button id="addPipe" title="Weiteres Rohr in dieses Projekt">+ Rohr</button><button id="addPlane" title="Referenzebene anlegen">+ Ebene</button>
         <span class="toolseg labonly"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span>
         <button id="addLegView" hidden>✎ Maße</button><button id="offLegView" hidden>⤳ Versatz</button>
       </div>
@@ -97,12 +79,14 @@
         <label class="chk"><input type="checkbox" data-vis="grid"> Raster &amp; Schatten</label>
         <label class="chk labonly"><input type="checkbox" data-vis="planes"> Wände, Boden, Decke</label>
         <label class="chk labonly"><input type="checkbox" data-vis="clamps"> Schellen</label>
-        <label class="chk labonly"><input type="checkbox" data-vis="ghosts"> Nachbarrohre</label>
+        <label class="chk"><input type="checkbox" data-vis="colors"> Rohrfarben</label>
+        <label class="chk"><input type="checkbox" data-vis="refPlanes"> Referenzebenen</label>
         <label class="chk"><input type="checkbox" data-vis="extAlways"> Fortführ-Pfeile immer zeigen</label>
       </div>
       <div class="toast" id="toast" hidden></div>
       <div class="roombar" id="roomBar" hidden></div>
       <div class="roombar" id="bundleBar" hidden></div>
+      <div class="popover planepop" id="planePop" hidden><button data-ax="0" class="ax-x-b">X-Ebene</button><button data-ax="1" class="ax-y-b">Y-Ebene</button><button data-ax="2" class="ax-z-b">Z-Ebene</button></div>
       <div class="legpanel" id="legPanel" hidden>
         <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Schließen">Fertig</button></div>
         <div class="row2">
@@ -119,11 +103,11 @@
 </div>
 
 <nav class="tabbar">
-  <button data-tab="input" class="active"><span>✎</span>Rohr</button>
-  <button data-tab="view" class="only-mobile"><span>◈</span>3D</button>
-  <button data-tab="room" class="labonly"><span>⌂</span>Raum</button>
+  <button data-tab="view" class="active"><span>◈</span>3D</button>
   <button data-tab="guide"><span>☰</span>Biegen</button>
-  <button data-tab="tools"><span>⚙</span>Zangen</button>
+  <button data-tab="tools"><span>⚙</span>Einstellungen</button>
+  <button data-tab="input" class="labonly"><span>✎</span>Rohr</button>
+  <button data-tab="room" class="labonly"><span>⌂</span>Raum</button>
 </nav>
 
 <div class="modal" id="offDlg" hidden>
@@ -160,5 +144,6 @@
 
 <script src="version.js"></script>
 <script type="module" src="app.js"></script>
+<input type="file" id="pImportFile" accept=".json,application/json" hidden>
 </body>
 </html>

@@ -33,7 +33,7 @@ const CLAMP_DEFAULTS = { clampMax: 600, clampMin: 300, clampBend: 80, clampEnd: 
 // Felder, die spätere Versionen ergänzt haben. roomId = Raum (db.rooms), bundle = Parallelrohre { id, side 0–3, dist }
 // bundleTx = Lagewechsel des Bündels an Biegungen { bend, rot ±1, where 'before'|'after', ang, gap }
 // endFixed = Rohrende bleibt beim Ändern von Längen/Winkeln im Raum stehen (Ausgleich über freie Schenkel)
-const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, roomId: null, bundle: [], bundleTx: [], target: null, clamps: [], clampMode: 'auto', endFixed: true };
+const PROJECT_DEFAULTS = { origin: [0, 0, 0], frame: null, roomId: null, bundle: [], bundleTx: [], target: null, clamps: [], clampMode: 'auto', endFixed: true, color: null, sceneId: null, refs: null, unrouted: false };
 
 // Bis Version 14 hatte jedes Rohr eigene, unbegrenzte Flächen → daraus einen rechteckigen Raum machen
 function roomFromPlanes(p) {
@@ -51,7 +51,7 @@ function roomFromPlanes(p) {
 
 // Ältere Daten auf den aktuellen Stand bringen
 function migrate(d) {
-  d.rooms ||= [];
+  d.rooms ||= []; d.scenes ||= [];
   d.projects.forEach(p => {
     for (const [k, v] of Object.entries(PROJECT_DEFAULTS)) if (p[k] === undefined) p[k] = structuredClone(v);
     if (p.planes?.length && !p.roomId) { const r = roomFromPlanes(p); d.rooms.push(r); p.roomId = r.id; }
@@ -61,6 +61,13 @@ function migrate(d) {
     delete p.planes; delete p.group; // Rohrgruppen entfallen: Parallelrohre gehören jetzt zum Rohr (bundle)
   });
   d.profiles.forEach(f => { for (const [k, v] of Object.entries(CLAMP_DEFAULTS)) if (f[k] === undefined) f[k] = v; });
+  // Szene = mehrere Rohre an einem Ort; ältere Projekte werden Szenen mit einem Rohr
+  d.projects.forEach(p => {
+    if (d.scenes.some(s => s.id === p.sceneId)) return;
+    const sc = { id: uid(), name: p.name, planes: [] };
+    d.scenes.push(sc); p.sceneId = sc.id;
+  });
+  d.scenes = d.scenes.filter(s => d.projects.some(p => p.sceneId === s.id));
   // Marken, Kalibrierung und Rückfederung gibt es nicht mehr
   d.profiles.forEach(f => { ['marks', 'pref', 'springback', 'k', 'mark', 'insert', 'calibrated'].forEach(k => delete f[k]); });
   // Standardradius 6 mm ist 16 mm (früher 15): einmalig nachziehen, solange die Vorgabe nicht geändert wurde
@@ -84,7 +91,7 @@ function newProject(profileId, name) {
 function seed() {
   const profiles = defaultProfiles();
   const p = newProject(profiles[0].id, 'Rohr 1');
-  return { profiles, projects: [p], rooms: [], currentId: p.id, r16: true };
+  return migrate({ profiles, projects: [p], rooms: [], currentId: p.id, r16: true });
 }
 function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE)); if (d?.profiles?.length && d?.projects?.length) return migrate(d); } catch {}
@@ -94,6 +101,14 @@ let db = load();
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(db)); } catch {} };
 const proj = () => db.projects.find(p => p.id === db.currentId) || db.projects[0];
 const prof = (p = proj()) => db.profiles.find(x => x.id === p.profileId) || db.profiles[0];
+const scene = (p = proj()) => db.scenes.find(s => s.id === p.sceneId);
+const scenePipes = (p = proj()) => db.projects.filter(q => q.sceneId === p.sceneId);
+// Neues Rohr in eine Szene legen; ohne Angabe bekommt es eine eigene Szene
+function addPipe(p, sceneId = null) {
+  if (!sceneId) { const sc = { id: uid(), name: p.name, planes: [] }; db.scenes.push(sc); sceneId = sc.id; }
+  p.sceneId = sceneId; db.projects.push(p); db.currentId = p.id;
+  return p;
+}
 const roomOf = (p = proj()) => db.rooms.find(r => r.id === p.roomId) || null;
 // Labor: Raum, Schellen und Ziel sind Experimente – nur sichtbar und wirksam, wenn eingeschaltet.
 // Die Daten bleiben beim Ausschalten erhalten, werden aber nicht gerechnet und nicht gezeichnet.
@@ -135,11 +150,12 @@ const TEMPLATES = {
 // innerhalb von 1,5 s wird zu einem Schritt zusammengefasst.
 const hist = new Map();
 const histOf = p => { if (!hist.has(p.id)) hist.set(p.id, { undo: [], redo: [] }); return hist.get(p.id); };
-const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'roomId', 'bundle', 'bundleTx', 'target', 'clamps', 'clampMode', 'endFixed'];
-const snapshot = p => structuredClone({ ...Object.fromEntries(SNAP_KEYS.map(k => [k, p[k] ?? null])), _room: roomOf(p) });
+const SNAP_KEYS = ['mode', 'deltas', 'legs', 'frame', 'origin', 'zugA', 'zugE', 'profileId', 'roomId', 'bundle', 'bundleTx', 'target', 'clamps', 'clampMode', 'endFixed', 'color', 'refs', 'unrouted'];
+const snapshot = p => structuredClone({ ...Object.fromEntries(SNAP_KEYS.map(k => [k, p[k] ?? null])), _room: roomOf(p), _scene: sceneState(p) });
 function restoreSnapshot(p, snap) {
-  const { _room, ...rest } = structuredClone(snap);
+  const { _room, _scene, ...rest } = structuredClone(snap);
   Object.assign(p, rest);
+  if (_scene) restoreSceneState(p, _scene);
   p.bundle ||= []; p.bundleTx ||= [];
   if (_room) { const i = db.rooms.findIndex(r => r.id === _room.id); if (i >= 0) db.rooms[i] = _room; else db.rooms.push(_room); }
 }
@@ -190,17 +206,7 @@ function signed(path, val) {
 
 function renderProjectBar() {
   const p = proj();
-  $('#projSel').innerHTML = db.projects.map(x => `<option value="${x.id}"${x.id === p.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
-  $('#pName').value = p.name;
-  $('#pProf').innerHTML = db.profiles.map(f => `<option value="${f.id}"${f.id === p.profileId ? ' selected' : ''}>${esc(f.name)} · R ${fmt(f.R)}</option>`).join('');
-  $('#pZugA').value = fin(p.zugA);
-  $('#pZugE').value = fin(p.zugE);
-  renderProjSum();
-}
-// Kurzinfo im zugeklappten Projekt-Kasten
-function renderProjSum() {
-  const p = proj(), f = prof(p), z = p.zugA || p.zugE ? ` · Zugabe ${fmt(p.zugA)}/${fmt(p.zugE)}` : '';
-  $('#projSum').textContent = `${f.name}${z}`;
+  $('#projSel').innerHTML = db.scenes.map(x => `<option value="${x.id}"${x.id === p.sceneId ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
 }
 
 function renderInputs() {
@@ -293,29 +299,31 @@ $('.tpl').addEventListener('click', e => {
   renderInputs(); recompute(); resetView();
 });
 
-$('#projSel').addEventListener('change', e => { db.currentId = e.target.value; highlight = -1; fullRender(); resetView(); });
-$('#pName').addEventListener('input', e => { proj().name = e.target.value; save(); $('#projSel').selectedOptions[0].textContent = e.target.value; });
-$('#pProf').addEventListener('change', e => { commit(); proj().profileId = e.target.value; recompute(); renderProjSum(); });
-$('#pZugA').addEventListener('input', e => { commit('zugA'); proj().zugA = num(e.target.value); recompute(); renderProjSum(); });
-$('#pZugE').addEventListener('input', e => { commit('zugE'); proj().zugE = num(e.target.value); recompute(); renderProjSum(); });
+$('#projSel').addEventListener('change', e => { db.currentId = db.projects.find(q => q.sceneId === e.target.value).id; highlight = -1; fullRender(); resetView(); });
 // Ohne Labor kein Raum-Dialog: neues gerades Rohr sofort anlegen
 $('#pNew').addEventListener('click', () => {
   if (lab) { openNewDlg(); return; }
-  const p = newProject(proj().profileId, `Rohr ${db.projects.length + 1}`);
-  db.projects.push(p); db.currentId = p.id;
+  addPipe(newProject(proj().profileId, `Projekt ${db.scenes.length + 1}`));
   fullRender(); resetView();
-  toast('Neues Rohr angelegt – ersten Schenkel aufmessen.');
+  toast('Neues Projekt angelegt.');
 });
-$('#pDup').addEventListener('click', () => {
-  const p = { ...structuredClone(proj()), id: uid(), name: proj().name + ' (Kopie)', done: {} };
-  db.projects.push(p); db.currentId = p.id; fullRender();
-});
-$('#pDel').addEventListener('click', () => {
-  if (!confirm(`Projekt „${proj().name}“ löschen?`)) return;
-  db.projects = db.projects.filter(p => p.id !== db.currentId);
-  if (!db.projects.length) db.projects.push(newProject(db.profiles[0].id, 'Rohr 1'));
+function dupScene() {
+  const sc = scene(), n = { ...structuredClone(sc), id: uid(), name: sc.name + ' (Kopie)' }, ids = {};
+  const copies = scenePipes().map(q => { const c = { ...structuredClone(q), id: uid(), sceneId: n.id, done: {} }; ids[q.id] = c.id; return c; });
+  const fix = r => { if (r) r.to = r.to.replace(/^([SE]):(.+)$/, (m, w, id) => `${w}:${ids[id] || id}`); };
+  copies.forEach(c => ['S', 'E'].forEach(w => c.refs?.[w]?.forEach(fix)));
+  n.planes.forEach(pl => fix(pl.ref));
+  db.scenes.push(n); db.projects.push(...copies); db.currentId = copies[0].id;
+  fullRender(); resetView();
+}
+function delScene() {
+  const sc = scene();
+  if (!confirm(`Projekt „${sc.name}“ löschen?`)) return;
+  db.projects = db.projects.filter(p => p.sceneId !== sc.id);
+  db.scenes = db.scenes.filter(x => x !== sc);
+  if (!db.projects.length) addPipe(newProject(db.profiles[0].id, 'Projekt 1'));
   db.currentId = db.projects[0].id; fullRender(); resetView();
-});
+}
 
 // ---------- Reiter „Raum“: Grundriss, Rohr ausrichten, Ziel-Anschluss, Schellen ----------
 const bbox2 = o => ({ x0: Math.min(...o.map(q => q[0])), x1: Math.max(...o.map(q => q[0])), y0: Math.min(...o.map(q => q[1])), y1: Math.max(...o.map(q => q[1])) });
@@ -724,7 +732,7 @@ function createFromDlg() {
       p.deltas = legs.length ? legs : firstLegAlong(A, sw, planes);
     } else p.deltas = firstLegAlong(A, sw, planes);
   }
-  db.projects.push(p); db.currentId = p.id;
+  addPipe(p);
   $('#newDlg').hidden = true;
   fullRender(); resetView();
   if (room && nw.draw) startRoomDraw();
@@ -771,14 +779,11 @@ function bundleLayouts(p, f, main) {
   }
   return out;
 }
-// Andere Rohre im selben Raum (samt ihren Parallelrohren) – werden hell dargestellt
-function roomGhosts(p) {
-  if (!lab || !p.roomId) return [];
-  return db.projects.filter(q => q.roomId === p.roomId && q.id !== p.id).flatMap(q => {
-    const f = prof(q), L = computeLayout(points(q), { R: f.R, zugA: q.zugA, zugE: q.zugE });
-    const out = [{ samples: L.samples, D: f.D, name: q.name }];
-    if (L.verts.length > 1) (q.bundle || []).forEach(b => out.push({ samples: computeLayout(parallelPoints(L.verts, b.dist, sideDir(L.verts, b.side)), { R: f.R }).samples, D: f.D }));
-    return out;
+// Die anderen Rohre der Szene (samt Parallelrohren): sichtbar und antippbar, treten aber zurück
+function sceneGhosts(p) {
+  return scenePipes(p).filter(q => q.id !== p.id).flatMap(q => {
+    const f = prof(q), L = buildLayout(q);
+    return [L, ...L.bundle].map(x => ({ id: q.id, samples: x.samples, verts: x.verts, D: f.D, color: q.color, name: q.name, unrouted: q.unrouted }));
   });
 }
 
@@ -844,8 +849,9 @@ function buildLayout(p, pts = points(p), room = activeRoom(p)) {
 
 function recompute(light = false) {
   const p = proj(), f = prof(p), room = activeRoom(p);
+  resolveScene(p);
   layout = buildLayout(p);
-  layout.ghosts = roomGhosts(p);
+  layout.ghosts = sceneGhosts(p);
   animateTo(p, light);
   if (light) { draw(); drawMini(); return; }
   if (layout.collisions.length) layout.errors.push(`Rohr berührt sich selbst (${layout.collisions.length}× – rot markiert).`);
@@ -867,6 +873,7 @@ function recompute(light = false) {
   });
   const free = layout.clampInfo.filter((c, i) => !c.mount || layout.bundle.some(B => !B.clampInfo[i]?.mount)).length;
   if (room && free) layout.warnings.push(`${free} Schelle(n) ohne Befestigung – keine Wand/Decke in Schellenhöhe (${fmt(f.clampH)} mm).`);
+  if (sceneFails.length) layout.errors.push(`${sceneFails.join(', ')}: Bezug nicht erfüllbar – kein Schenkel kann ausgleichen. Maß ändern oder Weg neu vorschlagen.`);
   layout.bends.forEach((b, j) => {
     const off = Math.abs(b.angle / ANGLE_STEP - Math.round(b.angle / ANGLE_STEP)) * ANGLE_STEP;
     if (off > 0.1) layout.warnings.push(`Biegung ${j + 1}: ${fmt(b.angle)}° liegt nicht im ${ANGLE_STEP}°-Raster.`);
@@ -1052,10 +1059,16 @@ async function printPlan() {
 let guidePipe = 0;
 function renderGuide() {
   const p = proj(), f = prof(p);
+  if (p.unrouted) {
+    const others = scenePipes(p).filter(q => q !== p && !q.unrouted);
+    $('#tab-guide').innerHTML = `${others.length ? `<label class="noprint" style="margin-bottom:10px">Rohr<select id="gPipe"><option selected>${esc(p.name)}</option>${others.map(q => `<option value="${q.id}">${esc(q.name)}</option>`).join('')}</select></label>` : ''}<div class="card">„${esc(p.name)}“ ist noch nicht verlegt: In 3D Endpunkt antippen und „Weg vorschlagen“ wählen.</div>`;
+    return;
+  }
   if (guidePipe > layout.bundle.length) guidePipe = 0;
   const L = guidePipe ? layout.bundle[guidePipe - 1] : layout, bends = L.bends;
   const doneKey = j => (guidePipe ? `${guidePipe}:${j}` : j);
-  let h = `<div class="guidebar noprint">
+  const pipesHere = scenePipes(p).filter(q => !q.unrouted || q === p);
+  let h = `${pipesHere.length > 1 ? `<label class="noprint" style="margin-bottom:10px">Rohr<select id="gPipe">${pipesHere.map(q => `<option value="${q.id}"${q.id === p.id ? ' selected' : ''}>${esc(q.name)}</option>`).join('')}</select></label>` : ''}<div class="guidebar noprint">
       <button id="gPrint">🖨 Drucken / PDF</button>
       ${'wakeLock' in navigator ? `<button id="gWake"${wakeLock ? ' class="on"' : ''}>☀ Bildschirm ${wakeLock ? 'bleibt an' : 'anlassen'}</button>` : ''}
       <button id="gBig"${document.body.classList.contains('bigtext') ? ' class="on"' : ''}>A+ Große Schrift</button>
@@ -1110,6 +1123,7 @@ function renderGuide() {
   $('#tab-guide').innerHTML = h;
 }
 
+$('#tab-guide').addEventListener('change', e => { if (e.target.id === 'gPipe') { db.currentId = e.target.value; fullRender(); } });
 $('#tab-guide').addEventListener('click', e => {
   const btn = e.target.closest('button');
   if (btn?.id === 'gPrint') { printPlan(); return; }
@@ -1155,16 +1169,31 @@ const curTool = () => db.profiles.find(x => x.id === toolProfId);
 function renderTools() {
   const f = curTool() || db.profiles[0];
   toolProfId = f.id;
+  const p = proj(), sc = scene(p);
   $('#tab-tools').innerHTML = `
   <div class="card">
+    <h3>Projekt</h3>
+    <div class="row2">
+      <label>Projektname<input id="sName" autocomplete="off" value="${esc(sc.name)}"></label>
+      <label>Rohrname<input id="sPipe" autocomplete="off" value="${esc(p.name)}"></label>
+    </div>
+    <label style="margin-bottom:10px">Zange für alle Rohre<select id="sProf">${db.profiles.map(x => `<option value="${x.id}"${x.id === p.profileId ? ' selected' : ''}>${esc(x.name)} · R ${fmt(x.R)}</option>`).join('')}</select></label>
+    <div class="row2">
+      <label>Zugabe Anfang (mm)<input id="sZugA" inputmode="decimal" placeholder="0" value="${fin(p.zugA)}"></label>
+      <label>Zugabe Ende (mm)<input id="sZugE" inputmode="decimal" placeholder="0" value="${fin(p.zugE)}"></label>
+    </div>
+    <div class="btnrow"><button id="pDup">Duplizieren</button><button id="pExport">Teilen / Export</button><button id="pImport">Import</button><button id="pDel" class="danger">Löschen</button></div>
+  </div>
+  <div class="card">
+    <h3>Zangen</h3>
     <label>Zange / Rohr-Profil<select id="tSel">${db.profiles.map(x => `<option value="${x.id}"${x.id === f.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
     <div class="btnrow" style="margin:10px 0 0"><button id="tNew">Neues Profil</button><button id="tDel" class="danger">Löschen</button></div>
   </div>
   <div class="card">${PF.filter(x => lab || !x[4]).map(([k, l, t, hlp]) => `<label style="margin-bottom:10px">${l}<input data-pf="${k}" data-t="${t}" ${t === 'num' ? 'inputmode="decimal"' : ''} value="${esc(t === 'num' ? fin(f[k]) : f[k])}">${hlp ? `<small>${hlp}</small>` : ''}</label>`).join('')}</div>
   <div class="card">
     <h3>Labor</h3>
-    <label class="chk"><input type="checkbox" id="labChk"${lab ? ' checked' : ''}> Raum, Wände &amp; Schellen (experimentell)</label>
-    <p class="hint" style="margin-bottom:0">Blendet den Reiter „Raum“, Schellen, Ziel-Anschluss sowie Montage und Material in der Anleitung ein. Ausgeschaltet bleiben die Daten erhalten, werden aber nicht gerechnet.</p>
+    <label class="chk"><input type="checkbox" id="labChk"${lab ? ' checked' : ''}> Rohr-Eingabe, Raum, Wände &amp; Schellen (experimentell)</label>
+    <p class="hint" style="margin-bottom:0">Blendet die Reiter „Rohr“ und „Raum“, Schellen, Ziel-Anschluss sowie Montage und Material in der Anleitung ein. Ausgeschaltet bleiben die Daten erhalten, werden aber nicht gerechnet.</p>
   </div>
   <div class="card">
     <h3>App</h3>
@@ -1175,7 +1204,10 @@ function renderTools() {
 const afterProfileChange = () => { save(); renderProjectBar(); recompute(); };
 
 $('#tab-tools').addEventListener('input', e => {
-  const el = e.target, f = curTool();
+  const el = e.target, f = curTool(), p = proj();
+  if (el.id === 'sName') { scene(p).name = el.value; save(); $('#projSel').selectedOptions[0].textContent = el.value; return; }
+  if (el.id === 'sPipe') { p.name = el.value; save(); return; }
+  if (el.id === 'sZugA' || el.id === 'sZugE') { const k = el.id === 'sZugA' ? 'zugA' : 'zugE'; commit(k); scenePipes(p).forEach(q => { q[k] = num(el.value); }); recompute(); return; }
   if (el.dataset.pf) {
     f[el.dataset.pf] = el.dataset.t === 'num' ? num(el.value) : el.value;
     if (el.dataset.pf === 'name') $('#tSel').selectedOptions[0].textContent = el.value;
@@ -1184,6 +1216,7 @@ $('#tab-tools').addEventListener('input', e => {
 });
 $('#tab-tools').addEventListener('change', e => {
   if (e.target.id === 'labChk') { setLab(e.target.checked); return; }
+  if (e.target.id === 'sProf') { commit(); scenePipes().forEach(q => { q.profileId = e.target.value; }); recompute(); return; }
   if (e.target.id === 'tSel') { toolProfId = e.target.value; renderTools(); }
 });
 $('#tab-tools').addEventListener('click', e => {
@@ -1191,6 +1224,10 @@ $('#tab-tools').addEventListener('click', e => {
   if (!b) return;
   const f = curTool();
   if (b.id === 'reloadBtn') { reloadApp(); return; }
+  if (b.id === 'pDup') { dupScene(); renderTools(); return; }
+  if (b.id === 'pDel') { delScene(); renderTools(); return; }
+  if (b.id === 'pExport') { exportProject(); return; }
+  if (b.id === 'pImport') { $('#pImportFile').click(); return; }
   if (b.id === 'tNew') {
     const n = { ...structuredClone(f), id: uid(), name: 'Neue Zange' };
     db.profiles.push(n); toolProfId = n.id; save(); renderTools(); renderProjectBar();
@@ -1218,7 +1255,9 @@ let fit = null, lastBase = null, view = null; // fit: gesperrte Grundskalierung 
 let extOpen = false, extHover = false;
 // startOpen: Pfeile am Griff des Rohranfangs offen, bundleSel: gewähltes Parallelrohr (Index in p.bundle)
 let startOpen = false, bundleSel = -1;
-const BUNDLE_GZ = ['start', 'bnew', 'bdist', 'brot'];
+const BUNDLE_GZ = ['start', 'bnew', 'bdist', 'brot', 'pt', 'plane', 'pmove'];
+// selPoint: gewählter Punkt { pid, w }, selPlane: gewählte Ebene, pointMove: Verschiebepfeile, pick: Maß wird festgelegt { key, to }
+let selPoint = null, selPlane = null, pointMove = false, pick = null;
 let sel = -1, selCorner = -1, drag = null; // gewählter Schenkel bzw. Eckpunkt (Schnittpunkt), laufendes Ziehen eines Anfassers
 let camTool = 'edit';      // 'edit' = Gimbal/Anfasser, 'clamp' = Schellen setzen
 function resetView(v = 'iso') {
@@ -1350,9 +1389,9 @@ function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
   // Projektion wie project(): Zeilen für Bildschirm-x, Bildschirm-y (nach unten) und Tiefe
   const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const rx = [cy, -sy, 0], ry = [-sy * sp, -cy * sp, -cp], rz = [sy * cp, cy * cp, -sp];
-  const opaque = new Float32Array(scene.opaque), trans = new Float32Array(scene.trans);
+  const opaque = new Float32Array(scene.opaque), trans = new Float32Array(scene.trans), refPl = new Float32Array(scene.refPl || []);
   let z0 = Infinity, z1 = -Infinity;
-  for (const arr of [opaque, trans]) for (let i = 0; i < arr.length; i += 9) {
+  for (const arr of [opaque, trans, refPl]) for (let i = 0; i < arr.length; i += 9) {
     const z = rz[0] * arr[i] + rz[1] * arr[i + 1] + rz[2] * arr[i + 2];
     if (z < z0) z0 = z; if (z > z1) z1 = z;
   }
@@ -1387,6 +1426,12 @@ function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
     gl.bufferData(gl.ARRAY_BUFFER, trans, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, trans.length / 9);
     gl.depthMask(true); gl.disable(gl.BLEND);
   }
+  if (refPl.length) { // Referenzebenen: sehr durchscheinend, Rohre bleiben davor und dahinter sichtbar
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+    gl.uniform1f(glp.uAlpha, 0.12);
+    gl.bufferData(gl.ARRAY_BUFFER, refPl, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, refPl.length / 9);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+  }
   glc.hidden = false;
   return true;
 }
@@ -1405,7 +1450,11 @@ function fitCanvas(c, g, W, H, dpr) {
 }
 
 // Anzeige-Schalter (je Gerät gespeichert)
-const VIS_DEFAULT = { dims: true, axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
+// Rohrfarben (mit Schalter im Anzeige-Menü abschaltbar)
+const PIPE_COLORS = [[0.13, 0.45, 0.85], [0.84, 0.2, 0.2], [0.15, 0.6, 0.33], [0.93, 0.55, 0.1], [0.55, 0.3, 0.8], [0.05, 0.63, 0.68], [0.85, 0.3, 0.6], [0.5, 0.38, 0.25]];
+const rgbCss = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
+const lighter = (c, t) => c.map(v => v + (1 - v) * t);
+const VIS_DEFAULT = { colors: true, refPlanes: true, dims: true, axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -1425,11 +1474,11 @@ function render3d() {
   if (S.length < 2) return;
   const p = proj(), f = prof(), pal = PAL[isDark() ? 'dark' : 'light'], dark = isDark();
   const room = layout.room, showRoom = !!room && (vis.planes || camTool === 'room');
-  const planes = showRoom ? layout.planes : [], ghosts = vis.ghosts ? layout.ghosts || [] : [];
+  const planes = showRoom ? layout.planes : [], ghosts = layout.ghosts || [];
   const pipes = [layout, ...layout.bundle];
 
   // Grenzen fürs Einpassen: Rohre, Ziel; im Raum-Werkzeug der ganze Raum
-  const fitPts = [...pipes.flatMap(L => L.samples.map(s => s.p)), ...(p.target ? [p.target] : [])];
+  const fitPts = [...pipes.flatMap(L => L.samples.map(s => s.p)), ...ghosts.flatMap(g => g.samples.map(s => s.p)), ...(p.target ? [p.target] : []), ...(vis.refPlanes ? scene(p).planes.flatMap(planeCorners) : [])];
   if (camTool === 'room' && room) room.outline.forEach(([x, y]) => { fitPts.push([x, y, room.z0 || 0], [x, y, (room.z0 || 0) + room.height]); });
   if (camTool === 'room' && roomDraw) roomDraw.pts.forEach(([x, y]) => fitPts.push([x, y, roomDraw.z0]));
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
@@ -1496,11 +1545,13 @@ function render3d() {
   // 3D-Szene: Rohre, Nachbarrohre im Raum, Schellen-Hülsen, Raumflächen
   const r = Math.max(f.D / 2, 2.5 / sc);
   const steel = dark ? [0.56, 0.6, 0.66] : [0.66, 0.7, 0.75], orange = [0.91, 0.36, 0.06];
-  const ghostCol = dark ? [0.36, 0.4, 0.46] : [0.82, 0.85, 0.89], clampCol = dark ? [0.85, 0.86, 0.9] : [0.2, 0.22, 0.26];
+  const ghostCol = dark ? [0.42, 0.46, 0.52] : [0.76, 0.79, 0.83], clampCol = dark ? [0.85, 0.86, 0.9] : [0.2, 0.22, 0.26];
   const opaque = [], add = (arr, out = opaque) => { for (let i = 0; i < arr.length; i++) out.push(arr[i]); };
   const bad = [0.88, 0.2, 0.2]; // nicht verlegbares Parallelrohr
-  pipes.forEach((L, k) => add(tubeMesh(L.samples, r, (a, b) => (k && (L.short || L.clash) ? bad : k === guidePipe && a.b >= 0 && a.b === b.b && a.b === highlight ? orange : steel))));
-  ghosts.forEach(g => add(tubeMesh(g.samples, Math.max(g.D / 2, 2.5 / sc), () => ghostCol)));
+  // Rohr 1 in Rohrfarbe (sonst Stahl), Parallelrohre dezent heller; die anderen Rohre der Szene treten zurück
+  const tone = vis.colors && p.color != null ? PIPE_COLORS[p.color] : steel, par = lighter(tone, dark ? 0.2 : 0.38);
+  (p.unrouted ? [] : pipes).forEach((L, k) => add(tubeMesh(L.samples, r, (a, b) => (k && (L.short || L.clash) ? bad : k === guidePipe && a.b >= 0 && a.b === b.b && a.b === highlight ? orange : k ? par : tone))));
+  ghosts.filter(g => !g.unrouted).forEach(g => add(tubeMesh(g.samples, Math.max(g.D / 2, 2.5 / sc), () => (vis.colors && g.color != null ? lighter(PIPE_COLORS[g.color], 0.35) : ghostCol))));
   const clampSets = pipes.map(L => L.clampInfo);
   if (vis.clamps) clampSets.flat().forEach(c => add(tubeMesh([{ p: V.sub(c.p, V.mul(c.t, 5)), b: -1 }, { p: V.add(c.p, V.mul(c.t, 5)), b: -1 }], r * 1.45 + 0.8, () => clampCol)));
   const trans = [], wallCol = [0.85, 0.74, 0.55], floorCol = [0.55, 0.62, 0.72];
@@ -1514,7 +1565,9 @@ function render3d() {
       add(quadMesh([pt(e[u][0], e[2][0]), pt(e[u][1], e[2][0]), pt(e[u][1], e[2][1]), pt(e[u][0], e[2][1])], n, wallCol), trans);
     }
   });
-  if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans })) {
+  const refPl = [];
+  if (vis.refPlanes) scene(p).planes.forEach(pl => { const n = [0, 0, 0]; n[pl.axis] = 1; add(quadMesh(planeCorners(pl), n, AX_RGB[pl.axis]), refPl); });
+  if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans, refPl })) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = tw; ctx.strokeStyle = css('--tube');
     pipes.forEach(L => { ctx.beginPath(); L.samples.forEach((s, i) => { const [x, y] = P3(s.p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); });
   }
@@ -1547,11 +1600,18 @@ function render3d() {
   }
 
   const ML = guidePipe ? layout.bundle[guidePipe - 1] || layout : layout; // Markierungen des Rohrs aus der Anleitung
-  if (vis.axis) {
+  // Noch nicht verlegte Rohre: gestrichelte Verbindung S → E
+  [...(p.unrouted ? [layout] : []), ...ghosts.filter(g => g.unrouted)].forEach(L => {
+    ctx.save(); ctx.setLineDash([7, 6]); ctx.lineWidth = 1.5; ctx.strokeStyle = cMuted;
+    ctx.beginPath(); ctx.moveTo(...P3(L.verts[0])); ctx.lineTo(...P3(L.verts.at(-1))); ctx.stroke(); ctx.restore();
+  });
+  if (vis.refPlanes) drawPlanesOverlay(P3);
+  if (vis.axis && !p.unrouted) {
     // Achslinie: durchgehend von Rohranfang über alle Schnittpunkte bis zum Rohrende, mit hellem Rand gut sichtbar auf dem Rohr
     const line = L => { ctx.beginPath(); L.verts.forEach((q, i) => { const [x, y] = P3(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); };
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    pipes.forEach(L => {
+    pipes.forEach((L, k) => {
+      if (k) { ctx.save(); ctx.globalAlpha = 0.55; line(L); ctx.strokeStyle = cAcc; ctx.lineWidth = 1.1; ctx.stroke(); ctx.restore(); return; } // Parallelrohre dezent
       line(L); ctx.strokeStyle = css('--card'); ctx.lineWidth = 4.5; ctx.stroke();
       line(L); ctx.strokeStyle = cAcc; ctx.lineWidth = 2.2; ctx.stroke();
       L.verts.slice(1, -1).forEach(q => { const [x, y] = P3(q); ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fillStyle = cAcc; ctx.fill(); ctx.strokeStyle = css('--card'); ctx.lineWidth = 1.5; ctx.stroke(); });
@@ -1567,8 +1627,8 @@ function render3d() {
   }
   dimHits = []; placed = [];
   pipeSegs = pipes.flatMap(L => L.verts.slice(1).map((q, k) => [...P3(L.verts[k]), ...P3(q)]));
-  if (vis.dims) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
-  if (vis.dims && camTool === 'edit') drawBundleDims(layout, P3);
+  if (vis.dims && !p.unrouted) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
+  if (vis.dims && camTool === 'edit') { drawBundleDims(layout, P3); drawRefDims(P3); }
   if (vis.total) drawTotal(layout, P3, tw);
   if (vis.angles) drawAngles(ML, P3);
 
@@ -1859,6 +1919,7 @@ function editGap(d) {
 }
 function editDim(d) {
   if (d.bgap != null) { editGap(d); return; }
+  if (d.robj) { editRef(d); return; }
   const p = proj();
   if (layout.verts.length !== p.deltas.length + 1 && p.mode === 'deltas') { selectLeg(d.i, true); return; }
   ensureDeltas();
@@ -2014,12 +2075,12 @@ function drawEditOverlay(P3, cAcc) {
 
 // Eckpunkt (Schnittpunkt zwischen Schenkel i-1 und i) antippen: nur dort erscheinen die Drehringe
 function selectCorner(i) {
-  sel = -1; selCorner = i; bundleSel = -1;
+  sel = -1; selCorner = i; bundleSel = -1; clearSel();
   $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
 function selectBundle(i) {
-  sel = -1; selCorner = -1; bundleSel = i;
+  sel = -1; selCorner = -1; bundleSel = i; clearSel();
   $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
@@ -2034,7 +2095,7 @@ function hitCorner(x, y) {
 const DIR_OPTS = Array.from({ length: 360 / ANGLE_STEP }, (_, k) => k * ANGLE_STEP);
 // Auswahl zeigt den Gimbal; das Eingabefeld nur auf Wunsch („✎ Maße“)
 function selectLeg(i, openPanel = false) {
-  sel = i; selCorner = -1; bundleSel = -1; renderBundleBar();
+  sel = i; selCorner = -1; bundleSel = -1; clearSel(); renderBundleBar();
   $('#legPanel').hidden = !(openPanel && i >= 0);
   $('#addLegView').hidden = $('#offLegView').hidden = i < 0 || openPanel;
   if (openPanel && i >= 0) fillPanel();
@@ -2129,7 +2190,7 @@ let gizmo = [], gz = null;
 
 function setDelta(i, v) {
   const z = c => (Math.abs(c) < 1e-9 ? 0 : c), o = proj().deltas[i] || {};
-  proj().deltas[i] = { ...(o.lock ? { lock: true } : {}), ...(o.flex ? { flex: true } : {}), x: z(v[0]), y: z(v[1]), z: z(v[2]) };
+  proj().deltas[i] = { ...(o.lock ? { lock: true } : {}), ...(o.flex ? { flex: true } : {}), ...(o.ref ? { ref: o.ref } : {}), x: z(v[0]), y: z(v[1]), z: z(v[2]) };
 }
 
 // ---------- Ende fixiert: Ausgleich über freie Schenkel ----------
@@ -2139,8 +2200,8 @@ function setDelta(i, v) {
 const endOf = p => points(p).at(-1);
 let adjusted = { set: new Set(), t: 0 }; // zuletzt ausgeglichene Schenkel (kurz orange, Maße in Klammern)
 function legMinLen(j, n) {
-  const p = proj(), direct = layout && layout.verts.length === p.deltas.length + 1;
-  const T = k => (direct && layout.bends[k] ? layout.bends[k].T : prof(p).R);
+  const p = proj(), L = computeLayout(points(p), { R: prof(p).R }), direct = L.verts.length === p.deltas.length + 1;
+  const T = k => (direct && L.bends[k] ? L.bends[k].T : prof(p).R);
   return (j > 0 ? T(j - 1) : 0) + (j < n - 1 ? T(j) : 0) + (j > 0 && j < n - 1 ? prof(p).minStraight || 0 : 0);
 }
 // Kleinste Längenänderungen c (je Kandidat) mit Σ c·u = diff; Kandidaten werden nur aufgenommen, wenn sie den Rest verkleinern
@@ -2168,15 +2229,15 @@ function solveLengths(diff, pool) {
   }
   return { S, c: cur.c, ok: V.len(cur.res) < 0.01, res: cur.res };
 }
-function keepEnd(p, edited, E0) {
-  if (!p.endFixed || p.deltas.length < 2 || !E0) return { ok: true, changed: [] };
+function keepEnd(p, edited, E0, force = false) {
+  if ((!p.endFixed && !force) || p.deltas.length < 2 || !E0) return { ok: true, changed: [] };
   const diff = V.sub(E0, endOf(p));
   if (V.len(diff) < 0.01) return { ok: true, changed: [] };
   const n = p.deltas.length;
   const order = j => (j > edited ? j - edited : 1000 + edited - j);
   const legs = p.deltas.map((d, j) => { const v = deltaVec(d), L = V.len(v); return { j, L, u: L > 1e-9 ? V.mul(v, 1 / L) : null, d }; })
     .filter(l => l.j !== edited && l.u && !l.d.lock).sort((a, b) => order(a.j) - order(b.j));
-  let last = null;
+  let last = null, tooShort = false;
   for (const pool0 of [legs.filter(l => l.d.flex), legs]) {
     let pool = [...pool0];
     for (let tries = 0; tries <= pool0.length && pool.length; tries++) {
@@ -2189,10 +2250,11 @@ function keepEnd(p, edited, E0) {
         r.S.forEach((l, k) => setDelta(l.j, V.mul(l.u, l.L + r.c[k])));
         return { ok: true, changed: r.S.map(l => l.j) };
       }
+      tooShort = true;
       pool = pool.filter(l => l !== r.S[bad]);
     }
   }
-  const miss = last && !last.ok ? dirName(V.norm(last.res)) : null;
+  const miss = last && !last.ok && !tooShort ? dirName(V.norm(last.res)) : null;
   return { ok: false, reason: miss ? `Ende fixiert: kein freier Schenkel, der ${miss === 'oben' || miss === 'unten' ? 'die Höhe' : `in Richtung ${miss}`} ausgleichen kann – Schenkel freigeben, einfügen oder Ende lösen.`
     : 'Ende fixiert: Die Ausgleichsschenkel würden zu kurz – Ende lösen oder anderen Schenkel freigeben.' };
 }
@@ -2279,6 +2341,9 @@ function extCandidates(E, d) {
 
 function drawGizmo() {
   gizmo = [];
+  // Leiste sitzt direkt über den Knöpfen, auch wenn diese zweizeilig werden
+  const bbar = $('#bundleBar');
+  if (!bbar.hidden) bbar.style.bottom = `${$('#viewwrap').getBoundingClientRect().bottom - $('.viewacts').getBoundingClientRect().top + 6}px`;
   const pts = points(proj()), n = pts.length - 1, sc = view.sc, P3 = view.P3, cAcc = css('--accent');
   if (n < 1) return;
   if (sel >= n) sel = -1;
@@ -2290,6 +2355,7 @@ function drawGizmo() {
   }
 
   if (!gz || BUNDLE_GZ.includes(gz.type)) drawStartHandle();
+  if (!gz || gz.type === 'pmove') drawSceneHandles();
 
   // Fortführen: Hilfspfeile (blass, beim Ziehen die gewählte Richtung kräftig) + Griff am Ende
   if (!gz || gz.type === 'ext') {
@@ -2357,7 +2423,7 @@ function drawStartHandle() {
   if (verts.length < 2) return;
   const A = verts[0], d0 = V.norm(V.sub(verts[1], A)), [ax, ay] = P3(A), mmPx = v => { const [x, y] = P3(V.add(A, V.mul(v, 100))); return [(x - ax) / 100, (y - ay) / 100]; };
   if (bundleSel >= 0 && layout.bundle[bundleSel]) { ctx.save(); ctx.globalAlpha = 0.3; polyline(layout.bundle[bundleSel].verts.map(q => P3(q)), cAcc, 16); ctx.restore(); }
-  if (startOpen && (!gz || gz.type === 'bnew')) {
+  if (selPoint?.pid === p.id && selPoint.w === 'S' && startOpen && (!gz || gz.type === 'bnew')) {
     [0, 1, 2, 3].forEach(k => {
       const v = sideDir(verts, k), [mx, my] = mmPx(v), l = Math.hypot(mx, my);
       if (l < view.sc * 0.2) return; // Richtung zeigt in die Ansicht hinein
@@ -2368,7 +2434,7 @@ function drawStartHandle() {
       if (!gz) gizmo.push({ type: 'bnew', side: k, seg: [ax + ux * 18, ay + uy * 18, ax + ux * 60, ay + uy * 60], pxPerMm: [mx, my] });
     });
   }
-  if (startOpen && p.bundle.length && (!gz || gz.type === 'brot')) {
+  if (selPoint?.pid === p.id && selPoint.w === 'S' && startOpen && p.bundle.length && (!gz || gz.type === 'brot')) {
     const q = sideDir(verts, 0), w = sideDir(verts, 1), r = 74 / view.sc, ring = ringPts(A, q, w, r, 0, 360, 4);
     const xs = ring.map(c => c[0]), ys = ring.map(c => c[1]);
     if (Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) >= 14) { // von der Kante gesehen nicht bedienbar
@@ -2425,6 +2491,8 @@ function gzStart(g, e) {
   fit = lastBase;
   if (BUNDLE_GZ.includes(g.type)) {
     gz.bOrig = structuredClone(p.bundle); gz.As = view.P3(layout.verts[0]);
+    if (g.type === 'pmove') { gz.sOrig = sceneState(p); gz.dOrig = structuredClone(p.deltas); gz.oOrig = [...p.origin]; gz.v0 = g.key[0] === 'R' ? planeById(g.key.slice(2)).c : nodePos(g.key)[g.k]; }
+    gz.gx = lx; gz.gy = ly;
     if (g.type === 'bnew') gz.base = p.bundle.filter(b => b.side === g.side).at(-1)?.dist || 0;
     if (g.type === 'brot') { gz.A = layout.verts[0]; gz.r = 74 / view.sc; gz.t0 = ringAngle(g.q, g.w, 0, 359, lx, ly); }
     return;
@@ -2537,6 +2605,15 @@ function shiftBundle(bs, orig, i, delta) {
 function bundleMove(lx, ly) {
   const p = proj(), D = prof(p).D;
   if (!gz.moved) return;
+  if (gz.type === 'pmove') {
+    gzChanged();
+    restoreSceneState(p, gz.sOrig); p.deltas = structuredClone(gz.dOrig); p.origin = [...gz.oOrig];
+    const [mx, my] = gz.pxPerMm, dx = gz.px - gz.gx, dy = gz.py - gz.gy, v = Math.round(gz.v0 + (dx * mx + dy * my) / (mx * mx + my * my));
+    const ok = setNodeCoord(gz.key, gz.k, v);
+    gz.label = ok ? `${'XYZ'[gz.k]} ${fmt(v)}` : 'So nicht möglich – kein Schenkel kann ausgleichen';
+    recompute(true);
+    return;
+  }
   if (gz.type === 'bnew') {
     gzChanged();
     if (gz.newI == null) { p.bundle.push({ id: uid(), side: gz.side, dist: gz.base + D + 1 }); gz.newI = p.bundle.length - 1; }
@@ -2558,7 +2635,9 @@ function bundleMove(lx, ly) {
 }
 function bundleEnd(g) {
   const p = proj();
-  if (g.type === 'start' && !g.moved) { startOpen = !startOpen; bundleSel = -1; }
+  if (g.type === 'start' && !g.moved) { if (pick) pickNode(`S:${p.id}`); else selectPoint(p.id, 'S'); }
+  else if (g.type === 'pt' && !g.moved) { if (pick) pickNode(`${g.w}:${g.pid}`); else selectPoint(g.pid, g.w); }
+  else if (g.type === 'plane' && !g.moved) { if (pick) pickNode(`R:${g.id}`); else selectPlane(g.id); }
   else if (g.type === 'bnew' && !g.moved) { commit(null, g.before); p.bundle.push({ id: uid(), side: g.side, dist: nextBundleDist(p, g.side) }); }
   else if (g.type === 'bdist' && !g.moved) { selectBundle(g.i); }
   if (!isOrtho()) fit = null;
@@ -2570,9 +2649,9 @@ function gzEnd() {
   if (BUNDLE_GZ.includes(g.type)) { bundleEnd(g); return; }
   if (g.fail) toast(g.fail);
   // Antippen eines Hilfspfeils = neuer Schenkel in diese Richtung
-  if (g.type === 'ext' && !g.moved && !g.a) { // Griff nur angetippt: Pfeile ein-/ausblenden
-    extOpen = !extOpen;
-  } else if (g.type === 'ext') extOpen = true; // nach dem Fortführen bleiben die Pfeile für den nächsten Schenkel
+  const endTap = g.type === 'ext' && !g.moved && !g.a; // Griff nur angetippt: Punkt wählen, Pfeile ein-/ausblenden
+  if (endTap) extOpen = pick ? extOpen : !extOpen;
+  else if (g.type === 'ext') { extOpen = true; if (g.moved || g.a) p.unrouted = false; } // nach dem Fortführen bleiben die Pfeile für den nächsten Schenkel
   if (g.type === 'ext' && !g.moved && g.a) {
     commit(null, g.before);
     p.deltas = structuredClone(g.orig);
@@ -2587,6 +2666,7 @@ function gzEnd() {
   // Nach dem Fortführen nichts auswählen, damit gleich weitergezogen werden kann
   if (g.type === 'rot' || g.type === 'bend') selectCorner(g.i); // Ringe bleiben am Eckpunkt
   else selectLeg(g.type === 'ext' ? -1 : g.idx ?? g.i);
+  if (endTap) { if (pick) pickNode(`E:${p.id}`); else selectPoint(p.id, 'E'); }
 }
 
 // ---------- Einrasten an Wand und Ziel ----------
@@ -2913,6 +2993,12 @@ function hitBundle(x, y) {
   layout.bundle.forEach((L, i) => { const d = near(L); if (d < bd) { bd = d; best = i; } });
   return best;
 }
+// Anderes Rohr der Szene unter dem Finger → dessen Kennung
+function hitGhost(x, y) {
+  let best = null, bd = hitTol(14);
+  for (const g of layout.ghosts || []) g.verts.slice(1).forEach((q, k) => { const d = segDist(x, y, ...view.P3(g.verts[k]), ...view.P3(q)); if (d < bd) { bd = d; best = g.id; } });
+  return best;
+}
 function hitLeg(x, y) {
   const pts = points(proj());
   let best = -1, bd = hitTol(18);
@@ -2988,11 +3074,15 @@ cv.addEventListener('pointerup', e => {
   if (pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
     extOpen = false; startOpen = false;
+    if (pick) { pick = null; renderBundleBar(); return; }
     const dim = camTool === 'edit' ? hitDim(lx, ly) : null, corner = camTool === 'edit' && !dim ? hitCorner(lx, ly) : -1;
     if (dim) editDim(dim);
     else if (camTool === 'room') roomTap(lx, ly);
     else if (corner >= 1) selectCorner(corner);
-    else if (camTool === 'edit') { const b = hitBundle(lx, ly); if (b >= 0) selectBundle(b); else selectLeg(hitLeg(lx, ly)); }
+    else if (camTool === 'edit') {
+      const unr = proj().unrouted, b = hitBundle(lx, ly), g = b < 0 && (unr || hitLeg(lx, ly) < 0) ? hitGhost(lx, ly) : null;
+      if (b >= 0) selectBundle(b); else if (g) { db.currentId = g; highlight = -1; fullRender(); } else selectLeg(unr ? -1 : hitLeg(lx, ly));
+    }
   } else if (camTool === 'room' && roomDraw && pt && e.pointerType !== 'mouse') roomHover(...local(e));
 });
 cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); if (clampDrag) clampUp(); if (roomDrag) roomUp(); if (gz) gzEnd(); if (drag) endDrag(); });
@@ -3020,23 +3110,24 @@ function setLab(on) {
   lab = on;
   try { localStorage.setItem('biege.lab', on ? '1' : '0'); } catch {}
   document.body.classList.toggle('lab', on);
-  if (!on) { setTool('edit'); $('#visPop').hidden = true; }
+  if (!on) { setTool('edit'); $('#visPop').hidden = true; if (['input', 'room'].includes(document.body.dataset.tab)) showTab('tools'); }
   shown = null; fit = null;
   recompute(); renderTools();
 }
 
 // ---------- Reiter ----------
-$('.tabbar').addEventListener('click', e => {
-  const t = e.target.closest('button')?.dataset.tab;
-  if (!t) return;
+function showTab(t) {
   $$('.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
   if (t === 'tools') renderTools();
   if (t === 'room') renderRoomTab();
   if (t === 'input') requestAnimationFrame(drawMini);
+  document.body.dataset.tab = t;
   window.scrollTo(0, 0);
   draw();
-});
+}
+$('.tabbar').addEventListener('click', e => { const t = e.target.closest('button')?.dataset.tab; if (t) showTab(t); });
+document.body.dataset.tab = 'view';
 
 // ---------- Versatz / Etage ----------
 // Winkel + Versatz eingeben; Schräge (Achsmaß) = Versatz / sin α, Länge in Laufrichtung = Versatz / tan α.
@@ -3197,10 +3288,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) chec
 // Auf dem iPhone über das Teilen-Menü (AirDrop, Dateien, Mail …), sonst als Download.
 async function exportProject() {
   const p = proj();
-  const projects = [p];
+  const projects = scenePipes(p), scenes = [scene(p)];
   const profiles = db.profiles.filter(f => projects.some(q => q.profileId === f.id));
   const rooms = db.rooms.filter(r => projects.some(q => q.roomId === r.id));
-  const data = { format: 'rohrbiegen', version: 2, app: APP_VERSION, exported: new Date().toISOString(), projects, profiles, rooms };
+  const data = { format: 'rohrbiegen', version: 2, app: APP_VERSION, exported: new Date().toISOString(), projects, profiles, rooms, scenes };
   const name = `${p.name.replace(/[^\wäöüÄÖÜß -]+/g, '').trim() || 'Rohr'}.rohrbiegen.json`;
   const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
   try {
@@ -3226,21 +3317,27 @@ async function importFile(file) {
   // Räume bekommen neue IDs; ältere Dateien (Version 1) bringen Flächen mit, die migrate() in Räume umwandelt
   const roomMap = {};
   (data.rooms || []).forEach(r => { const n = { ...structuredClone(r), id: uid() }; db.rooms.push(n); roomMap[r.id] = n.id; });
+  // Szenen bekommen neue IDs; ältere Dateien ohne Szenen ergeben je Rohr eine eigene Szene (migrate)
+  const sceneMap = {};
+  (data.scenes || []).forEach(sc => { const n = { ...structuredClone(sc), id: uid() }; db.scenes.push(n); sceneMap[sc.id] = n.id; });
   const added = data.projects.map(q => {
-    const n = { ...structuredClone(q), id: uid() };
+    const n = { ...structuredClone(q), id: uid(), sceneId: sceneMap[q.sceneId] || null };
     n.profileId = profMap[q.profileId] || db.profiles[0].id;
     if (q.roomId) n.roomId = roomMap[q.roomId] || null;
     return n;
   });
+  // Bezüge zeigen auf Rohre: auf die neuen IDs umschreiben
+  const ids = Object.fromEntries(data.projects.map((q, i) => [q.id, added[i].id]));
+  const fix = r => { if (r) r.to = r.to.replace(/^([SE]):(.+)$/, (m, w, id) => `${w}:${ids[id] || id}`); };
+  added.forEach(n => ['S', 'E'].forEach(w => n.refs?.[w]?.forEach(fix)));
+  Object.values(sceneMap).forEach(id => db.scenes.find(x => x.id === id).planes?.forEach(pl => fix(pl.ref)));
   db.projects.push(...added);
   migrate(db);
   db.currentId = added[0].id;
   fullRender(); resetView();
-  alert(`${added.length} Projekt(e) importiert.`);
+  alert(`${added.length} Rohr(e) importiert.`);
 }
 
-$('#pExport').addEventListener('click', exportProject);
-$('#pImport').addEventListener('click', () => $('#pImportFile').click());
 $('#pImportFile').addEventListener('change', e => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; });
 
 // ---------- Vorschau im Reiter „Eingabe“ ----------
@@ -3319,6 +3416,322 @@ function drawMini() {
 mini.addEventListener('click', () => $('[data-tab=view]').click());
 new ResizeObserver(() => drawMini()).observe(mini);
 
+// ---------- Punkte, Ebenen, Abhängigkeiten ----------
+// Knoten: S:<rohr> / E:<rohr> = Rohranfang/-ende, R:<ebene> = Referenzebene.
+// Je Achse hat ein Punkt höchstens einen Bezug { to, off }: Koordinate = Bezug + Maß. Ebenen haben nur ihre Normalenachse,
+// Schenkel können über d.ref an einer Ebene hängen. Kreise werden abgelehnt, damit das Ergebnis immer eindeutig bleibt.
+const noPipe = q => scenePipes(q).indexOf(q) + 1;
+const pipeById = id => db.projects.find(q => q.id === id);
+const planeById = id => scene().planes.find(x => x.id === id);
+const planeNo = pl => scene().planes.indexOf(pl) + 1;
+const nodeName = key => { const [w, id] = key.split(':'); return w === 'R' ? `R${planeNo(planeById(id))}` : `${w}${noPipe(pipeById(id))}`; };
+const nodePos = key => { const [w, id] = key.split(':'), q = pipeById(id); return w === 'S' ? points(q)[0] : endOf(q); };
+const nodeVal = (key, k) => (key[0] === 'R' ? planeById(key.slice(2)).c : nodePos(key)[k]);
+const nodeExists = key => (key[0] === 'R' ? !!planeById(key.slice(2)) : !!pipeById(key.slice(2)));
+const pointRefs = (q, w) => (q.refs ||= { S: [null, null, null], E: [null, null, null] })[w];
+function refOfNode(key, k) {
+  const [w, id] = key.split(':');
+  if (w === 'R') { const pl = planeById(id); return pl?.axis === k ? pl.ref : null; }
+  return pipeById(id)?.refs?.[w]?.[k] || null;
+}
+function refCycle(from, k, goal) { for (let n = from, g = 0; n && g < 99; g++) { if (n === goal) return true; n = refOfNode(n, k)?.to; } return false; }
+function withPipe(q, fn) { const c = db.currentId; db.currentId = q.id; try { return fn(); } finally { db.currentId = c; } }
+// Punkt setzen: Start verschiebt das Rohr nicht, sondern der andere Punkt bleibt stehen und die Schenkel gleichen aus
+function setPoint(q, w, tgt) {
+  const S = points(q)[0], E = endOf(q);
+  if (scene(q).moveWhole && w === 'S') { q.origin = [...tgt]; return true; }
+  if (q.unrouted || q.deltas.length < 2) {
+    const a = w === 'S' ? tgt : S, b = w === 'S' ? E : tgt, v = V.sub(b, a);
+    if (V.len(v) < 1) return false;
+    q.origin = [...a]; q.deltas = [{ ...(q.deltas[0]?.lock ? { lock: true } : {}), x: v[0], y: v[1], z: v[2] }];
+    return true;
+  }
+  const before = structuredClone(q.deltas), o0 = q.origin;
+  return withPipe(q, () => {
+    if (w === 'S') q.origin = [...tgt];
+    const r = keepEnd(q, -1, w === 'S' ? E : tgt, true);
+    if (!r.ok) { q.deltas = before; q.origin = o0; }
+    return r.ok;
+  });
+}
+// Schenkel j an Ebene: Lage ändern, die Nachbarschenkel gleichen aus
+function alignLeg(q, j) {
+  const d = q.deltas[j], pl = planeById(d.ref.plane), n = q.deltas.length;
+  if (!pl || j < 1 || j > n - 2) return false;
+  const key = 'xyz'[pl.axis], cur = points(q)[j][pl.axis], dv = pl.c + d.ref.off - cur;
+  if (Math.abs(dv) < 0.01) return false;
+  q.deltas[j - 1][key] += dv; q.deltas[j + 1][key] -= dv;
+  return true;
+}
+// Alle Bezüge der Szene erfüllen; was nicht geht (Schenkel zu kurz, kein Ausgleich), bleibt stehen und wird gemeldet
+function resolveScene(p = proj()) {
+  const sc = scene(p), pipes = scenePipes(p), failed = new Set();
+  for (let pass = 0, again = true; again && pass < 8; pass++) {
+    again = false;
+    sc.planes.forEach(pl => {
+      if (!pl.ref || !nodeExists(pl.ref.to)) return;
+      const v = nodeVal(pl.ref.to, pl.axis) + pl.ref.off;
+      if (Math.abs(v - pl.c) > 0.01) { pl.c = v; again = true; }
+    });
+    pipes.forEach(q => {
+      for (const w of ['S', 'E']) {
+        const refs = q.refs?.[w];
+        if (!refs || failed.has(w + q.id)) continue;
+        const tgt = [...(w === 'S' ? points(q)[0] : endOf(q))]; let moved = false;
+        refs.forEach((r, k) => { if (r && nodeExists(r.to)) { const v = nodeVal(r.to, k) + r.off; if (Math.abs(v - tgt[k]) > 0.01) { tgt[k] = v; moved = true; } } });
+        if (moved) { if (setPoint(q, w, tgt)) again = true; else failed.add(w + q.id); }
+      }
+      q.deltas.forEach((d, j) => { if (d.ref && alignLeg(q, j)) again = true; });
+    });
+  }
+  sceneFails = [...failed].map(k => `${k[0]}${noPipe(pipeById(k.slice(1)))}`);
+}
+let sceneFails = [];
+// Zustand aller Rohre und Ebenen – für Rückgängig und fürs Ziehen
+const sceneState = p => ({ pipes: scenePipes(p).filter(q => q !== p).map(q => ({ id: q.id, origin: q.origin, deltas: q.deltas, refs: q.refs, unrouted: q.unrouted })), planes: scene(p).planes });
+function restoreSceneState(p, st) {
+  scene(p).planes = structuredClone(st.planes);
+  st.pipes.forEach(o => { const q = pipeById(o.id); if (q) Object.assign(q, structuredClone(o)); });
+}
+
+// Rechtwinklige Wege von S nach E: je Achse eine Gerade, in jeder Reihenfolge
+function routeOptions(rel) {
+  const axes = [0, 1, 2].filter(k => Math.abs(rel[k]) > 0.5);
+  const perms = a => (a.length < 2 ? [a] : a.flatMap((x, i) => perms([...a.slice(0, i), ...a.slice(i + 1)]).map(r => [x, ...r])));
+  return axes.length ? perms(axes) : [];
+}
+function applyRoute(p, next) {
+  const rel = V.sub(endOf(p), points(p)[0]), ways = routeOptions(rel);
+  if (!ways.length) return;
+  commit();
+  p.routeIdx = ((p.routeIdx || 0) + (next ? 1 : 0)) % ways.length;
+  p.deltas = ways[p.routeIdx].map(k => { const v = [0, 0, 0]; v[k] = rel[k]; return { x: v[0], y: v[1], z: v[2] }; });
+  p.unrouted = false; p.bundleTx = []; p.done = {};
+  renderInputs(); recompute();
+}
+
+// Auswahl
+function clearSel() { selPoint = null; selPlane = null; pointMove = false; }
+function selectPoint(pid, w) {
+  if (pid !== db.currentId) { db.currentId = pid; highlight = -1; fullRender(); }
+  sel = -1; selCorner = -1; bundleSel = -1; startOpen = false;
+  selPlane = null; pointMove = false; selPoint = { pid, w };
+  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  renderBundleBar(); draw();
+}
+function selectPlane(id) {
+  sel = -1; selCorner = -1; bundleSel = -1; startOpen = false; selPoint = null; pointMove = false; selPlane = id;
+  $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
+  renderBundleBar(); draw();
+}
+// Maß festlegen: Quelle gewählt, jetzt wird das Gegenstück angetippt
+function pickNode(key) {
+  if (!pick || key === pick.key) return;
+  const srcPlane = pick.key[0] === 'R' ? planeById(pick.key.slice(2)) : null, dstPlane = key[0] === 'R' ? planeById(key.slice(2)) : null;
+  if (srcPlane && dstPlane && srcPlane.axis !== dstPlane.axis) { toast('Ebenen lassen sich nur an parallelen Ebenen ausrichten.'); return; }
+  if (srcPlane || dstPlane) { addRef(pick.key, (srcPlane || dstPlane).axis, key); return; }
+  pick.to = key;
+  renderBundleBar();
+}
+function addRef(src, k, to) {
+  if (refOfNode(src, k)) { toast(`${nodeName(src)} hat in ${'XYZ'[k]} schon einen Bezug – erst dort löschen.`); return; }
+  if (refCycle(to, k, src)) { toast('Das ergäbe einen Kreis: Dieser Punkt hängt schon davon ab.'); return; }
+  commit();
+  const off = r1(nodeVal(src, k) - nodeVal(to, k)), r = { to, off };
+  if (src[0] === 'R') planeById(src.slice(2)).ref = r;
+  else { const [w, id] = src.split(':'); pointRefs(pipeById(id), w)[k] = r; }
+  pick = null;
+  recompute();
+}
+function dropRef(src, k) {
+  commit();
+  if (src[0] === 'R') planeById(src.slice(2)).ref = null;
+  else { const [w, id] = src.split(':'); pipeById(id).refs[w][k] = null; }
+  recompute();
+}
+// Koordinate eines Punkts setzen: mit Bezug ändert sich das Maß, ohne Bezug der Punkt selbst
+function setNodeCoord(key, k, v) {
+  const r = refOfNode(key, k);
+  if (r) { r.off = r1(v - nodeVal(r.to, k)); return true; }
+  if (key[0] === 'R') { planeById(key.slice(2)).c = v; return true; }
+  const [w, id] = key.split(':'), q = pipeById(id), tgt = [...nodePos(key)];
+  tgt[k] = v;
+  return setPoint(q, w, tgt);
+}
+function renderSceneBar(bar) {
+  const p = proj(), sc = scene(p), xyz = key => [0, 1, 2].map(k => `<button data-pk="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(nodePos(key)[k])}</button>`).join('');
+  if (pick?.to) {
+    bar.innerHTML = `<span>${nodeName(pick.key)} an ${nodeName(pick.to)}, Achse:</span>${[0, 1, 2].map(k => `<button data-pa="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(Math.abs(nodeVal(pick.key, k) - nodeVal(pick.to, k)))}</button>`).join('')}<button data-pc="1">Abbrechen</button>`;
+  } else if (pick) {
+    bar.innerHTML = `<span>${nodeName(pick.key)}: zweiten Punkt oder Ebene antippen</span><button data-pc="1">Abbrechen</button>`;
+  } else if (selPlane && planeById(selPlane)) {
+    const pl = planeById(selPlane), key = `R:${pl.id}`;
+    bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span><button data-plk="c" class="ax-${'xyz'[pl.axis]}-b">${'XYZ'[pl.axis]} ${fmt(pl.c)}</button><button data-plk="w">B ${fmt(pl.w)}</button><button data-plk="h">H ${fmt(pl.h)}</button><button data-pm="${key}">Maß</button><button data-bb="pldel" class="danger">Löschen</button>`;
+  } else if (selPoint && pipeById(selPoint.pid)) {
+    const q = pipeById(selPoint.pid), key = `${selPoint.w}:${q.id}`, isS = selPoint.w === 'S', ways = routeOptions(V.sub(endOf(q), points(q)[0])).length;
+    bar.innerHTML = `<span>${nodeName(key)}</span>${isS ? `<button data-bb="par"${startOpen ? ' class="on"' : ''}>Parallelrohr</button>` : ''}<button data-bb="move"${pointMove ? ' class="on"' : ''}>Verschieben</button>${pointMove ? xyz(key) + (isS ? `<button data-bb="whole"${sc.moveWhole ? ' class="on"' : ''}>Rohr mitnehmen</button>` : '') : ''}<button data-pm="${key}">Maß</button>${ways ? `<button data-bb="route">${q.unrouted ? 'Weg vorschlagen' : 'Anderer Weg'}</button>` : ''}${q.unrouted && scenePipes(q).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
+  } else return false;
+  bar.hidden = false;
+  return true;
+}
+$('#bundleBar').addEventListener('click', e => {
+  const b = e.target.closest('button'), p = proj(), ds = b?.dataset;
+  if (!b) return;
+  if (ds.pc) { pick = null; renderBundleBar(); return; }
+  if (ds.pm) { pick = { key: ds.pm }; renderBundleBar(); return; }
+  if (ds.pa != null) { addRef(pick.key, +ds.pa, pick.to); renderBundleBar(); return; }
+  const barBox = () => { const r = b.getBoundingClientRect(), c = cv.getBoundingClientRect(); return { x: r.left + r.width / 2 - c.left, y: r.top - 30 - c.top }; };
+  const askNum = (val, set) => {
+    const { inp, close } = dimBox(barBox(), val);
+    inp.focus({ preventScroll: true }); inp.select();
+    let done = false;
+    const finish = ok => {
+      if (done) return; done = true;
+      const raw = inp.value.trim(), v = num(raw);
+      close();
+      if (ok && raw !== '') { commit(); if (!set(v)) toast('So nicht möglich: Der andere Punkt steht fest und kein Schenkel kann ausgleichen.'); renderInputs(); recompute(); }
+      renderBundleBar(); draw();
+    };
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') finish(true); else if (ev.key === 'Escape') finish(false); ev.stopPropagation(); });
+    inp.addEventListener('blur', () => finish(true));
+  };
+  if (ds.pk != null) { const key = `${selPoint.w}:${selPoint.pid}`, k = +ds.pk; askNum(nodePos(key)[k], v => setNodeCoord(key, k, v)); return; }
+  if (ds.plk) {
+    const pl = planeById(selPlane), f = ds.plk;
+    askNum(pl[f], v => { if (f === 'c') return setNodeCoord(`R:${pl.id}`, pl.axis, v); if (v < 50) return false; pl[f] = v; return true; });
+    return;
+  }
+  if (ds.bb === 'par') { startOpen = !startOpen; renderBundleBar(); draw(); }
+  else if (ds.bb === 'move') { pointMove = !pointMove; renderBundleBar(); draw(); }
+  else if (ds.bb === 'whole') { const sc = scene(p); sc.moveWhole = !sc.moveWhole; renderBundleBar(); save(); }
+  else if (ds.bb === 'route') applyRoute(p, !p.unrouted);
+  else if (ds.bb === 'pldel') {
+    commit();
+    const id = selPlane, sc = scene(p);
+    sc.planes = sc.planes.filter(x => x.id !== id);
+    sc.planes.forEach(x => { if (x.ref?.to === `R:${id}`) x.ref = null; });
+    scenePipes(p).forEach(q => { ['S', 'E'].forEach(w => q.refs?.[w]?.forEach((r, k) => { if (r?.to === `R:${id}`) q.refs[w][k] = null; })); q.deltas.forEach(d => { if (d.ref?.plane === id) delete d.ref; }); });
+    selPlane = null; recompute();
+  } else if (ds.la) {
+    const pl = planeById(ds.la), d = p.deltas[sel];
+    commit(); d.ref = { plane: pl.id, off: r1(points(p)[sel][pl.axis] - pl.c) }; recompute(); toast(`Schenkel ${sel + 1} hängt jetzt an R${planeNo(pl)}.`);
+  }
+});
+$('#addPlane').addEventListener('click', () => {
+  $('#planePop').hidden = !$('#planePop').hidden;
+});
+$('#planePop').addEventListener('click', e => {
+  const k = e.target.closest('[data-ax]')?.dataset.ax;
+  if (k == null) return;
+  const p = proj(), sc = scene(p), id = uid(), a = +k, A = points(p)[0], [u, v] = [0, 1, 2].filter(i => i !== a);
+  commit();
+  sc.planes.push({ id, axis: a, c: A[a], w: 1000, h: 1000, u: A[u], v: A[v], ref: null });
+  $('#planePop').hidden = true;
+  fit = null; selectPlane(id); recompute();
+});
+// Ebene als Rechteck: Mitte (u, v) in den beiden anderen Achsen
+function planeCorners(pl) {
+  const [a, b] = [0, 1, 2].filter(i => i !== pl.axis), pt = (x, y) => { const q = [0, 0, 0]; q[pl.axis] = pl.c; q[a] = x; q[b] = y; return q; };
+  const x0 = pl.u - pl.w / 2, x1 = pl.u + pl.w / 2, y0 = pl.v - pl.h / 2, y1 = pl.v + pl.h / 2;
+  return [pt(x0, y0), pt(x1, y0), pt(x1, y1), pt(x0, y1)];
+}
+const AX_RGB = [[0.88, 0.19, 0.19], [0.18, 0.62, 0.27], [0.11, 0.49, 0.84]];
+function drawPlanesOverlay(P3) {
+  scene().planes.forEach((pl, i) => {
+    const c = planeCorners(pl).map(q => P3(q)), col = rgbCss(AX_RGB[pl.axis]), on = selPlane === pl.id;
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = on ? 2 : 1; ctx.globalAlpha = on ? 0.9 : 0.5;
+    ctx.beginPath(); c.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.font = '700 12px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`R${i + 1}`, c[2][0] + 4, c[2][1] - 4);
+    ctx.restore();
+  });
+}
+// Griffe in 3D: alle Punkte der Szene, Ebenen, Verschiebepfeile
+function drawSceneHandles() {
+  const p = proj(), P3 = view.P3, sc = scene(p), cAcc = css('--accent');
+  sc.planes.forEach(pl => {
+    const c = planeCorners(pl).map(q => P3(q)), x = (c[0][0] + c[2][0]) / 2, y = (c[0][1] + c[2][1]) / 2, col = rgbCss(AX_RGB[pl.axis]);
+    knob(x, y, 7, col);
+    gizmo.push({ type: 'plane', id: pl.id, at: [x, y], r: 12 });
+    if (selPlane === pl.id) moveArrows(`R:${pl.id}`, [pl.axis], [x, y]);
+  });
+  scenePipes(p).forEach((q, n) => {
+    for (const w of ['S', 'E']) {
+      const key = `${w}:${q.id}`, A = nodePos(key), [x, y] = P3(A), mine = q === p;
+      if (!mine) { knob(x, y, 7, q.color != null && vis.colors ? rgbCss(PIPE_COLORS[q.color]) : css('--muted')); gizmo.push({ type: 'pt', pid: q.id, w, at: [x, y], r: 12 }); }
+      ctx.save(); ctx.font = '700 12px system-ui'; ctx.fillStyle = css('--text'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(`${w}${n + 1}`, x - (mine ? 20 : 14), y + (mine ? 20 : 14)); ctx.restore();
+      if (selPoint?.pid === q.id && selPoint.w === w) {
+        ctx.beginPath(); ctx.arc(x, y, 15, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2.5; ctx.stroke();
+        if (pointMove) moveArrows(key, [0, 1, 2], [x, y]);
+      }
+    }
+  });
+  void cAcc;
+}
+function moveArrows(key, axes, [x, y]) {
+  const A = key[0] === 'R' ? null : nodePos(key), P3 = view.P3, ref = A || (() => { const pl = planeById(key.slice(2)), c = planeCorners(pl); return [0, 1, 2].map(i => (c[0][i] + c[2][i]) / 2); })();
+  axes.forEach(k => {
+    const e = [0, 0, 0]; e[k] = 100;
+    const [px, py] = P3(V.add(ref, e)), mx = (px - x) / 100, my = (py - y) / 100, l = Math.hypot(mx, my);
+    if (l < view.sc * 0.2) return;
+    const ux = mx / l, uy = my / l, col = rgbCss(AX_RGB[k]);
+    for (const s of [1, -1]) {
+      arrow(x + s * ux * 18, y + s * uy * 18, x + s * ux * 56, y + s * uy * 56, col, 4);
+      gizmo.push({ type: 'pmove', key, k, seg: [x + s * ux * 18, y + s * uy * 18, x + s * ux * 56, y + s * uy * 56], pxPerMm: [mx, my] });
+    }
+  });
+}
+// Maße der Bezüge: je Achse eine Linie vom Bezug zum Punkt, antippbar; 0 heißt fluchtend/gleiche Höhe
+function drawRefDims(P3) {
+  const p = proj(), sc = scene(p), cols = ['--ax-x', '--ax-y', '--ax-z'].map(css);
+  const cen = P3(points(p)[0]);
+  const one = (key, k, r) => {
+    if (!nodeExists(r.to)) return;
+    const a = nodePos(key), b = [...a];
+    b[k] = nodeVal(r.to, k);
+    dimLine(P3(b), P3(a), `${fmt(Math.abs(r.off))} ${'XYZ'[k]}`, cen, 26, { robj: r, key, k }, { color: cols[k] });
+  };
+  scenePipes(p).forEach(q => ['S', 'E'].forEach(w => q.refs?.[w]?.forEach((r, k) => { if (r) one(`${w}:${q.id}`, k, r); })));
+  sc.planes.forEach(pl => {
+    if (!pl.ref || !nodeExists(pl.ref.to)) return;
+    const c = planeCorners(pl), m = [0, 1, 2].map(i => (c[0][i] + c[2][i]) / 2), b = [...m];
+    b[pl.axis] = nodeVal(pl.ref.to, pl.axis);
+    dimLine(P3(b), P3(m), `${fmt(Math.abs(pl.ref.off))} ${'XYZ'[pl.axis]}`, cen, 26, { robj: pl.ref, key: `R:${pl.id}`, k: pl.axis }, { color: cols[pl.axis] });
+  });
+  p.deltas.forEach((d, j) => {
+    const pl = d.ref && planeById(d.ref.plane);
+    if (!pl) return;
+    const a = points(p)[j], b = [...a];
+    b[pl.axis] = pl.c;
+    dimLine(P3(b), P3(a), `${fmt(Math.abs(d.ref.off))} ${'XYZ'[pl.axis]}`, cen, 26, { robj: d.ref, legRef: j }, { color: cols[pl.axis] });
+  });
+}
+function editRef(d) {
+  const r = d.robj, sign = r.off < 0 ? -1 : 1, { box, inp, place, close } = dimBox(d, Math.abs(r.off));
+  const tools = document.createElement('div');
+  tools.className = 'dimtools';
+  tools.innerHTML = '<button data-r="zero">Auf 0</button><button data-r="drop">Bezug löschen</button>';
+  box.append(tools); place();
+  tools.addEventListener('pointerdown', e => e.preventDefault());
+  let done = false;
+  const finish = (ok, v = num(inp.value)) => {
+    if (done) return; done = true;
+    close();
+    if (ok && Math.abs(v * sign - r.off) > 0.01) { commit(); r.off = v * sign; recompute(); }
+    draw();
+  };
+  tools.addEventListener('click', e => {
+    const a = e.target.closest('[data-r]')?.dataset.r;
+    if (a === 'zero') finish(true, 0);
+    else if (a === 'drop') {
+      done = true; close();
+      if (d.legRef != null) { commit(); delete proj().deltas[d.legRef].ref; recompute(); } else dropRef(d.key, d.k);
+    }
+  });
+  inp.focus({ preventScroll: true }); inp.select();
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
+}
+
 // ---------- Parallelrohre (Eingabe) ----------
 // In 3D: Bündel um das Rohr drehen – Lage gilt ab Schenkel 1, jede Biegung folgt daraus (innen/außen oder nebeneinander)
 const bundleGapOf = (p, i) => { const b = p.bundle[i], prev = p.bundle.slice(0, i).filter(o => o.side === b.side).at(-1); return b.dist - (prev ? prev.dist : 0); };
@@ -3332,8 +3745,13 @@ function nextBundleDist(p, side) {
 function renderBundleBar() {
   const p = proj(), bar = $('#bundleBar');
   if (bundleSel >= p.bundle.length) bundleSel = -1;
+  if (renderSceneBar(bar)) return;
   const nm = selCorner >= 1 && p.bundle.length ? txNames(selCorner - 1) : null;
-  bar.hidden = bundleSel < 0 && !nm;
+  bar.hidden = bundleSel < 0 && !nm && sel < 0;
+  if (bundleSel < 0 && !nm && sel >= 0) {
+    bar.innerHTML = `<span>${esc(p.name)}</span>${[null, 0, 1, 2, 3, 4, 5, 6, 7].map(c => `<button class="swatch${p.color === c ? ' on' : ''}" data-col="${c}" aria-label="Farbe" style="background:${c == null ? 'var(--tube)' : rgbCss(PIPE_COLORS[c])}"></button>`).join('')}${sel > 0 && sel < p.deltas.length - 1 ? scene(p).planes.filter(pl => Math.abs(deltaVec(p.deltas[sel])[pl.axis]) < 0.5).map(pl => `<button data-la="${pl.id}">An R${planeNo(pl)}</button>`).join('') : ''}${scenePipes(p).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
+    return;
+  }
   if (bundleSel >= 0) bar.innerHTML = `<span>Rohr ${bundleSel + 2} · ${fmt(bundleGapOf(p, bundleSel))} mm zum Nachbarn</span><button data-bb="guide">In Anleitung zeigen</button><button data-bb="del" class="danger">Löschen</button>`;
   else if (nm) {
     const cur = p.bundleTx.find(t => t.bend === selCorner - 1)?.rot ?? 0;
@@ -3349,10 +3767,25 @@ function setTx(bend, r) {
   else addTx(p, bend, r);
   recompute();
 }
+$('#addPipe').addEventListener('click', () => {
+  // Neues Rohr: erst nur S und E (gestrichelt), „Weg vorschlagen“ verlegt es
+  const p = proj(), q = newProject(p.profileId, `Rohr ${scenePipes(p).length + 1}`);
+  q.origin = V.add(points(p)[0], [0, -300, 0]); q.zugA = p.zugA; q.zugE = p.zugE; q.color = null;
+  q.deltas = [{ x: 1000, y: 0, z: 500 }]; q.unrouted = true;
+  addPipe(q, p.sceneId); fullRender(); selectPoint(q.id, 'E');
+});
 $('#bundleBar').addEventListener('click', e => {
   const b = e.target.closest('button'), p = proj();
   if (!b) return;
   if (b.dataset.tx != null) { setTx(selCorner - 1, +b.dataset.tx); return; }
+  if (b.dataset.col != null) { commit(); p.color = b.dataset.col === 'null' ? null : +b.dataset.col; recompute(); return; }
+  if (b.dataset.bb === 'pipedel') {
+    if (!confirm(`„${p.name}“ löschen?`)) return;
+    const others = scenePipes(p).filter(q => q !== p), dead = r => r?.to?.endsWith(`:${p.id}`) && r.to[0] !== 'R';
+    others.forEach(q => ['S', 'E'].forEach(w => q.refs?.[w]?.forEach((r, k) => { if (dead(r)) q.refs[w][k] = null; })));
+    scene(p).planes.forEach(pl => { if (dead(pl.ref)) pl.ref = null; });
+    db.projects = db.projects.filter(q => q !== p); db.currentId = others[0].id; fullRender(); return;
+  }
   if (b.dataset.bb === 'del') { commit(); p.bundle.splice(bundleSel, 1); bundleSel = -1; recompute(); }
   else if (b.dataset.bb === 'guide') { guidePipe = bundleSel + 1; highlight = -1; $('[data-tab=guide]').click(); }
 });
@@ -3444,7 +3877,7 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.biegeDebug = { editDim, get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
 }
 
-function fullRender() { extOpen = false; startOpen = false; bundleSel = -1; adjusted = { set: new Set(), t: 0 }; renderEndPin(); sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { extOpen = false; startOpen = false; bundleSel = -1; pick = null; clearSel(); adjusted = { set: new Set(), t: 0 }; renderEndPin(); sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 checkUpdate();

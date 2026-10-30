@@ -36,14 +36,16 @@ Bei jeder Änderung die Versionsnummer in `version.js` um 1 erhöhen. Die App ze
 
 ## Bedienung in Kürze
 
-- **Rohr:** Schenkel mit Richtungsknöpfen und Achsmaß; Vorschau zeigt den bearbeiteten Schenkel. „＋“ oben legt ein neues gerades Rohr an.
-- **Parallelrohre:** feste Abstände zu Rohr 1, laufen bei jeder Änderung mit. In 3D über den Griff am Rohranfang: Pfeile legen Rohre an, der Ring dreht das Bündel, Punkte und Maße ändern Abstände; nicht verlegbare Rohre werden rot.
-- **Lagewechsel:** Bündel an einer Ecke kippen (z. B. übereinander → nebeneinander). Rohr 1 biegt normal, die Parallelrohre laufen über die Ecke hinaus, gehen senkrecht auf die neue Höhe und biegen weiter. Im Bündel-Kasten oder in 3D unter „✎ Maße“ → „Bündel auf diesem Schenkel“.
-- **3D:** Gerade antippen = Längenpfeil, Eckpunkt antippen = Drehringe, Griff am Ende: antippen oder ziehen zeigt die Fortführ-Pfeile (am Rechner beim Darüberfahren blass); „Fortführ-Pfeile immer zeigen“ im 👁-Menü. Maße als technische Bemaßung (schräge Schenkel zusätzlich orthogonal), antippen = Wert ändern. Optional „Gesamtmaße“: Versatz vom Rohranfang bis zum Rohrende in X/Y/Z. Optional „Winkelmaße“: Biegewinkel an jedem Schnittpunkt.
-- **Ende fixiert (📌, Standard):** A und Rohrende bleiben im Raum stehen. Ändert sich eine Länge oder ein Winkel, gleichen freie Schenkel über ihre Länge aus – zuerst als „⇄ Ausgleich“ markierte, nie „🔒 Fest“ markierte. Ausgeglichene Maße stehen in Klammern. Geht es nicht, bleibt alles wie vorher und ein Hinweis nennt den Grund.
-- **Biegen:** Schritt-für-Schritt-Anleitung, Drucken/PDF.
-- **Zangen:** Zangenprofile (Rohr-Ø, Biegeradius, Mindest-Gerade). Marken fest: „0“ = Biegeanfang, L/R = Schnittpunkt bei 90°.
-- **Labor (unter „Zangen“):** experimentell – Raum mit Wänden, Schellen, Ziel-Anschluss, Montage und Material. Ausgeschaltet bleiben diese Daten gespeichert, werden aber nicht gerechnet.
+Reiter: **3D · Biegen · Einstellungen**. Ein Projekt ist eine Szene mit mehreren Rohren und Referenzebenen.
+
+- **3D:** Gerade antippen = Längenpfeil und Rohrfarbe, Eckpunkt antippen = Drehringe und Lage des Bündels, anderes Rohr antippen = aktiv. Griff am Ende ziehen oder antippen führt fort. Maße als technische Bemaßung, antippen = Wert ändern; optional Gesamtmaße und Winkelmaße (👁).
+- **Ende fixiert (📌, Standard):** A und Rohrende bleiben stehen. Änderungen gleichen freie Schenkel über ihre Länge aus, zuerst „⇄ Ausgleich“, nie „🔒 Fest“. Ausgeglichene Maße stehen in Klammern.
+- **Punkte:** S1/E1, S2/E2 … „+ Rohr“ legt nur die Punkte an (gestrichelt), „Weg vorschlagen“ verlegt das Rohr. Punkt antippen: „Verschieben“ (Pfeile, Koordinaten) oder „Maß“: zweiten Punkt oder Ebene antippen, Achse wählen. Je Achse gilt Bezug + Maß; abhängige Punkte wandern mit, Maß 0 heißt fluchtend bzw. gleiche Höhe.
+- **Referenzebenen:** „+ Ebene“ (X, Y oder Z), Standard 1000 × 1000 mm, in den Achsfarben stark durchscheinend. Lage und Größe in der Leiste. Punkte und Schenkel lassen sich daran ausrichten; die Ausrichtung gilt für die ganze unendliche Ebene.
+- **Parallelrohre:** Griff am Rohranfang antippen, „Parallelrohr“: Pfeile legen Rohre an, der Ring dreht das Bündel, Punkte und Maße ändern Abstände zum Nachbarn. Lagewechsel am Eckpunkt.
+- **Biegen:** Schritt-für-Schritt-Anleitung je Rohr, Drucken/PDF.
+- **Einstellungen:** Projekt (Name, Zange und Zugaben für alle Rohre, Duplizieren, Export, Import, Löschen), Zangenprofile, Labor.
+- **Labor:** experimentell – klassische Rohr-Eingabe, Raum mit Wänden, Schellen, Montage und Material.
 
 ## Daten
 

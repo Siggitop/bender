@@ -394,3 +394,26 @@ body:not(.lab) .labonly { display: none !important; }
 .leg.flex { border-style: dashed; }
 #endPin.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .roombar button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Rohrfarben */
+.roombar button.swatch { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 99px; border: 2px solid transparent; }
+.roombar button.swatch.on { border-color: var(--text); box-shadow: inset 0 0 0 2px var(--card); }
+
+/* Punkte und Ebenen */
+.ax-x-b { color: var(--ax-x); } .ax-y-b { color: var(--ax-y); } .ax-z-b { color: var(--ax-z); }
+.planepop { left: 60px; display: flex; gap: 6px; }
+.roombar { max-height: 45%; overflow-y: auto; }
+
+/* 3D als Hauptansicht: am Rechner volle Breite, solange kein anderer Reiter offen ist */
+@media (min-width: 900px) and (min-height: 521px) {
+  body[data-tab="view"] .layout { grid-template-columns: 1fr; max-width: none; }
+  body[data-tab="view"] main { display: none; }
+}
+
+/* Leiste für Punkte, Ebenen, Rohre: eine Zeile, seitlich wischbar – das Rohr bleibt sichtbar */
+#bundleBar { flex-wrap: nowrap; overflow-x: auto; max-height: none; max-width: none; padding: 4px 6px; gap: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+#bundleBar::-webkit-scrollbar { display: none; }
+#bundleBar span { flex: none; font-weight: 600; color: var(--text); }
+#bundleBar button { flex: none; min-height: 38px; padding: 4px 8px; font-size: 13px; }
+@media (max-width: 420px) { .viewacts { gap: 4px; left: 6px; right: 6px; } .viewacts button { padding: 6px 8px; font-size: 13px; } }
+@media (orientation: landscape) and (max-height: 520px) { .tabbar button { font-size: 10px; padding: 4px 2px; } }
