@@ -196,6 +196,13 @@ function updateUndoButtons() {
   $('#undoBtn').disabled = !h.undo.length;
   $('#redoBtn').disabled = !h.redo.length;
 }
+// Die App selbst zoomt nie: Pinch wirkt nur in der 3D-Ansicht
+for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(t, e => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+// Menü hinter den drei Strichen
+$('#menuBtn').addEventListener('click', () => { $('#menuPop').hidden = !$('#menuPop').hidden; });
+document.addEventListener('pointerdown', e => { if (!e.target.closest?.('#menuPop, #menuBtn')) $('#menuPop').hidden = true; });
 $('#undoBtn').addEventListener('click', () => undoRedo(-1));
 $('#redoBtn').addEventListener('click', () => undoRedo(1));
 document.addEventListener('keydown', e => {
@@ -309,9 +316,10 @@ $('.tpl').addEventListener('click', e => {
   renderInputs(); recompute(); resetView();
 });
 
-$('#projSel').addEventListener('change', e => { db.currentId = db.projects.find(q => q.sceneId === e.target.value).id; highlight = -1; fullRender(); resetView(); });
+$('#projSel').addEventListener('change', e => { db.currentId = db.projects.find(q => q.sceneId === e.target.value).id; highlight = -1; $('#menuPop').hidden = true; fullRender(); resetView(); });
 // Ohne Labor kein Raum-Dialog: neues gerades Rohr sofort anlegen
 $('#pNew').addEventListener('click', () => {
+  $('#menuPop').hidden = true;
   if (lab) { openNewDlg(); return; }
   addPipe(newProject(proj().profileId, `Projekt ${db.scenes.length + 1}`));
   fullRender(); resetView();

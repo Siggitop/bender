@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Rohrbiege-Assistent</title>
 <meta name="description" content="Rohrleitungen im Achsmaß aufmessen, 3D ansehen und mit der Handbiegezange biegen.">
 <meta name="theme-color" content="#1d5fd1">
@@ -16,14 +16,16 @@
 </head>
 <body>
 <button class="update-bar" id="updateBar" hidden></button>
-<header class="top">
-  <div class="brand">⟆ Rohrbiegen</div>
-  <select id="projSel" aria-label="Projekt wählen"></select>
-  <button id="pNew" class="hbtn" title="Neues Rohr" aria-label="Neues Rohr">＋</button>
-  <button id="undoBtn" class="hbtn" title="Rückgängig (⌘Z)" aria-label="Rückgängig" disabled>↶</button>
-  <span class="ver" id="verTag"></span>
-  <button id="redoBtn" class="hbtn" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen" disabled>↷</button>
-</header>
+<div class="floatbar">
+  <button id="menuBtn" class="flbtn" title="Menü" aria-label="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></button>
+  <button id="undoBtn" class="flbtn fl-undo" title="Rückgängig (⌘Z)" aria-label="Rückgängig" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+  <button id="redoBtn" class="flbtn fl-undo" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+</div>
+<div class="menupop" id="menuPop" hidden>
+  <div class="menu-head"><b>⟆ Rohrbiegen</b><span class="ver" id="verTag"></span></div>
+  <label>Projekt<select id="projSel" aria-label="Projekt wählen"></select></label>
+  <button id="pNew" title="Neues Projekt">+ Neues Projekt</button>
+</div>
 
 <div class="layout">
   <main>

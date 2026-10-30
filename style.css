@@ -34,11 +34,13 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; }
+html, body { margin: 0; touch-action: pan-x pan-y; } /* nie die ganze App zoomen */
+:root { --tabh: calc(52px + max(4px, env(safe-area-inset-bottom) - 14px)); }
 body {
   background: var(--bg); color: var(--text);
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: var(--tabh);
   -webkit-text-size-adjust: 100%;
 }
 button, input, select { font: inherit; color: inherit; }
@@ -59,15 +61,16 @@ label small { font-size: 12px; }
 h2 { font-size: 18px; margin: 4px 0 10px; }
 h3 { font-size: 16px; margin: 0 0 8px; }
 
-.top {
-  position: sticky; top: 0; z-index: 5; display: flex; gap: 12px; align-items: center;
-  padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: var(--card); border-bottom: 1px solid var(--line);
-}
-.brand { font-weight: 700; white-space: nowrap; }
-.top select { flex: 1; min-width: 0; }
-.top { gap: 8px; }
-.hbtn { min-width: 44px; padding: 4px 8px; font-size: 20px; line-height: 1; }
-.hbtn:disabled { opacity: .35; cursor: default; }
+.floatbar { position: fixed; top: calc(20px + env(safe-area-inset-top)); left: 24px; z-index: 5; display: flex; gap: 6px; }
+.flbtn { width: 40px; height: 40px; min-height: 40px; padding: 0; display: grid; place-items: center; color: var(--text); border-radius: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, .1); }
+.flbtn svg { width: 20px; height: 20px; }
+.flbtn:disabled { color: var(--muted); opacity: .45; cursor: default; box-shadow: none; }
+body[data-tab="guide"] .fl-undo, body[data-tab="tools"] .fl-undo, body[data-tab="room"] .fl-undo { display: none; }
+body.kbd .floatbar { display: none; }
+.menupop { position: fixed; top: calc(68px + env(safe-area-inset-top)); left: 24px; z-index: 7; width: min(280px, calc(100vw - 32px)); display: grid; gap: 10px; padding: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 28px rgba(0, 0, 0, .2); }
+.menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.menupop .ver { display: inline; }
+main:has(> .tab.active) { padding-top: 68px; }
 
 .layout { max-width: 1400px; margin: 0 auto; }
 main { padding: 12px 16px; min-width: 0; }
@@ -139,7 +142,7 @@ table.det th:first-child, table.det td:first-child { text-align: left; }
 .scroll-x { overflow-x: auto; }
 
 /* 3D */
-.viewwrap { position: relative; height: calc(100dvh - 150px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: 320px; background: var(--canvas); border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; margin: 12px 16px; }
+.viewwrap { position: relative; height: calc(100dvh - var(--tabh) - 24px - env(safe-area-inset-top)); min-height: 320px; background: var(--canvas); border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; margin: 12px 16px; }
 #cv, #cvBg, #cvGL { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #cv { touch-action: none; cursor: grab; }
 .alt { font-size: 13px; color: var(--muted); }
@@ -164,9 +167,9 @@ table.det th:first-child, table.det td:first-child { text-align: left; }
 
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 6; display: flex;
-  background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+  background: var(--card); border-top: 1px solid var(--line); padding-bottom: max(4px, calc(env(safe-area-inset-bottom) - 14px));
 }
-.tabbar button { flex: 1; border: 0; border-radius: 0; background: transparent; min-height: 60px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tabbar button { flex: 1; border: 0; border-radius: 0; background: transparent; min-height: 52px; padding: 4px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .tabbar button span { font-size: 20px; line-height: 1; }
 .tabbar button.active { color: var(--accent); }
 
@@ -174,7 +177,7 @@ table.det th:first-child, table.det td:first-child { text-align: left; }
 @media (min-width: 900px) and (min-height: 521px) {
   .layout { display: grid; grid-template-columns: minmax(380px, 520px) 1fr; }
   #tab-view { display: block; }
-  .viewwrap { position: sticky; top: 72px; height: calc(100dvh - 160px); }
+  .viewwrap { position: sticky; top: 12px; height: calc(100dvh - var(--tabh) - 24px); }
   .only-mobile { display: none !important; }
 }
 @media (max-width: 420px) {
@@ -182,36 +185,36 @@ table.det th:first-child, table.det td:first-child { text-align: left; }
 }
 
 /* ---------- Handy ---------- */
-button { touch-action: manipulation; }
+button { touch-action: pan-x pan-y; }
 .viewwrap { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .viewacts { position: absolute; left: 10px; right: 10px; bottom: 64px; display: flex; flex-wrap: wrap-reverse; gap: 6px; z-index: 1; pointer-events: none; }
 .viewacts > * { pointer-events: auto; }
 .viewacts button { font-size: 14px; color: var(--accent); }
 
 @media (max-width: 600px) {
-  .brand { display: none; }
-  .top { padding-left: 12px; padding-right: 12px; }
+  .floatbar { top: calc(16px + env(safe-area-inset-top)); left: 16px; }
+  .menupop { top: calc(64px + env(safe-area-inset-top)); left: 16px; }
   main { padding: 10px 12px; }
+  main:has(> .tab.active) { padding-top: 64px; }
   /* Ansichtsbuttons als eine Leiste über die volle Breite – alle sieben passen ohne Wischen */
   .viewbtns { flex-wrap: nowrap; gap: 0; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
   .viewbtns button { flex: 1 1 0; min-width: 0; padding: 4px 0; font-size: 12px; border: 0; background: transparent; border-radius: 7px; opacity: 1; }
   .viewhint { display: none; }
-  .viewwrap { margin: 8px; height: calc(100dvh - 140px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .viewwrap { margin: 8px; height: calc(100dvh - var(--tabh) - 16px - env(safe-area-inset-top)); }
   .legend { display: none; }
 }
 
 /* Querformat auf dem Handy: Reiter als Leiste links, 3D bekommt die volle Höhe */
 @media (orientation: landscape) and (max-height: 520px) {
   body { padding-bottom: 0; padding-left: calc(68px + env(safe-area-inset-left)); padding-right: env(safe-area-inset-right); }
-  .brand { display: none; }
-  .top { padding-top: 6px; padding-bottom: 6px; }
-  .top select, .hbtn { min-height: 36px; }
+  .floatbar { top: calc(12px + env(safe-area-inset-top)); left: calc(84px + env(safe-area-inset-left)); }
+  .menupop { top: calc(58px + env(safe-area-inset-top)); left: calc(84px + env(safe-area-inset-left)); }
   .tabbar {
     top: 0; bottom: 0; right: auto; width: calc(68px + env(safe-area-inset-left)); flex-direction: column; justify-content: center;
     border-top: 0; border-right: 1px solid var(--line); padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   .tabbar button { flex: none; min-height: 62px; }
-  .viewwrap { margin: 6px 8px; height: calc(100dvh - 66px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: 0; }
+  .viewwrap { margin: 6px 8px; height: calc(100dvh - 12px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: 0; }
   .viewhint, .legend { display: none; }
   .viewbtns { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .viewbtns button { flex: none; min-height: 30px; padding: 2px 8px; font-size: 12px; }
@@ -246,7 +249,7 @@ button { touch-action: manipulation; }
 /* Versionsanzeige und Update-Hinweis */
 .ver { font-size: 11px; color: var(--muted); white-space: nowrap; order: 10; }
 .update-bar {
-  position: fixed; left: 50%; transform: translateX(-50%); top: calc(8px + env(safe-area-inset-top)); z-index: 40;
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top)); z-index: 40;
   background: var(--accent); color: #fff; border: 0; border-radius: 99px; padding: 8px 16px; font-weight: 600;
   box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
 }
@@ -283,7 +286,7 @@ body.bigtext table.det { font-size: 15px; }
 #tab-view.offscreen .viewwrap { height: 600px; }
 
 @media print {
-  .top, .tabbar, .noprint, #tab-input, #tab-view, #tab-tools, .update-bar, .modal, .done-box { display: none !important; }
+  .floatbar, .menupop, .tabbar, .noprint, #tab-input, #tab-view, #tab-tools, .update-bar, .modal, .done-box { display: none !important; }
   #tab-guide { display: block !important; }
   body { padding: 0 !important; background: #fff; color: #000; }
   main { padding: 0; }
@@ -302,7 +305,6 @@ main:not(:has(> .tab.active)) { padding: 0; }
 @media (max-width: 899px), (max-height: 520px) { #miniPrev { position: sticky; top: calc(62px + env(safe-area-inset-top)); z-index: 4; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); } }
 @media (orientation: landscape) and (max-height: 520px) { #miniPrev { height: 110px; top: 50px; } }
 /* Tastatur offen (iPhone): Vorschau oben im sichtbaren Ausschnitt, kleiner; Kopf und Tabbar treten zurück */
-body.kbd .top { position: static; }
 body.kbd #miniPrev { top: var(--vv-top, 0px); height: 110px; }
 body.kbd .tabbar { display: none; }
 .leg.focus { border-color: var(--mark); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mark) 30%, transparent); }
@@ -386,7 +388,7 @@ body:not(.lab) .labonly { display: none !important; }
   font-size: 17px; font-weight: 700; color: var(--accent); background: var(--card); border: 2px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
 
 /* Ende fixiert: Fest / Ausgleich */
-.toast { position: fixed; top: calc(70px + env(safe-area-inset-top)); z-index: 50; }
+.toast { position: fixed; top: calc(64px + env(safe-area-inset-top)); z-index: 50; }
 .dimtools { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 4px 16px rgba(0, 0, 0, .18); }
 .dimtools button { min-height: 34px; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
 .dimtools button.on, .leghead .lk.on { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -441,3 +443,4 @@ body:not(.lab) .labonly { display: none !important; }
 #addBtn { min-width: 44px; font-weight: 700; }
 #bundleBar button.lockbtn { color: var(--text); }
 #bundleBar button.lockbtn.open { color: var(--muted); }
+.menupop button { font-size: 15px; }
