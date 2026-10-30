@@ -392,7 +392,7 @@ body:not(.lab) .labonly { display: none !important; }
 .dimtools button.on, .leghead .lk.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .leghead .lk { min-width: 34px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 8px; }
 .leg.flex { border-style: dashed; }
-#endPin.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+#endPin, #endPin.on { background: var(--card); border-color: var(--line); color: var(--muted); font-size: 13px; }
 .roombar button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* Rohrfarben */

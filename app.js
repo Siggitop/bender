@@ -2395,10 +2395,14 @@ function drawGizmo() {
       if (!gz && (extOpen || vis.extAlways)) gizmo.push({ type: 'ext', a: c.a, seg: [ex + ux * 16, ey + uy * 16, ex + ux * 58, ey + uy * 58] });
     }
     if (!gz) {
-      if (proj().endFixed && n > 1) { ctx.beginPath(); ctx.arc(ex, ey, 17, 0, 7); ctx.strokeStyle = C_ROT; ctx.lineWidth = 3; ctx.stroke(); ctx.font = '14px system-ui'; ctx.fillText('📌', ex + 18, ey - 18); }
-      knob(ex, ey, 11, cAcc);
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.moveTo(ex - 5, ey); ctx.lineTo(ex + 5, ey); ctx.moveTo(ex, ey - 5); ctx.lineTo(ex, ey + 5); ctx.stroke();
+      // Griff nur, wenn gewählt oder Stufe „Alle“; sonst ein kleiner Punkt – antippbar bleibt er immer
+      const on = vis.dimLevel === 'all' || extOpen || vis.extAlways || extHover || (selPoint?.pid === proj().id && selPoint.w === 'E');
+      if (on) {
+        knob(ex, ey, 8, cAcc);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.moveTo(ex - 3.5, ey); ctx.lineTo(ex + 3.5, ey); ctx.moveTo(ex, ey - 3.5); ctx.lineTo(ex, ey + 3.5); ctx.stroke();
+      } else { ctx.beginPath(); ctx.arc(ex, ey, 3, 0, 7); ctx.fillStyle = css('--muted'); ctx.fill(); }
+      if (proj().endFixed && n > 1) { ctx.beginPath(); ctx.arc(ex, ey, on ? 11 : 6, 0, 7); ctx.strokeStyle = css('--muted'); ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1; } // Ende fest: dünner Ring
       gizmo.push({ type: 'ext', at: [ex, ey], r: 22 });
     }
   }
@@ -2485,7 +2489,9 @@ function drawStartHandle() {
       gizmo.push({ type: 'brot', poly: ring, q, w });
     }
   }
-  if (!gz || gz.type === 'bdist') p.bundle.forEach((b, i) => {
+  // Griffe nur, wenn der Anfang gewählt ist, ein Parallelrohr gewählt ist oder Stufe „Alle“ gilt
+  const on = vis.dimLevel === 'all' || startOpen || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S');
+  if ((!gz && on) || gz?.type === 'bdist') p.bundle.forEach((b, i) => {
     const B = layout.bundle[i];
     if (!B) return;
     const [x, y] = P3(B.A), v = sideDir(verts, b.side);
@@ -2493,11 +2499,13 @@ function drawStartHandle() {
     if (!gz) gizmo.push({ type: 'bdist', i, at: [x, y], r: 12, pxPerMm: mmPx(v) });
   });
   if (!gz) {
-    knob(ax, ay, 11, cAcc);
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
-    for (const dy of [-3.5, 0, 3.5]) { ctx.moveTo(ax - 5, ay + dy); ctx.lineTo(ax + 5, ay + dy); }
-    ctx.stroke();
-    if (p.bundle.length) { ctx.font = '700 11px system-ui'; ctx.fillStyle = cAcc; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.bundle.length + 1, ax + 16, ay - 14); }
+    if (on) {
+      knob(ax, ay, 8, cAcc);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (const dy of [-2.5, 0, 2.5]) { ctx.moveTo(ax - 3.5, ay + dy); ctx.lineTo(ax + 3.5, ay + dy); }
+      ctx.stroke();
+    } else { ctx.beginPath(); ctx.arc(ax, ay, 3, 0, 7); ctx.fillStyle = css('--muted'); ctx.fill(); }
+    if (on && p.bundle.length) { ctx.font = '700 11px system-ui'; ctx.fillStyle = cAcc; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.bundle.length + 1, ax + 16, ay - 14); }
     gizmo.push({ type: 'start', at: [ax, ay], r: 22 });
   }
 }
@@ -2683,7 +2691,7 @@ function legShift(ds, i, v, freeEnd = false) {
   const list = [...changed].map(c => (typeof c === 'string' ? +c.slice(1) : index[c]));
   const flip = ds.some((o, j) => V.dot(deltaVec(o), deltaVec(out[index[j]])) <= 0);
   const locked = !!ds[i].lock && changed.has(i);
-  return { deltas: out, newI: index[i], insP, insN, changed: list, locked, flip, moved: [...moved].map(j => [index[j], j]) };
+  return { deltas: out, newI: index[i], insP, insN, changed: list, locked, flip, index, moved: [...moved].map(j => [index[j], j]) };
 }
 // Ein Zwischenstand ist erlaubt, wenn alle geänderten Schenkel für ihre Bögen reichen
 function shiftOk(p, r) {
@@ -2691,15 +2699,63 @@ function shiftOk(p, r) {
   if (r.flip || L.verts.length !== n + 1) return false;
   return r.changed.every(j => L.straights[j] >= (j > 0 && j < n - 1 ? f.minStraight || 0 : 0) - 0.05);
 }
+// Bis zu welcher Verschiebung läuft ein Nachbarschenkel auf Länge 0? Ab der Hälfte dieses Wegs rastet der Abschnitt dort ein.
+function vanishAt(ds, r, t) {
+  let best = null;
+  ds.forEach((o, j) => {
+    const old = deltaVec(o), L = V.len(old), now = V.dot(deltaVec(r.deltas[r.index[j]]), V.norm(old)), slope = (now - L) / t;
+    if (Math.abs(slope) < 1e-6) return;
+    const t0 = -L / slope;
+    if (t0 * t > 0 && Math.abs(t) >= 0.5 * Math.abs(t0) && (best == null || Math.abs(t0) < Math.abs(best))) best = t0;
+  });
+  return best;
+}
+// Schenkel ohne Länge entfernen; laufen die Nachbarn danach geradeaus, werden sie ein Schenkel
+function collapseLegs(r) {
+  const arr = r.deltas.map(o => ({ ...o })), ops = [], near = [];
+  let newI = r.newI;
+  for (let j = 0; j < arr.length; j++) {
+    if (V.len(deltaVec(arr[j])) > 0.5) continue;
+    if (arr.length < 2) return null;
+    arr.splice(j, 1); ops.push(['del', j]);
+    if (j <= newI) newI = Math.max(0, newI - 1);
+    if (j > 0 && j < arr.length) {
+      const a = deltaVec(arr[j - 1]), b = deltaVec(arr[j]);
+      if (V.len(V.cross(a, b)) < 1e-3 * V.len(a) * V.len(b)) {
+        if (V.dot(a, b) < 0) return null; // liefe zurück: nicht biegbar
+        const w = V.add(a, b);
+        arr[j - 1] = { ...arr[j - 1], x: w[0], y: w[1], z: w[2] };
+        arr.splice(j, 1); ops.push(['merge', j]);
+        if (j <= newI) newI = Math.max(0, newI - 1);
+      }
+    }
+    near.push(Math.max(0, j - 1), Math.min(arr.length - 1, j));
+    j--;
+  }
+  if (!ops.length || !arr.length) return null;
+  return { ...r, deltas: arr, newI, ops, changed: [...new Set(near)].filter(j => j < arr.length), flip: false, moved: [], removed: true };
+}
 function legMoveTo(t) {
-  const p = proj(), e = [0, 0, 0];
+  const p = proj(), e = [0, 0, 0], ds = gz.dOrig;
   e[gz.k] = t;
-  const r = legShift(gz.dOrig, gz.i, e, !p.endFixed);
-  if (!shiftOk(p, r)) return null;
+  let r = legShift(ds, gz.i, e, !p.endFixed);
+  if (!shiftOk(p, r)) {
+    const t0 = t ? vanishAt(ds, r, t) : null;
+    if (t0 == null) return null;
+    e[gz.k] = t0;
+    r = collapseLegs(legShift(ds, gz.i, e, !p.endFixed));
+    if (!r || !shiftOk(p, r)) return null;
+    t = t0;
+  }
+  r.t = t;
   p.deltas = structuredClone(r.deltas);
   p.bundleTx = structuredClone(gz.txOrig);
   if (r.insP) txInsertLegs(p, gz.i, 1);
   if (r.insN) txInsertLegs(p, r.newI + 1, 1);
+  (r.ops || []).forEach(([op, j]) => {
+    if (op === 'del') txDeleteLeg(p, j);
+    else { p.bundleTx = p.bundleTx.filter(x => x.bend !== j - 1); p.bundleTx.forEach(x => { if (x.bend >= j) x.bend--; }); }
+  });
   // Mitwandernde Schenkel, die an einer Ebene hängen, behalten ihren Bezug: Das Maß ändert sich mit
   r.moved.forEach(([ni, oi]) => { const leg = p.deltas[ni]; if (leg.ref && planeById(leg.ref.plane)?.axis === gz.k) leg.ref.off = r1(gz.dOrig[oi].ref.off + t); });
   return r;
@@ -2717,9 +2773,9 @@ function bundleMove(lx, ly) {
     gzChanged();
     const [mx, my] = gz.pxPerMm, t = Math.round(((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my));
     const r = legMoveTo(t);
-    if (r) { gz.t = t; gz.res = r; } else if (gz.res || gz.t === 0) legMoveTo(gz.t);
-    const f = prof(p), neu = gz.res && (gz.res.insP || gz.res.insN);
-    gz.label = !r ? (gz.t === 0 ? `Neue Biegung erst ab ${fmt(2 * f.R + (f.minStraight || 0))} mm` : `Weiter geht es nicht: Mindestlänge · ${fmt(Math.abs(gz.t))} mm`) : `${fmt(Math.abs(t))} mm${neu ? ' · neue Biegung' : ''}`;
+    if (r) { gz.t = r.t; gz.res = r; } else if (gz.res || gz.t === 0) legMoveTo(gz.t);
+    const f = prof(p), neu = r && (r.insP || r.insN), weg = r?.removed;
+    gz.label = !r ? (gz.t === 0 ? `Neue Biegung erst ab ${fmt(2 * f.R + (f.minStraight || 0))} mm` : `Weiter geht es nicht: Mindestlänge · ${fmt(Math.abs(gz.t))} mm`) : `${fmt(Math.abs(r.t))} mm${weg ? ' · Bogen entfällt' : neu ? ' · neue Biegung' : ''}`;
     recompute(true);
     return;
   }
@@ -3238,7 +3294,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => dr
 function renderEndPin() {
   const p = proj(), b = $('#endPin');
   b.classList.toggle('on', !!p.endFixed);
-  b.textContent = p.endFixed ? '📌 Ende fest' : '📌 Ende frei';
+  b.textContent = p.endFixed ? 'Ende fest' : 'Ende frei';
 }
 $('#endPin').addEventListener('click', () => {
   const p = proj();
@@ -3661,6 +3717,7 @@ function selectPoint(pid, w) {
   if (pid !== db.currentId) { db.currentId = pid; highlight = -1; fullRender(); }
   sel = -1; selCorner = -1; bundleSel = -1; startOpen = false;
   selPlane = null; pointMove = false; selPoint = { pid, w };
+  if (w === 'S') extOpen = false;
   $('#legPanel').hidden = $('#addLegView').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
