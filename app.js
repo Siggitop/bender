@@ -1268,7 +1268,9 @@ const holdView = () => { fit ||= lastBase; cam.held = true; };
 let extOpen = false, extHover = false;
 // startOpen: Pfeile am Griff des Rohranfangs offen, bundleSel: gewähltes Parallelrohr (Index in p.bundle)
 let startOpen = false, bundleSel = -1;
-const BUNDLE_GZ = ['start', 'bnew', 'bdist', 'brot', 'pt', 'plane', 'pmove', 'lmove'];
+const BUNDLE_GZ = ['start', 'bnew', 'bdist', 'brot', 'pt', 'plane', 'pmove', 'lmove', 'ofs', 'ofsc'];
+// ofs: Versatz-X auf Schenkel i, t mm ab dessen Anfang, ang = Winkel, n = gewählte Ebene (null = automatisch), cur = angezeigte Ebene
+let ofs = null;
 // selPoint: gewählter Punkt { pid, w }, selPlane: gewählte Ebene, pointMove: Verschiebepfeile, pick: Maß wird festgelegt { key, to }
 let selPoint = null, selPlane = null, pointMove = false, pick = null;
 let sel = -1, selCorner = -1, drag = null; // gewählter Schenkel bzw. Eckpunkt (Schnittpunkt), laufendes Ziehen eines Anfassers
@@ -2453,8 +2455,25 @@ function drawGizmo() {
     }
   }
 
+  // Versatz-X: Jeder Arm steht für Rohrseite und Richtung, der Punkt in der Mitte legt die Lage auf dem Schenkel fest
+  if (ofs && (!gz || gz.type === 'ofsc')) {
+    const f = ofsFrame(), p = proj(), C = V.add(pts[ofs.i], V.mul(f.u, Math.min(ofs.t, f.L))), [cx, cy] = P3(C), col = axisColor(f.n);
+    if (f.cur !== ofs.cur) { ofs.cur = f.cur; renderBundleBar(); }
+    for (const s of [1, -1]) for (const d of [1, -1]) {
+      const a = V.mul(V.add(V.mul(f.u, s), V.mul(f.n, d)), Math.SQRT1_2), [x, y] = P3(V.add(C, V.mul(a, 100))), mx = (x - cx) / 100, my = (y - cy) / 100, l = Math.hypot(mx, my);
+      if (l < sc * 0.2) continue; // Arm zeigt in die Ansicht hinein
+      const ux = mx / l, uy = my / l, dir = V.mul(f.n, d), blocked = ofsBuild(p.deltas, p.origin, ofs, p, 20, s, dir)?.blocked;
+      ctx.save(); ctx.globalAlpha = blocked ? 0.25 : 0.9;
+      arrow(cx + ux * 16, cy + uy * 16, cx + ux * 72, cy + uy * 72, blocked ? css('--muted') : col, 4);
+      ctx.restore();
+      if (!gz) gizmo.push({ type: 'ofs', s, dir, blocked, seg: [cx + ux * 16, cy + uy * 16, cx + ux * 72, cy + uy * 72], pxPerMm: [mx, my] });
+    }
+    knob(cx, cy, 9, cAcc);
+    if (!gz) { const [x, y] = P3(V.add(C, V.mul(f.u, 100))); gizmo.push({ type: 'ofsc', at: [cx, cy], r: 14, pxPerMm: [(x - cx) / 100, (y - cy) / 100] }); }
+  }
+
   // Längenpfeil am Ende eines inneren Schenkels (am Rohrende macht das der Griff)
-  if (sel >= 0 && sel < n - 1 && (!gz || gz.type === 'len')) {
+  if (!ofs && sel >= 0 && sel < n - 1 && (!gz || gz.type === 'len')) {
     // Pfeil beginnt hinter dem Eckpunkt, damit der Eckpunkt selbst antippbar bleibt (Drehringe)
     const B = pts[sel + 1], d = V.norm(V.sub(B, pts[sel])), L = 34 / sc;
     const [bx, by] = P3(B), [tx0, ty0] = P3(V.add(B, V.mul(d, L)));
@@ -2467,7 +2486,7 @@ function drawGizmo() {
   }
 
   // Abschnitt verschieben: Pfeile in der Mitte der gewählten Geraden, je Achse quer zum Abschnitt
-  if (sel >= 0 && !proj().unrouted && (!gz || gz.type === 'lmove')) {
+  if (!ofs && sel >= 0 && !proj().unrouted && (!gz || gz.type === 'lmove')) {
     const a = pts[sel], b = pts[sel + 1], m = V.mul(V.add(a, b), 0.5), d = V.norm(V.sub(b, a)), [mx, my] = P3(m), ds = proj().deltas;
     [0, 1, 2].forEach(k => {
       if (Math.abs(d[k]) > 0.999) return; // in Laufrichtung geht der Längenpfeil
@@ -2569,6 +2588,8 @@ function gzStart(g, e) {
     if (g.type === 'pmove') { gz.sOrig = sceneState(p); gz.dOrig = structuredClone(p.deltas); gz.oOrig = [...p.origin]; gz.v0 = g.key[0] === 'R' ? (pl => pl[planeKey(pl, g.k)])(planeById(g.key.slice(2))) : nodePos(g.key)[g.k]; }
     gz.gx = lx; gz.gy = ly;
     if (g.type === 'lmove') { gz.oOrig = [...p.origin]; gz.dOrig = structuredClone(p.deltas); gz.txOrig = structuredClone(p.bundleTx); gz.t = 0; gz.res = null; }
+    if (g.type === 'ofs') { gz.oOrig = [...p.origin]; gz.dOrig = structuredClone(p.deltas); gz.txOrig = structuredClone(p.bundleTx); gz.res = null; }
+    if (g.type === 'ofsc') gz.t0 = ofs.t;
     if (g.type === 'bnew') gz.base = p.bundle.filter(b => b.side === g.side).at(-1)?.dist || 0;
     if (g.type === 'brot') { gz.A = layout.verts[0]; gz.r = 74 / view.sc; gz.t0 = ringAngle(g.q, g.w, 0, 359, lx, ly); }
     return;
@@ -2763,6 +2784,50 @@ function collapseLegs(r) {
   if (!ops.length || !arr.length) return null;
   return { ...r, deltas: arr, newI, ops, changed: [...new Set(near)].filter(j => j < arr.length), flip: false, moved: [], removed: true };
 }
+// Rahmen des Versatz-X: Rohrrichtung u und die beiden Querrichtungen (die erste waagerecht).
+// Das X liegt in der Ebene aus u und der Versatzrichtung; automatisch in der, die am besten zum Betrachter zeigt.
+function ofsFrame() {
+  const v = legVec(ofs.i), u = V.norm(v), c = V.cross(u, [0, 0, 1]), n1 = V.len(c) > 1e-6 ? V.norm(c) : [1, 0, 0], n2 = V.norm(V.cross(u, n1)), d = viewDir();
+  const cur = ofs.n ?? (Math.abs(V.dot(n2, d)) >= Math.abs(V.dot(n1, d)) ? 0 : 1);
+  return { u, L: V.len(v), ns: [n1, n2], cur, n: cur ? n2 : n1 };
+}
+// Versatz v in Richtung nd: s = 1 setzt den Rohrteil danach ab, s = -1 den Teil davor. Die Länge in Rohrrichtung bleibt, der Schenkel selbst nimmt die Schräge auf.
+// Ist die bewegte Seite fest, gleicht dort ein Schenkel aus. Ergebnis: neue Schenkel, { blocked } oder null (kein Platz).
+function ofsBuild(ds, origin, o, p, v, s, nd) {
+  const i = o.i, leg = deltaVec(ds[i]), L = V.len(leg), u = V.mul(leg, 1 / L), w = V.mul(nd, v), run = o.ang >= 89.9 ? 0 : v / Math.tan(o.ang * Math.PI / 180);
+  const a = o.t - run / 2, b = L - o.t - run / 2, vec = q => ({ x: q[0], y: q[1], z: q[2] });
+  if (a < 1 || b < 1) return null;
+  const A = vec(V.mul(u, a)), B = vec(V.mul(u, b)), out = ds.map(d => ({ ...d }));
+  // Bezug und Ausgleich bleiben an dem Stück, das nicht wandert
+  out.splice(i, 1, s > 0 ? { ...ds[i], ...A } : A, vec(V.add(V.mul(w, s), V.mul(u, run))), s > 0 ? B : { ...ds[i], ...B });
+  const changed = [i, i + 1, i + 2];
+  if (s > 0 ? !p.endFixed : !p.startFixed) return { deltas: out, origin: s > 0 ? origin : V.add(origin, w), changed };
+  const pool = out.map((d, j) => j).filter(j => (s > 0 ? j > i + 2 : j < i)).sort((x, y) => (s > 0 ? x - y : y - x)).filter(j => !out[j].lock)
+    .map(j => { const q = deltaVec(out[j]), l = V.len(q); return { j, L: l, u: l > 1e-9 ? V.mul(q, 1 / l) : null, d: out[j] }; }).filter(l => l.u);
+  const r = solveLengths(V.mul(w, -s), pool);
+  if (!r.ok) return { blocked: `${s > 0 ? 'Das Ende' : 'Der Anfang'} ist fest, und kein Schenkel kann ausgleichen. ${s > 0 ? 'Ende' : 'Anfang'} öffnen oder die andere Seite des X ziehen.` };
+  if (r.S.some((l, k) => l.L + r.c[k] < 1)) return null;
+  r.S.forEach((l, k) => { Object.assign(out[l.j], vec(V.mul(l.u, l.L + r.c[k]))); changed.push(l.j); });
+  return { deltas: out, origin, changed };
+}
+// Schenkel j als Schräge eines Versatzes: Nachbarn laufen parallel weiter
+function etageAt(p, j) {
+  if (j < 1 || j >= p.deltas.length - 1) return null;
+  const a = deltaVec(p.deltas[j - 1]), b = deltaVec(p.deltas[j]), c = deltaVec(p.deltas[j + 1]), u = V.norm(a);
+  if (V.len(V.cross(u, V.norm(c))) > 1e-3 || V.dot(u, c) <= 0) return null;
+  const run = V.dot(b, u), w = V.sub(b, V.mul(u, run)), v = V.len(w);
+  return v < 0.5 || run < -0.01 ? null : { u, w, run, v, ang: Math.atan2(v, run) * 180 / Math.PI };
+}
+// Winkel eines Versatzes ändern: Versatz und Mitte bleiben, die Nachbarn gleichen je zur Hälfte aus
+function setEtageAng(p, j, ang) {
+  const e = etageAt(p, j);
+  if (!e) return;
+  const run = ang >= 89.9 ? 0 : e.v / Math.tan(ang * Math.PI / 180), da = (run - e.run) / 2, out = p.deltas.map(d => ({ ...d }));
+  const put = (k, q) => Object.assign(out[k], { x: q[0], y: q[1], z: q[2] });
+  put(j - 1, V.sub(deltaVec(out[j - 1]), V.mul(e.u, da))); put(j + 1, V.sub(deltaVec(out[j + 1]), V.mul(e.u, da))); put(j, V.add(e.w, V.mul(e.u, run)));
+  if (out[j - 1].lock || out[j + 1].lock || !shiftOk(p, { deltas: out, flip: false, changed: [j - 1, j, j + 1] })) { toast('Dieser Winkel passt hier nicht: Die geraden Stücke würden zu kurz.'); return; }
+  commit(); p.deltas = out; renderInputs(); recompute(); selectLeg(j);
+}
 function legMoveTo(t) {
   const p = proj(), e = [0, 0, 0], ds = gz.dOrig;
   e[gz.k] = t;
@@ -2797,7 +2862,28 @@ function shiftBundle(bs, orig, i, delta) {
 }
 function bundleMove(lx, ly) {
   const p = proj(), D = prof(p).D;
-  if (!gz.moved) return;
+  if (!gz.moved || gz.blocked) return;
+  if (gz.type === 'ofsc') {
+    const [mx, my] = gz.pxPerMm, m = mx * mx + my * my, L = V.len(legVec(ofs.i));
+    if (m < 1e-6) return;
+    ofs.t = round5(Math.max(5, Math.min(L - 5, gz.t0 + ((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / m)), 5);
+    gz.label = `${fmt(ofs.t)} mm ab Eckpunkt`;
+    draw();
+    return;
+  }
+  if (gz.type === 'ofs') {
+    const [mx, my] = gz.pxPerMm, v = round5(Math.max(0, ((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my)) * Math.SQRT1_2, 0);
+    const r = v > 0 ? ofsBuild(gz.dOrig, gz.oOrig, ofs, p, v, gz.s, gz.dir) : null, ok = r?.deltas && shiftOk(p, r);
+    if (ok || !v) {
+      if (ok) gzChanged();
+      p.deltas = structuredClone(ok ? r.deltas : gz.dOrig); p.origin = [...(ok ? r.origin : gz.oOrig)]; p.bundleTx = structuredClone(gz.txOrig);
+      if (ok) txInsertLegs(p, ofs.i, 2);
+      gz.res = ok ? r : null; gz.v = v;
+    }
+    gz.label = !v ? '' : ok ? `${fmt(v)} mm · ${ofs.ang}°` : `Weiter geht es nicht: zu wenig Platz${gz.res ? ` · ${fmt(gz.v)} mm` : ''}`;
+    recompute(true);
+    return;
+  }
   if (gz.type === 'lmove') {
     gzChanged();
     const [mx, my] = gz.pxPerMm, t = Math.round(((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my));
@@ -2838,6 +2924,15 @@ function bundleMove(lx, ly) {
 }
 function bundleEnd(g) {
   const p = proj();
+  if (g.type === 'ofsc') { draw(); return; }
+  if (g.type === 'ofs') {
+    if (g.blocked) { toast(g.blocked); draw(); return; }
+    if (!g.res) { if (!g.moved) toast('Arm ziehen: Der Rohrteil auf dieser Seite wandert in Pfeilrichtung.'); recompute(); return; }
+    const i = ofs.i;
+    ofs = null; adjusted = { set: new Set(g.res.changed.filter(j => j < i || j > i + 2)), t: performance.now() };
+    refit(); renderInputs(); recompute(); selectLeg(i + 1);
+    return;
+  }
   if (g.type === 'lmove') {
     if (!g.moved) return;
     if (g.res) adjusted = { set: new Set(g.res.changed), t: performance.now() };
@@ -3511,7 +3606,15 @@ $('#offOk').addEventListener('click', applyOffset);
 $('#offCancel').addEventListener('click', () => { $('#offDlg').hidden = true; });
 $('#offDlg').addEventListener('click', e => { if (e.target.id === 'offDlg') $('#offDlg').hidden = true; });
 $('#offNew').addEventListener('click', () => openOffset('new'));
-$('#offLegView').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
+// „⤳ Versatz“ schaltet das X auf dem gewählten Schenkel ein und aus
+$('#offLegView').addEventListener('click', () => {
+  if (sel < 0) return;
+  ensureDeltas();
+  const L = V.len(legVec(sel));
+  if (proj().deltas[sel].lock) { toast('Dieser Schenkel ist fest. Erst lösen, dann Versatz setzen.'); return; }
+  ofs = ofs || L < 1 ? null : { i: sel, t: round5(L / 2), ang: 45, n: null };
+  renderBundleBar(); draw();
+});
 $('#lpOff').addEventListener('click', () => { if (sel >= 0) openOffset('insert', sel); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { $('#offDlg').hidden = true; $('#newDlg').hidden = true; $('#visPop').hidden = true; } });
 
@@ -3775,7 +3878,7 @@ function applyRoute(p, next) {
 }
 
 // Auswahl
-function clearSel() { selPoint = null; selPlane = null; pointMove = false; }
+function clearSel() { selPoint = null; selPlane = null; pointMove = false; ofs = null; }
 function selectPoint(pid, w) {
   if (pid !== db.currentId) { db.currentId = pid; highlight = -1; fullRender(); }
   sel = -1; selCorner = -1; bundleSel = -1; startOpen = false;
@@ -4087,11 +4190,19 @@ function renderBundleBar() {
   const p = proj(), bar = $('#bundleBar');
   if (bundleSel >= p.bundle.length) bundleSel = -1;
   renderPipeCol(p);
+  $('#offLegView').classList.toggle('on', !!ofs);
+  if (ofs) {
+    const f = ofsFrame(), names = Math.abs(f.u[2]) > 0.999 ? ['X-Richtung', 'Y-Richtung'] : ['Waagerecht', 'Senkrecht'];
+    ofs.cur = f.cur; bar.hidden = false;
+    bar.innerHTML = `<span>Versatz</span>${[30, 45, 60, 90].map(a => `<button data-ofa="${a}"${a === ofs.ang ? ' class="on"' : ''}>${a}°</button>`).join('')}${names.map((t, k) => `<button data-ofn="${k}"${k === f.cur ? ' class="on"' : ''}>${t}</button>`).join('')}${pipeLocks(p)}<button data-bb="ofsx">Fertig</button>`;
+    return;
+  }
   if (renderSceneBar(bar)) return;
   const nm = selCorner >= 1 && p.bundle.length ? txNames(selCorner - 1) : null;
   bar.hidden = bundleSel < 0 && !nm && sel < 0;
   if (bundleSel < 0 && !nm && sel >= 0) {
-    bar.innerHTML = `<span>${esc(p.name)}</span>${pipeLocks(p)}<button data-bb="legins">Einfügen</button>${p.deltas.length > 1 ? '<button data-bb="legdel" class="danger">Schenkel löschen</button>' : ''}${p.bundle.length ? '<button data-bb="paradd">+ Parallelrohr</button><button data-bb="ownall">Alle als eigene Rohre</button>' : ''}${sel > 0 && sel < p.deltas.length - 1 ? scene(p).planes.filter(pl => Math.abs(deltaVec(p.deltas[sel])[pl.axis]) < 0.5).map(pl => `<button data-la="${pl.id}">An R${planeNo(pl)}</button>`).join('') : ''}${scenePipes(p).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
+    const eta = etageAt(p, sel);
+    bar.innerHTML = `<span>${esc(p.name)}</span>${eta ? [30, 45, 60, 90].map(a => `<button data-ofa="${a}"${Math.abs(a - eta.ang) < 0.5 ? ' class="on"' : ''}>${a}°</button>`).join('') : ''}${pipeLocks(p)}<button data-bb="legins">Einfügen</button>${p.deltas.length > 1 ? '<button data-bb="legdel" class="danger">Schenkel löschen</button>' : ''}${p.bundle.length ? '<button data-bb="paradd">+ Parallelrohr</button><button data-bb="ownall">Alle als eigene Rohre</button>' : ''}${sel > 0 && sel < p.deltas.length - 1 ? scene(p).planes.filter(pl => Math.abs(deltaVec(p.deltas[sel])[pl.axis]) < 0.5).map(pl => `<button data-la="${pl.id}">An R${planeNo(pl)}</button>`).join('') : ''}${scenePipes(p).length > 1 ? '<button data-bb="pipedel" class="danger">Rohr löschen</button>' : ''}`;
     return;
   }
   if (bundleSel >= 0) bar.innerHTML = `<span>Rohr ${bundleSel + 2} · ${fmt(bundleGapOf(p, bundleSel))} mm zum Nachbarn</span><button data-bb="paradd">+ Parallelrohr</button><button data-bb="own">Als eigenes Rohr</button>${p.bundle.length > 1 ? '<button data-bb="ownall">Alle als eigene Rohre</button>' : ''}<button data-bb="guide">In Anleitung zeigen</button><button data-bb="del" class="danger">Löschen</button>`;
@@ -4120,6 +4231,9 @@ $('#bundleBar').addEventListener('click', e => {
   const b = e.target.closest('button'), p = proj();
   if (!b) return;
   if (b.dataset.tx != null) { setTx(selCorner - 1, +b.dataset.tx); return; }
+  if (b.dataset.ofa) { if (ofs) { ofs.ang = +b.dataset.ofa; renderBundleBar(); draw(); } else setEtageAng(p, sel, +b.dataset.ofa); return; }
+  if (b.dataset.ofn) { ofs.n = +b.dataset.ofn; renderBundleBar(); draw(); return; }
+  if (b.dataset.bb === 'ofsx') { ofs = null; renderBundleBar(); draw(); return; }
   if (b.dataset.lock) { toggleLock(pipeById(b.dataset.pid), b.dataset.lock); return; }
   if (b.dataset.bb === 'legins') { if (sel >= 0) insertLeg(sel + 1, sel); return; }
   if (b.dataset.bb === 'legdel') { delLeg(); return; }
