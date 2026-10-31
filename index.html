@@ -16,6 +16,7 @@
 </head>
 <body>
 <button class="update-bar" id="updateBar" hidden></button>
+<div class="tip" id="tip" role="tooltip" hidden></div>
 <div class="floatbar">
   <button id="menuBtn" class="flbtn" title="Menü" aria-label="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></button>
   <button id="treeBtn" class="flbtn fl-undo" title="Browser" aria-label="Browser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg></button>
@@ -69,10 +70,9 @@
         <button class="cb cb-tri cb-tl" data-tri="l" aria-label="Fläche links" hidden>◀</button>
         <button class="cb cb-tri cb-tr" data-tri="r" aria-label="Fläche rechts" hidden>▶</button>
       </div>
-      <div class="pipecol" id="pipeCol" hidden><button id="colBtn" aria-label="Rohrfarbe" title="Rohrfarbe"></button><div class="colpop" id="colPop" hidden></div></div>
       <div class="viewacts">
         <div class="navbar" role="toolbar" aria-label="Navigation">
-          <button class="nvb" data-nav="pan" title="Verschieben" aria-label="Verschieben"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4L2.4 16c-.7-.8-.7-2 0-2.8.8-.8 2-.8 2.8 0L8 16"/></svg></button>
+          <button class="nvb" data-nav="pan" title="Verschieben" aria-label="Verschieben"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20"/><path d="M2 12h20"/><path d="m9 5 3-3 3 3"/><path d="m9 19 3 3 3-3"/><path d="m5 9-3 3 3 3"/><path d="m19 9 3 3-3 3"/></svg></button>
           <button class="nvb" data-nav="zoom" title="Zoomen" aria-label="Zoomen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></button>
           <button class="nvb" id="navFit" title="Einpassen" aria-label="Einpassen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
           <span class="nvsep"></span>
@@ -95,18 +95,23 @@
       <div class="popover fmenu" id="visPop" hidden>
         <div class="mlabel">Maße</div>
         <div class="seg" id="dimLevel"><button data-lv="quiet">Ruhig</button><button data-lv="sel">Auswahl</button><button data-lv="all">Alle</button></div>
-        <div class="mlabel">Einblenden</div>
-        <label class="chk"><input type="checkbox" data-vis="axis"> Achslinie</label>
-        <label class="chk"><input type="checkbox" data-vis="total"> Gesamtmaße (Versatz A → Ende)</label>
-        <label class="chk"><input type="checkbox" data-vis="angles"> Winkelmaße</label>
-        <label class="chk"><input type="checkbox" data-vis="marks"> Strich-Markierungen</label>
-        <label class="chk"><input type="checkbox" data-vis="grid"> Raster &amp; Schatten</label>
-        <label class="chk labonly"><input type="checkbox" data-vis="planes"> Wände, Boden, Decke</label>
-        <label class="chk labonly"><input type="checkbox" data-vis="clamps"> Schellen</label>
-        <label class="chk"><input type="checkbox" data-vis="colors"> Rohrfarben</label>
-        <label class="chk"><input type="checkbox" data-vis="refPlanes"> Referenzebenen</label>
-        <label class="chk"><input type="checkbox" data-vis="extAlways"> Fortführ-Pfeile immer zeigen</label>
-        <div class="legend"><span class="lg-mark"></span>Markierung <span class="lg-dim"></span>Achslinie</div>
+        <label class="chk">Gesamtmaße<input type="checkbox" data-vis="total"></label>
+        <label class="chk">Winkelmaße<input type="checkbox" data-vis="angles"></label>
+        <label class="chk">Versatzmaße<input type="checkbox" data-vis="offsets"></label>
+        <label class="chk">Beschriftungen<input type="checkbox" data-vis="labels"></label>
+        <div class="msep"></div>
+        <div class="mlabel">Rohr</div>
+        <label class="chk">Achslinie<input type="checkbox" data-vis="axis"></label>
+        <label class="chk">Biegemarken<input type="checkbox" data-vis="marks"></label>
+        <label class="chk">Rohrfarben<input type="checkbox" data-vis="colors"></label>
+        <label class="chk">Fortführ-Pfeile<input type="checkbox" data-vis="extAlways"></label>
+        <label class="chk">Fangpunkte<input type="checkbox" data-vis="snap"></label>
+        <div class="msep"></div>
+        <div class="mlabel">Umgebung</div>
+        <label class="chk">Raster und Schatten<input type="checkbox" data-vis="grid"></label>
+        <label class="chk">Referenzebenen<input type="checkbox" data-vis="refPlanes"></label>
+        <label class="chk labonly">Wände, Boden, Decke<input type="checkbox" data-vis="planes"></label>
+        <label class="chk labonly">Schellen<input type="checkbox" data-vis="clamps"></label>
       </div>
       <div class="toast" id="toast" hidden></div>
       <div class="roombar" id="roomBar" hidden></div>
@@ -139,13 +144,20 @@
   <button data-tab="room" class="labonly"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></span>Raum</button>
 </nav>
 
+<div class="modal" id="askDlg" hidden>
+  <div class="askbox" role="alertdialog" aria-modal="true" aria-labelledby="askMsg">
+    <p id="askMsg"></p>
+    <div class="askrow"><button id="askNo">Abbrechen</button><button id="askYes"></button></div>
+  </div>
+</div>
+
 <div class="modal" id="offDlg" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="offTitle">
     <div class="lp-head"><b id="offTitle">Versatz</b><button id="offCancel">Abbrechen</button></div>
     <div class="sheet-body"><div>
     <div class="lbl">Biegewinkel</div>
     <div class="seg" id="offAng">
-      <button data-a="15">15°</button><button data-a="30">30°</button><button data-a="45">45°</button><button data-a="60">60°</button><button data-a="90">90°</button>
+      <button data-a="15">15°</button><button data-a="30">30°</button><button data-a="45">45°</button><button data-a="60">60°</button><button data-a="75">75°</button><button data-a="90">90°</button>
     </div>
     <div class="row2">
       <label>Versatz (mm)<input id="offV" inputmode="decimal"></label>

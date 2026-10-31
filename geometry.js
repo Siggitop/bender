@@ -96,6 +96,11 @@ export function anglesFromPoints(pts) {
 export function computeLayout(rawPts, o) {
   const errors = [], warnings = [];
   const verts = cleanPoints(rawPts);
+  // fitLast = Rohr-Ø: Passt der letzte Bogen beim Ziehen nicht mehr um den Rohrquerschnitt, zeigt sich der Schenkel gar nicht, statt das Rohr zu verdrehen
+  if (o.fitLast && verts.length > 2) {
+    const a = V.sub(verts.at(-2), verts.at(-3)), b = V.sub(verts.at(-1), verts.at(-2)), th = Math.acos(Math.max(-1, Math.min(1, V.dot(V.norm(a), V.norm(b)))));
+    if (V.len(b) / Math.tan(Math.min(th, rad(179.5)) / 2) < o.fitLast * 0.75) verts.pop();
+  }
   if (verts.length < 2) return { verts, pts: verts, legs: [], bends: [], straights: [], total: 0, samples: [], errors: ['Mindestens ein Schenkel mit Länge nötig.'], warnings };
   const R = o.R;
   if (!(R > 0)) errors.push('Biegeradius der Zange fehlt.');
@@ -108,13 +113,21 @@ export function computeLayout(rawPts, o) {
 
   const legs = anglesFromPoints(pts);
   const bends = [];
+  // fitAll: Zwischenbilder beim Ziehen. Reicht ein Schenkel nicht für seine Bögen, werden sie enger, statt das Rohr zu verformen
+  const nb = pts.length - 2, half = i => Math.tan(rad(Math.min(legs[i].angle, 179.5)) / 2), rs = Array(Math.max(0, nb)).fill(R);
+  if (o.fitAll) for (let pass = 0; pass < 3; pass++) legs.forEach((leg, j) => {
+    const a = j > 0 ? rs[j - 1] * half(j - 1) : 0, b = j < nb ? rs[j] * half(j) : 0, k = leg.len / (a + b || 1);
+    if (k < 1) { if (j > 0) rs[j - 1] *= k; if (j < nb) rs[j] *= k; }
+  });
   for (let i = 1; i < pts.length - 1; i++) {
     const L = legs[i - 1];
     if (L.angle > 179.5) errors.push(`Biegung ${i}: ${L.angle.toFixed(0)}° – Rohr läuft zurück, nicht biegbar.`);
     const th = rad(Math.min(L.angle, 179.5));
-    const T = R * Math.tan(th / 2), B = R * th;
+    // Beim Ziehen am Rohrende wächst der letzte Bogen mit dem neuen Schenkel, statt aufzuspringen
+    const r = rs[i - 1];
+    const T = r * Math.tan(th / 2), B = r * th;
     bends.push({
-      angle: L.angle, rot: L.rot, T, B, gain: 2 * T - B, vertex: pts[i],
+      r, angle: L.angle, rot: L.rot, T, B, gain: 2 * T - B, vertex: pts[i],
       din: V.norm(V.sub(pts[i], pts[i - 1])), dout: V.norm(V.sub(pts[i + 1], pts[i])),
     });
   }
@@ -146,12 +159,12 @@ export function computeLayout(rawPts, o) {
     const ts = V.sub(bd.vertex, V.mul(bd.din, bd.T));
     samples.push({ p: ts, s: bd.start, b: -1 });
     const bv = V.norm(V.sub(bd.dout, V.mul(bd.din, V.dot(bd.din, bd.dout))));
-    const C = V.add(ts, V.mul(bv, R));
+    const C = V.add(ts, V.mul(bv, bd.r));
     const th = rad(Math.min(bd.angle, 179.5));
     const n = Math.max(3, Math.ceil(bd.angle / 6));
     for (let q = 0; q <= n; q++) {
       const t = th * q / n;
-      samples.push({ p: V.add(C, V.add(V.mul(bv, -R * Math.cos(t)), V.mul(bd.din, R * Math.sin(t)))), s: bd.start + R * t, b: j });
+      samples.push({ p: V.add(C, V.add(V.mul(bv, -bd.r * Math.cos(t)), V.mul(bd.din, bd.r * Math.sin(t)))), s: bd.start + bd.r * t, b: j });
     }
   });
   samples.push({ p: pts.at(-1), s: total, b: -1 });

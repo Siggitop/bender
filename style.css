@@ -380,6 +380,9 @@ body:not(.lab) .labonly { display: none !important; }
   font-size: 17px; font-weight: 700; color: var(--accent); background: var(--card); border: 2px solid var(--accent); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .2); }
 
 /* Ende fixiert: Fest / Ausgleich */
+.tip { position: fixed; z-index: 60; max-width: 260px; padding: 4px 8px; border-radius: 6px; background: var(--text); color: var(--bg); font-size: 12px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); }
+.tip[hidden] { display: none; }
+.tip kbd { margin-left: 8px; font: inherit; opacity: .7; }
 .toast { position: fixed; top: calc(64px + env(safe-area-inset-top)); z-index: 50; }
 .dimtools { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 4px 16px rgba(0, 0, 0, .18); }
 .dimtools button { min-height: 34px; padding: 2px 10px; font-size: 13px; white-space: nowrap; }
@@ -403,10 +406,7 @@ body:not(.lab) .labonly { display: none !important; }
 }
 
 /* Leiste für Punkte, Ebenen, Rohre: eine Zeile, seitlich wischbar – das Rohr bleibt sichtbar */
-#bundleBar { flex-wrap: nowrap; overflow-x: auto; max-height: none; max-width: none; padding: 4px 6px; gap: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 #bundleBar::-webkit-scrollbar { display: none; }
-#bundleBar span { flex: none; font-weight: 600; color: var(--text); }
-#bundleBar button { flex: none; min-height: 38px; padding: 4px 8px; font-size: 13px; }
 @media (max-width: 420px) { .viewacts { gap: 4px; left: 6px; right: 6px; } .viewacts button { padding: 6px 8px; font-size: 13px; } }
 @media (orientation: landscape) and (max-height: 520px) { .tabbar button { font-size: 10px; padding: 4px 2px; } }
 #dimLevel button { min-height: 36px; font-size: 13px; padding: 2px 8px; }
@@ -414,15 +414,8 @@ body:not(.lab) .labonly { display: none !important; }
 /* Einklappbar: Ansichten zeigen nur die aktuelle, Werkzeuge hinter ⋯ */
 .acts-more { display: contents; }
 .acts-more[hidden] { display: none !important; }
-#visPop .legend { position: static; margin-top: 2px; display: flex; }
 
-/* Rohrfarbe als Icon, Plus-Menü, Schlösser */
-.pipecol { position: absolute; top: 146px; right: 8px; z-index: 3; display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 6px; }
-#colBtn { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 99px; border: 3px solid var(--card); box-shadow: 0 0 0 1px var(--line); }
-.colpop { display: flex; flex-wrap: wrap; gap: 6px; max-width: 170px; padding: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-.colpop button.swatch { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 99px; border: 2px solid transparent; }
-.colpop button.swatch.on { border-color: var(--text); box-shadow: inset 0 0 0 2px var(--card); }
-.pipecol[hidden], .colpop[hidden] { display: none; }
+/* Plus-Menü, Schlösser */
 #addBtn { min-width: 44px; font-weight: 700; }
 #bundleBar button.lockbtn { color: var(--text); }
 #bundleBar button.lockbtn.open { color: var(--muted); }
@@ -464,7 +457,12 @@ body:not(.lab) .labonly { display: none !important; }
 .tchev { flex: none; width: 24px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); font-size: 15px; }
 .teye { flex: none; width: 28px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); }
 .teye svg { width: 16px; height: 16px; }
-.tdot { flex: none; width: 11px; height: 11px; margin: 0 4px 0 2px; border-radius: 99px; }
+.tlock.on { color: var(--text); }
+.tdot { flex: none; width: 24px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; background: transparent; }
+.tdot i { width: 13px; height: 13px; border-radius: 99px; }
+.tcols { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 6px 8px 46px; }
+.tcols .swatch { width: 28px; height: 28px; min-width: 0; min-height: 0; padding: 0; border-radius: 99px; border: 2px solid transparent; }
+.tcols .swatch.on { border-color: var(--text); box-shadow: inset 0 0 0 2px var(--card); }
 .tname { flex: 1; min-width: 0; min-height: 34px; padding: 2px 6px 2px 2px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; background: transparent; text-align: left; font-size: 13px; }
 .tname span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tname small { flex: none; font-size: 11px; color: var(--muted); }
@@ -475,7 +473,7 @@ body:not(.lab) .labonly { display: none !important; }
 .tedit { flex: 1; min-width: 0; min-height: 32px; padding: 3px 6px; font-size: 16px; }
 
 /* Antippen sichtbar machen: auf dem Handy gibt es kein Überfahren */
-.nvb:active, .flbtn:active:not(:disabled), .tname:active, .tchev:active, .teye:active, .tmore:active, .tabbar button:active { background: var(--accent-soft); }
+.nvb:active, .flbtn:active:not(:disabled), .tname:active, .tchev:active, .teye:active, .tmore:active, .tdot:active, .tabbar button:active { background: var(--accent-soft); }
 @media (hover: hover) {
   .viewacts .navbar .nvb:not(.on):hover, .flbtn:not(.on):not(:disabled):hover, .trow:not(.on):hover { background: var(--accent-soft); }
 }
@@ -495,9 +493,54 @@ body:not(.lab) .labonly { display: none !important; }
 .menu-head { padding: 8px 10px 4px; }
 #visPop { max-height: calc(100% - 76px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #visPop .seg { margin: 0 6px 4px; }
-#visPop .chk { gap: 10px; min-height: 36px; padding: 2px 10px; border-radius: 8px; }
-#visPop .chk input { flex: none; width: 18px; height: 18px; min-height: 18px; margin: 0; accent-color: var(--accent); }
-#visPop .legend { padding: 6px 10px 4px; }
 .tacts button { min-height: 32px; padding: 3px 8px; border: 0; background: transparent; color: var(--accent); font-size: 13px; }
 .tacts button.danger { color: var(--err); }
 @media (hover: hover) { .mi:hover, #visPop .chk:hover, .tacts button:hover { background: var(--accent-soft); } }
+
+/* Auswahl-Leiste: wie die Navigationsleiste, Knöpfe ohne Rahmen */
+#bundleBar { left: 50%; right: auto; transform: translateX(-50%); width: max-content; max-width: calc(100% - 16px); flex-wrap: nowrap; gap: 2px; padding: 3px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, .1); }
+#bundleBar span { flex: none; padding: 0 8px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+#bundleBar button { flex: none; min-height: 38px; padding: 4px 9px; border: 0; border-radius: 9px; background: transparent; color: var(--text); font-size: 13px; white-space: nowrap; }
+#bundleBar button:active { background: var(--accent-soft); }
+#bundleBar button.on { background: var(--accent); color: #fff; }
+#bundleBar button.danger { color: var(--err); }
+#bundleBar button.lockbtn { padding: 4px 7px; }
+#bundleBar button.lockbtn.open { color: var(--muted); }
+.bsep { flex: none; width: 1px; height: 22px; margin: 0 3px; background: var(--line); }
+.bsep:last-child { display: none; }
+@media (hover: hover) { #bundleBar button:not(.on):hover { background: var(--accent-soft); } }
+/* Anzeige-Menü: Zeilen mit Schalter rechts */
+#visPop { width: 240px; }
+#visPop .chk { justify-content: space-between; gap: 12px; min-height: 38px; padding: 2px 10px; border-radius: 8px; font-size: 14px; color: var(--text); white-space: normal; cursor: pointer; }
+#visPop .chk input { flex: none; position: relative; width: 36px; height: 22px; min-height: 22px; margin: 0; padding: 0; border: 0; border-radius: 99px; background: var(--line); -webkit-appearance: none; appearance: none; outline: none; transition: background .15s; cursor: pointer; }
+#visPop .chk input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 99px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
+#visPop .chk input:checked { background: var(--accent); }
+#visPop .chk input:checked::after { transform: translateX(14px); }
+#visPop .seg { background: transparent; }
+#dimLevel button { min-height: 32px; }
+
+.mrow { display: flex; align-items: center; border-radius: 8px; }
+.mrow .mi { flex: 1; min-width: 0; }
+.mrow .tedit { flex: 1; min-width: 0; margin: 4px 0 4px 6px; }
+.mmore { flex: none; width: 34px; height: 40px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
+.mmore svg { width: 18px; height: 18px; }
+.mmore:active { background: var(--accent-soft); }
+.mctx { margin: 0 6px 4px 12px; padding: 2px; border-left: 2px solid var(--line); }
+.mctx .mi { min-height: 36px; font-size: 13px; }
+.mi.mdanger { color: var(--err); }
+@media (hover: hover) { .mmore:hover { background: var(--accent-soft); } }
+
+/* Rückfrage */
+#askDlg { align-items: center; z-index: 60; }
+.askbox { width: min(300px, calc(100vw - 48px)); padding: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 28px rgba(0, 0, 0, .25); }
+.askbox p { margin: 0 0 14px; font-size: 15px; text-align: center; overflow-wrap: anywhere; }
+.askrow { display: flex; gap: 8px; }
+.askrow button { flex: 1; border: 0; background: var(--bg); }
+#askYes { font-weight: 600; color: var(--accent); }
+#askYes.mdanger { color: var(--err); }
+
+/* Rechnen im Maßfeld */
+.dimres { padding: 1px 8px; font-size: 13px; font-weight: 600; color: var(--accent); background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+.dimres.bad { color: var(--muted); }
+.dimcalc button { min-width: 38px; padding: 2px; font-size: 18px; }
+.dimedit { width: 120px; }
