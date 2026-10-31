@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Rohrbiege-Assistent</title>
 <meta name="description" content="Rohrleitungen im Achsmaß aufmessen, 3D ansehen und mit der Handbiegezange biegen.">
-<meta name="theme-color" content="#1d5fd1">
+<meta name="theme-color" content="#e6e7e9">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -18,13 +18,16 @@
 <button class="update-bar" id="updateBar" hidden></button>
 <div class="floatbar">
   <button id="menuBtn" class="flbtn" title="Menü" aria-label="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></button>
+  <button id="treeBtn" class="flbtn fl-undo" title="Browser" aria-label="Browser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg></button>
   <button id="undoBtn" class="flbtn fl-undo" title="Rückgängig (⌘Z)" aria-label="Rückgängig" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
   <button id="redoBtn" class="flbtn fl-undo" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
 </div>
-<div class="menupop" id="menuPop" hidden>
+<div class="menupop fmenu" id="menuPop" hidden>
   <div class="menu-head"><b>⟆ Rohrbiegen</b><span class="ver" id="verTag"></span></div>
-  <label>Projekt<select id="projSel" aria-label="Projekt wählen"></select></label>
-  <button id="pNew" title="Neues Projekt">+ Neues Projekt</button>
+  <div class="mlabel">Projekte</div>
+  <div class="mlist" id="projSel"></div>
+  <div class="msep"></div>
+  <button class="mi" id="pNew" title="Neues Projekt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Neues Projekt</button>
 </div>
 
 <div class="layout">
@@ -56,28 +59,43 @@
       <canvas id="cvBg" aria-hidden="true"></canvas>
       <canvas id="cvGL" aria-hidden="true"></canvas>
       <canvas id="cv" aria-label="3D-Ansicht des gebogenen Rohrs"></canvas>
-      <div class="viewbtns closed" id="viewBtns">
-        <button data-view="iso" title="3D drehen">3D</button>
-        <button data-view="front" title="Ansicht von vorne">Vorne</button>
-        <button data-view="back" title="Ansicht von hinten">Hinten</button>
-        <button data-view="top" title="Ansicht von oben">Oben</button>
-        <button data-view="bottom" title="Ansicht von unten">Unten</button>
-        <button data-view="left" title="Ansicht von links">Links</button>
-        <button data-view="right" title="Ansicht von rechts">Rechts</button>
+      <div class="cubebox" id="cubeBox">
+        <canvas id="cube" width="140" height="140" aria-label="Ansichtswürfel: Fläche, Kante oder Ecke antippen, ziehen zum Drehen"></canvas>
+        <button class="cb cb-home" id="cubeHome" title="Startansicht" aria-label="Startansicht"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-6h4v6"/></svg></button>
+        <button class="cb cb-roll cb-rl" data-roll="1" title="Nach links drehen" aria-label="Nach links drehen" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+        <button class="cb cb-roll cb-rr" data-roll="-1" title="Nach rechts drehen" aria-label="Nach rechts drehen" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        <button class="cb cb-tri cb-tu" data-tri="u" aria-label="Fläche darüber" hidden>▲</button>
+        <button class="cb cb-tri cb-td" data-tri="d" aria-label="Fläche darunter" hidden>▼</button>
+        <button class="cb cb-tri cb-tl" data-tri="l" aria-label="Fläche links" hidden>◀</button>
+        <button class="cb cb-tri cb-tr" data-tri="r" aria-label="Fläche rechts" hidden>▶</button>
       </div>
-      <div class="viewhint" id="viewHint"></div>
       <div class="pipecol" id="pipeCol" hidden><button id="colBtn" aria-label="Rohrfarbe" title="Rohrfarbe"></button><div class="colpop" id="colPop" hidden></div></div>
       <div class="viewacts">
-        <button id="visBtn" aria-label="Anzeige" title="Anzeige">👁</button>
-        <button id="addBtn" aria-label="Hinzufügen" title="Hinzufügen">+</button>
-        <button id="moreBtn" class="labonly" aria-label="Werkzeuge" title="Werkzeuge">⋯</button>
+        <div class="navbar" role="toolbar" aria-label="Navigation">
+          <button class="nvb" data-nav="pan" title="Verschieben" aria-label="Verschieben"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4L2.4 16c-.7-.8-.7-2 0-2.8.8-.8 2-.8 2.8 0L8 16"/></svg></button>
+          <button class="nvb" data-nav="zoom" title="Zoomen" aria-label="Zoomen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></button>
+          <button class="nvb" id="navFit" title="Einpassen" aria-label="Einpassen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+          <span class="nvsep"></span>
+          <button class="nvb" id="visBtn" title="Anzeige" aria-label="Anzeige"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <button class="nvb" id="addBtn" title="Hinzufügen" aria-label="Hinzufügen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+          <button class="nvb" id="offLegView" title="Versatz" aria-label="Versatz" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h6l8-10h6"/></svg></button>
+          <button class="nvb labonly" id="moreBtn" title="Werkzeuge" aria-label="Werkzeuge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        </div>
         <span class="acts-more" id="actsMore" hidden>
         <span class="toolseg labonly"><button data-tool="edit" class="on" title="Rohr bearbeiten">Rohr</button><button data-tool="clamp" title="Schellen setzen und verschieben">Schellen</button><button data-tool="room" title="Grundriss zeichnen, Wände ziehen">Raum</button></span></span>
-        <button id="offLegView" hidden>⤳ Versatz</button>
+        
       </div>
-      <div class="popover addpop" id="addPop" hidden><button id="addPipe" title="Weiteres Rohr in dieses Projekt">Rohr</button><button id="addPar" title="Parallelrohr im Abstand des ersten">Parallelrohr</button><button id="addPlane" title="Referenzebene anlegen">Ebene</button></div>
-      <div class="popover" id="visPop" hidden>
+      <div class="browser" id="browser" hidden></div>
+      <div class="popover fmenu addpop" id="addPop" hidden>
+        <div class="mlabel">Hinzufügen</div>
+        <button class="mi" id="addPipe" title="Weiteres Rohr in dieses Projekt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/></svg>Rohr</button>
+        <button class="mi" id="addPar" title="Parallelrohr im Abstand des ersten"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/><path d="M8 21v-8a3 3 0 0 1 3-3h10"/></svg>Parallelrohr</button>
+        <button class="mi" id="addPlane" title="Referenzebene anlegen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Ebene</button>
+      </div>
+      <div class="popover fmenu" id="visPop" hidden>
+        <div class="mlabel">Maße</div>
         <div class="seg" id="dimLevel"><button data-lv="quiet">Ruhig</button><button data-lv="sel">Auswahl</button><button data-lv="all">Alle</button></div>
+        <div class="mlabel">Einblenden</div>
         <label class="chk"><input type="checkbox" data-vis="axis"> Achslinie</label>
         <label class="chk"><input type="checkbox" data-vis="total"> Gesamtmaße (Versatz A → Ende)</label>
         <label class="chk"><input type="checkbox" data-vis="angles"> Winkelmaße</label>
@@ -93,7 +111,12 @@
       <div class="toast" id="toast" hidden></div>
       <div class="roombar" id="roomBar" hidden></div>
       <div class="roombar" id="bundleBar" hidden></div>
-      <div class="popover planepop" id="planePop" hidden><button data-ax="0" class="ax-x-b">X-Ebene</button><button data-ax="1" class="ax-y-b">Y-Ebene</button><button data-ax="2" class="ax-z-b">Z-Ebene</button></div>
+      <div class="popover fmenu planepop" id="planePop" hidden>
+        <div class="mlabel">Ebene senkrecht zu</div>
+        <button class="mi" data-ax="0"><span class="mdot" style="background:var(--ax-x)"></span>X-Achse</button>
+        <button class="mi" data-ax="1"><span class="mdot" style="background:var(--ax-y)"></span>Y-Achse</button>
+        <button class="mi" data-ax="2"><span class="mdot" style="background:var(--ax-z)"></span>Z-Achse</button>
+      </div>
       <div class="legpanel" id="legPanel" hidden>
         <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Schließen">Fertig</button></div>
         <div class="row2">
@@ -109,11 +132,11 @@
 </div>
 
 <nav class="tabbar">
-  <button data-tab="view" class="active"><span>◈</span>3D</button>
-  <button data-tab="guide"><span>☰</span>Biegen</button>
-  <button data-tab="tools"><span>⚙</span>Einstellungen</button>
-  <button data-tab="input" class="labonly"><span>✎</span>Rohr</button>
-  <button data-tab="room" class="labonly"><span>⌂</span>Raum</button>
+  <button data-tab="view" class="active"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span>3D</button>
+  <button data-tab="guide"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/><path d="M8 21v-8a3 3 0 0 1 3-3h10"/></svg></span>Biegen</button>
+  <button data-tab="tools"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></svg></span>Einstellungen</button>
+  <button data-tab="input" class="labonly"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>Rohr</button>
+  <button data-tab="room" class="labonly"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></span>Raum</button>
 </nav>
 
 <div class="modal" id="offDlg" hidden>

@@ -219,24 +219,87 @@ export function pipeGap(A, B) {
   for (let i = 0; i < A.length - 1; i++) for (let k = 0; k < B.length - 1; k++) m = Math.min(m, segDist(A[i], A[i + 1], B[k], B[k + 1]));
   return m;
 }
+// Damit jeder Schenkel exakt parallel zum Quellrohr läuft, müssen sich benachbarte Geraden schneiden: gleiche Höhe quer zur Biegeebene.
+// An Ecken im Raum geht das nicht mit überall gleichem Abstand. Dann wird die Lage so wenig wie möglich geändert (kleinste gewichtete Änderung):
+// Der erste Schenkel bleibt, Schenkel quer zur Versatzrichtung bleiben praktisch, schräge Schenkel geben nach – dort ist der Abstand kleiner.
+function closeCorners(off, d, pts, sides) {
+  const n = d.length, rows = [];
+  for (let j = 0; j < n - 1; j++) {
+    const ax = V.cross(d[j], d[j + 1]);
+    if (V.len(ax) > 1e-9) rows.push({ j, nn: V.norm(ax) });
+  }
+  const miss = r => V.dot(V.sub(off[r.j], off[r.j + 1]), r.nn);
+  if (rows.every(r => Math.abs(miss(r)) < 1e-6)) return;
+  // Nachgiebigkeit je Schenkel: kurze und schräge geben nach, der erste gar nicht, das Ende fast nicht
+  const give = d.map((dj, i) => { const L = V.len(V.sub(pts[i + 1], pts[i])) || 1; return i === 0 ? 0 : (Math.abs(V.dot(dj, sides[i])) > 0.01 ? 1 : 0.02) * (i === n - 1 ? 0.02 : 1) / L; });
+  // Quer zum Schenkel projizierte Biegeebenen-Normale: Richtung, in die die Änderung am wenigsten kostet
+  const row = (r, i) => (i === r.j + 1 ? 1 : i === r.j ? -1 : 0);
+  const perp = (nn, i) => V.sub(nn, V.mul(d[i], V.dot(nn, d[i])));
+  const m = rows.length, A = rows.map(a => rows.map(b => {
+    let s = 0;
+    for (const i of [a.j, a.j + 1]) if (row(b, i)) s += give[i] * row(a, i) * row(b, i) * V.dot(perp(a.nn, i), perp(b.nn, i));
+    return s;
+  })), b = rows.map(miss);
+  const x = solve(A, b, m);
+  if (!x) return;
+  const fix = d.map(() => [0, 0, 0]);
+  rows.forEach((r, k) => { for (const i of [r.j, r.j + 1]) fix[i] = V.add(fix[i], V.mul(perp(r.nn, i), give[i] * row(r, i) * x[k])); });
+  off.forEach((o, i) => { off[i] = V.add(o, fix[i]); });
+}
+// Gleichungssystem lösen; bei zu wenig Nachgiebigkeit null
+function solve(A, b, m) {
+  A = A.map(r => [...r]); b = [...b];
+  for (let k = 0; k < m; k++) {
+    let p = k;
+    for (let r = k + 1; r < m; r++) if (Math.abs(A[r][k]) > Math.abs(A[p][k])) p = r;
+    if (Math.abs(A[p][k]) < 1e-12) return null;
+    [A[k], A[p]] = [A[p], A[k]]; [b[k], b[p]] = [b[p], b[k]];
+    for (let r = 0; r < m; r++) if (r !== k) { const f = A[r][k] / A[k][k]; for (let q = k; q < m; q++) A[r][q] -= f * A[k][q]; b[r] -= f * b[k]; }
+  }
+  return b.map((v, k) => v / A[k][k]);
+}
 // gapAuto(t) liefert den gemeinsamen Abstand aller Rohre des Bündels (zweiter Durchlauf, siehe needGap).
 // Ergebnis: pts (Achspunkte inkl. Etagen), segs (Strecken mit Soll-Richtung, Schenkel, Art), offsets (Lage am Schenkelanfang),
 // needGap (je Biegung: kleinster Abstand, damit zwischen Etage und Bogen die Mindest-Gerade bleibt), turns (Lage nach Biegung je rot).
-export function bundleGeometry(pts, dist, dir0, txs, { R, minStraight = 0 }) {
+// Wird ein Schenkel für seine Bögen zu kurz, gibt der Abstand auf den schrägen Schenkeln so wenig wie nötig nach (give 0 = exakt, 1 = verschoben wie das Quellrohr).
+export function bundleGeometry(pts, dist, dir0, txs, opts) {
+  const at = give => bundleAt(pts, dist, dir0, txs, opts, give), exact = at(0);
+  if (!exact.short || txs?.length || at(1).short) return exact;
+  let lo = 0, hi = 1, best = at(1);
+  for (let k = 0; k < 8; k++) { const mid = (lo + hi) / 2, g = at(mid); if (g.short) lo = mid; else { hi = mid; best = g; } }
+  return best;
+}
+function bundleAt(pts, dist, dir0, txs, { R, minStraight = 0 }, give) {
   const n = pts.length - 1, d = pts.slice(1).map((p, i) => V.norm(V.sub(p, pts[i])));
   const tx = new Map((txs || []).filter(t => t.bend >= 0 && t.bend < n - 1).map(t => [t.bend, t]));
   const off = [], turns = [];
   off[0] = V.mul(V.norm(V.sub(dir0, V.mul(d[0], V.dot(dir0, d[0])))), dist);
+  // Versatzrichtung: Das Rohr liegt auf jeder Geraden im Abstand dist so weit wie möglich auf dieser Seite, Anfang und Ende also orthogonal versetzt.
+  // Läuft ein Schenkel selbst in diese Richtung, geht es um die Ecke weiter (innen oder außen), und ab dort gilt die neue Seite.
+  let side = V.norm(off[0]);
+  const sides = [side];
+  const onSide = (dj, fallback) => { const q = V.sub(side, V.mul(dj, V.dot(side, dj))); const l = V.len(q); if (l > 0.2) return V.mul(V.norm(q), dist * (1 - give + give * l)); side = V.norm(fallback); return fallback; };
   for (let j = 0; j < n - 1; j++) {
     const ax = V.cross(d[j], d[j + 1]), sn = V.len(ax);
-    if (sn < 1e-9) { off[j + 1] = off[j]; continue; }
+    if (sn < 1e-9) { off[j + 1] = tx.size ? off[j] : onSide(d[j + 1], off[j]); sides[j + 1] = side; continue; }
     const nn = V.mul(ax, 1 / sn), m1 = V.cross(nn, d[j]), m2 = V.cross(nn, d[j + 1]);
     const carried = V.add(V.mul(nn, V.dot(off[j], nn)), V.mul(m2, V.dot(off[j], m1)));
     turns[j] = { 0: carried, 1: rotAbout(carried, d[j + 1], Math.PI / 2), [-1]: rotAbout(carried, d[j + 1], -Math.PI / 2) };
     const t = tx.get(j);
-    off[j + 1] = t ? turns[j][t.rot > 0 ? 1 : -1] : carried;
+    off[j + 1] = t ? turns[j][t.rot > 0 ? 1 : -1] : tx.size ? carried : onSide(d[j + 1], carried);
+    sides[j + 1] = side;
   }
-  // Ecken: in der Biegeebene Schnitt der beiden Geraden; quer dazu (nn) von der alten auf die neue Höhe → senkrechtes Stück
+  if (!tx.size) {
+    closeCorners(off, d, pts, sides);
+    // Lässt sich die Seite nicht halten, ohne dem Quellrohr zu nahe zu kommen: exakter Abstand, die Lage dreht sich mit
+    if (off.some(o => V.len(o) < 0.6 * dist || V.len(o) > 1.4 * dist)) d.slice(0, -1).forEach((dj, j) => {
+      const ax = V.cross(dj, d[j + 1]), sn = V.len(ax);
+      if (sn < 1e-9) { off[j + 1] = off[j]; return; }
+      const nn = V.mul(ax, 1 / sn);
+      off[j + 1] = V.add(V.mul(nn, V.dot(off[j], nn)), V.mul(V.cross(nn, d[j + 1]), V.dot(off[j], V.cross(nn, dj))));
+    });
+  }
+  // Ecken: in der Biegeebene Schnitt der beiden Geraden; quer dazu (nn) von der alten auf die neue Höhe → senkrechtes Stück (nur bei Lagewechsel)
   const out = [V.add(pts[0], off[0])], segs = [];
   const push = (q, dir, leg, kind) => { segs.push({ a: out.length - 1, dir, leg, kind }); out.push(q); };
   for (let i = 1; i < n; i++) {
