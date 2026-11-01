@@ -88,6 +88,7 @@ Alle Farben stehen als Variablen in `style.css`, für Hell und Dunkel. Keine fes
 - **Ebenen sperren:** Das Schloss in der Ebenenzeile des Projektmanagers macht eine Ebene im 3D-Raum unanwählbar und hält ihre Position fest. Sie bleibt löschbar und Fangziel.
 - **Beschriftungen:** S1, E1, R1, A und die Bündelzahl hängen an einem Schalter im Auge. Maße, Schlösser und Biegemarken bleiben davon unberührt.
 - **Rohr anlegen ist ein Befehl:** Die Leiste führt Schritt für Schritt (Bezug, Versatz, Richtung und Länge). Die Wirkung ist im Raum sofort sichtbar, Abbrechen hinterlässt nichts. Neue mehrstufige Befehle folgen diesem Muster.
+- **Messen** läuft nur orthogonal: je Achse ein Maß, kein Diagonalwert. Der Befehl ändert nichts und landet nicht im Verlauf. Bei Ebenen zählt nur der senkrechte Abstand.
 - **Quicktipps:** Symbole zeigen beim Überfahren mit Maus oder Trackpad nach 0,5 s ein kleines Schild mit Name und Kürzel. Neue Symbole brauchen deshalb immer `aria-label` oder `title`. Auf Touch gibt es keine Quicktipps.
 - **Rohrfarbe** wird im Projektmanager am Farbpunkt des Rohrs gewählt, nicht in der 3D-Ansicht.
 - **Rückgängig** nimmt immer den letzten Befehl zurück, egal an welchem Rohr oder Projekt. Auch Anlegen, Löschen, Umbenennen und Ausblenden zählen dazu.

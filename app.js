@@ -196,7 +196,7 @@ function commit(key = null, snap = null) {
 // Rückgängig nimmt immer den letzten Befehl zurück, egal an welchem Rohr oder Projekt er lief
 function undoRedo(dir) {
   const from = dir < 0 ? hist.undo : hist.redo, to = dir < 0 ? hist.redo : hist.undo;
-  if (!from.length || gz || drag || create) return;
+  if (!from.length || gz || drag || inCmd()) return;
   const pid0 = db.currentId, sc0 = proj().sceneId;
   to.push(snapshot());
   restoreSnapshot(from.pop());
@@ -1390,6 +1390,9 @@ let ofs = null;
 let selPoint = null, selPlane = null, pointMove = false, pick = null;
 // create: Befehl „Rohr anlegen“ { step 'ref'|'ofs', ref, off, hover }, lastOff: Versatz des letzten angelegten Rohrs
 let create = null, lastOff = null;
+// measure: Befehl „Messen“ { a, b, hover, turn }: Punkte wie beim Anlegen, turn = Achsfolge im Bild
+let measure = null;
+const inCmd = () => !!(create || measure);
 let sel = -1, selCorner = -1, drag = null; // gewählter Schenkel bzw. Eckpunkt (Schnittpunkt), laufendes Ziehen eines Anfassers
 let camTool = 'edit';      // 'edit' = Gimbal/Anfasser, 'clamp' = Schellen setzen
 function resetView(v = 'iso') {
@@ -1837,7 +1840,7 @@ function render3d() {
 
   if (camTool === 'room') { gizmo = []; drawRoomOverlay(P3); }
   else if (camTool !== 'clamp' && !printing && !animLayout) {
-    if (ortho && !create && !p.stub) drawEditOverlay(P3, cAcc);
+    if (ortho && !inCmd() && !p.stub) drawEditOverlay(P3, cAcc);
     drawGizmo();
   } else gizmo = [];
 
@@ -1850,7 +1853,8 @@ function render3d() {
   if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
   if (camTool === 'edit') drawRefDims(P3, allDims);
   if (camTool === 'edit') drawLocks(P3);
-  if (create?.step === 'ofs') drawCreateDims(P3);
+  if (create?.step === 'ofs') dimSegs(axisSegs(create.ref.pos, create.off), P3);
+  if (measure) { const m = measureResult(); if (m) dimSegs(axisSegs(m.S, m.d, MEASURE_TURNS[measure.turn]), P3); }
   // Fangen: Hilfslinie zum Punkt, auf dessen Höhe der gezogene Punkt eingerastet ist
   if (gz && snapLine) {
     const [bx, by] = P3(snapLine.of()), ring = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke(); };
@@ -2703,6 +2707,7 @@ function drawGizmo() {
   const bbar = $('#bundleBar');
   if (!bbar.hidden) bbar.style.bottom = `${$('#viewwrap').getBoundingClientRect().bottom - $('.viewacts').getBoundingClientRect().top + 6}px`;
   if (create) { drawCreate(view.P3); return; }
+  if (measure) { drawMeasure(view.P3); return; }
   if (proj().stub) { drawStub(); return; }
   const pts = points(proj()), n = pts.length - 1, sc = view.sc, P3 = view.P3, cAcc = css('--accent');
   if (n < 1) return;
@@ -3845,7 +3850,7 @@ function hitGhost(x, y) {
 // Ebene unter dem Finger: die ganze Fläche zählt; von der Kante gesehen bleibt nur der Griff in der Mitte
 function hitPlane(x, y) {
   if (!vis.refPlanes) return null;
-  for (const pl of scene().planes.filter(q => !q.hidden && !q.locked)) {
+  for (const pl of scene().planes.filter(q => !q.hidden && (!q.locked || measure))) {
     const c = planeCorners(pl).map(q => view.P3(q));
     if (pointInPoly(c, x, y) || c.some((q, i) => segDist(x, y, ...q, ...c[(i + 1) % 4]) < hitTol(10))) return pl.id;
   }
@@ -3879,10 +3884,10 @@ cv.addEventListener('pointerdown', e => {
     // Direkt auf einem Eckpunkt hat der Eckpunkt Vorrang vor dem Längenpfeil daneben
     if (g?.type === 'len' || g?.type === 'lmove') { const c = hitCorner(lx, ly), q = c >= 1 && view.P3(points(proj())[c]); if (q && Math.hypot(q[0] - lx, q[1] - ly) < 12) g = null; }
     // Liegt ein Maß unter dem Finger, gilt Tippen dem Maß; erst Ziehen greift den Griff darunter
-    const onDim = camTool === 'edit' && !pick && !create && !!hitDim(lx, ly);
+    const onDim = camTool === 'edit' && !pick && !inCmd() && !!hitDim(lx, ly);
     if (g && onDim) { ptrs.get(e.pointerId).grab = g; return; }
     if (g) { gzStart(g, e); return; }
-    const i = camTool === 'edit' && isOrtho() && !onDim && !create && !proj().stub ? hitVertex(lx, ly) : -1;
+    const i = camTool === 'edit' && isOrtho() && !onDim && !inCmd() && !proj().stub ? hitVertex(lx, ly) : -1;
     if (i >= 0) {
       const before = snapshot();
       ensureDeltas();
@@ -3895,9 +3900,9 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const prev = ptrs.get(e.pointerId);
   if (!prev) {
-    if (create?.step === 'ref' && view) {
-      const id = createHit(...local(e))?.id ?? null;
-      if (id !== create.hover) { create.hover = id; renderBundleBar(); draw(); }
+    if ((create?.step === 'ref' || measure) && view) {
+      const m = measure || create, id = hitCand(createCands(!!measure), ...local(e))?.id ?? null;
+      if (id !== m.hover) { m.hover = id; renderBundleBar(); draw(); }
       return;
     }
     if (camTool === 'room' && roomDraw && view) roomHover(...local(e));
@@ -3940,7 +3945,8 @@ cv.addEventListener('pointerup', e => {
   if (drag) { endDrag(); return; }
   if (pt && ptrs.size === 0 && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
-    if (create) { const c = create.step === 'ref' && createHit(lx, ly); if (c) createPick(c); return; }
+    if (create) { const c = create.step === 'ref' && hitCand(createCands(), lx, ly); if (c) createPick(c); return; }
+    if (measure) { const c = hitCand(createCands(true), lx, ly); if (c) measurePick(c); return; }
     if (dropStub()) return;
     extOpen = false; startOpen = false;
     // Maß festlegen: Ebene antippen; ein Tipp daneben bricht nicht ab, dafür gibt es „Abbrechen“
@@ -4626,6 +4632,17 @@ $('#bundleBar').addEventListener('click', e => {
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') finish(true); else if (ev.key === 'Escape') finish(false); ev.stopPropagation(); });
     inp.addEventListener('blur', () => finish(true));
   };
+  if (ds.me) {
+    if (ds.me === 'end') measure = null;
+    else if (ds.me === 'new') measure.a = measure.b = null;
+    else {
+      // Achsen ohne Versatz zählen nicht: Der nächste Weg soll im Bild anders aussehen
+      const d = measureResult().d, way = t => MEASURE_TURNS[t].filter(k => d[k]).join(), now = way(measure.turn);
+      do measure.turn = (measure.turn + 1) % MEASURE_TURNS.length; while (way(measure.turn) === now);
+    }
+    renderBundleBar(); draw();
+    return;
+  }
   if (ds.co) {
     if (ds.co === 'cancel') { create = null; renderBundleBar(); draw(); }
     else if (ds.co === 'ok') createOk();
@@ -4862,7 +4879,9 @@ function renderBundleBar() {
   const p = proj(), bar = $('#bundleBar');
   if (bundleSel >= p.bundle.length) bundleSel = -1;
   renderBrowser();
+  $('#measBtn').classList.toggle('on', !!measure);
   if (create) { renderCreateBar(bar); return; }
+  if (measure) { renderMeasureBar(bar); return; }
   if (p.stub) { bar.hidden = false; bar.innerHTML = `<span>${esc(p.name)}: Richtung und Länge ziehen</span><button data-bb="stubdrop">Abbrechen</button>`; return; }
   $('#offLegView').classList.toggle('on', !!ofs);
   if (ofs) {
@@ -4899,34 +4918,42 @@ function setTx(bend, r) {
 }
 // ---------- Befehl „Rohr anlegen“: Bezugspunkt, Versatz, dann Richtung und Länge am Gimbal ----------
 $('#addPipe').addEventListener('click', () => {
-  dropStub();
-  if (camTool !== 'edit') setTool('edit');
-  ofs = null; pick = null;
-  selectLeg(-1);
+  startCmd();
   create = { step: 'ref', ref: null, off: [0, 0, 0], hover: null };
   renderBundleBar(); draw();
 });
+function startCmd() {
+  dropStub();
+  create = measure = null;
+  if (camTool !== 'edit') setTool('edit');
+  ofs = null; pick = null;
+  selectLeg(-1);
+}
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if (create) { create = null; renderBundleBar(); draw(); } else dropStub();
+  if (inCmd()) { create = measure = null; renderBundleBar(); draw(); } else dropStub();
 });
 const createPos = () => V.add(create.ref.pos, create.off);
 // Mögliche Bezüge. to = Punkt, an dem der neue Anfang hängen bleibt, axes = Achsen dieses Bezugs; Eckpunkte und Nullpunkt kennt das Maß-System nicht
-function createCands() {
+// Beim Messen (all) zählen auch Parallelrohre und gesperrte Ebenen
+function createCands(all = false) {
   const out = [], add = (id, pos, name, to = null, axes = []) => { if (!out.some(c => V.len(V.sub(c.pos, pos)) < 0.5)) out.push({ id, pos, name, to, axes }); };
   const pipes = scenePipes().filter(q => !q.hidden);
   pipes.forEach(q => ['S', 'E'].forEach(w => { const key = `${w}:${q.id}`; add(key, nodePos(key), nodeName(key), key, [0, 1, 2]); }));
   pipes.forEach(q => { if (!q.unrouted) points(q).slice(1, -1).forEach((v, i) => add(`C:${q.id}:${i}`, v, `Eckpunkt ${i + 1} von ${q.name}`)); });
-  if (vis.refPlanes) scene().planes.filter(pl => !pl.hidden && !pl.locked).forEach(pl => {
-    const c = planeCorners(pl);
-    add(`R:${pl.id}`, c.reduce(V.add).map(v => v / c.length), nodeName(`R:${pl.id}`), `R:${pl.id}`, [pl.axis]);
+  if (all) {
+    const others = (layout.ghosts || []).filter(g => pipes.some(q => q.id === g.id));
+    [...layout.bundle.filter(B => !B.def.hidden), ...others].forEach((L, j) => L.verts.forEach((v, i) => add(`B:${j}:${i}`, v, 'Parallelrohr')));
+  }
+  if (vis.refPlanes) scene().planes.filter(pl => !pl.hidden && (all || !pl.locked)).forEach(pl => {
+    const c = planeCorners(pl), id = `R:${pl.id}`;
+    out.push({ id, pos: c.reduce(V.add).map(v => v / c.length), name: nodeName(id), to: id, axes: [pl.axis], plane: pl });
   });
   add('O', [0, 0, 0], 'Nullpunkt');
   return out;
 }
-function createHit(x, y) {
+function hitCand(cands, x, y) {
   let best = null, bd = hitTol(18);
-  const cands = createCands();
   for (const c of cands) { const [px, py] = view.P3(c.pos), d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = c; } }
   if (best) return best;
   const pl = hitPlane(x, y);
@@ -4978,48 +5005,92 @@ function dropStub() {
   fullRender();
   return true;
 }
-function drawCreate(P3) {
+function drawCands(cands, hoverId, alpha, P3) {
   const cAcc = css('--accent');
-  if (create.step === 'ref') {
-    createCands().forEach(c => {
-      const [x, y] = P3(c.pos), on = create.hover === c.id;
-      ctx.save(); ctx.globalAlpha = on ? 1 : 0.7;
-      if (c.id === 'O') { ctx.strokeStyle = cAcc; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke(); }
-      if (on || c.id !== 'O') knob(x, y, on ? 9 : 5, cAcc);
-      ctx.restore();
-    });
-    return;
-  }
-  const { ref, off } = create;
-  let a = ref.pos;
-  off.forEach((v, k) => {
-    if (!v) return;
-    const e = [0, 0, 0]; e[k] = v;
-    const b = V.add(a, e);
-    ctx.save(); ctx.strokeStyle = rgbCss(AX_RGB[k]); ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(...P3(a)); ctx.lineTo(...P3(b)); ctx.stroke(); ctx.restore();
-    a = b;
+  cands.forEach(c => {
+    const [x, y] = P3(c.pos), on = hoverId === c.id;
+    ctx.save(); ctx.globalAlpha = on ? 1 : alpha;
+    if (c.id === 'O') { ctx.strokeStyle = cAcc; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke(); }
+    if (on || c.id !== 'O') knob(x, y, on ? 9 : 5, cAcc);
+    ctx.restore();
   });
-  ctx.beginPath(); ctx.arc(...P3(ref.pos), 6, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2; ctx.stroke();
-  const T = createPos();
-  knob(...P3(T), 7, cAcc);
-  axisArrows(T, [0, 1, 2], g => gizmo.push({ type: 'cofs', ...g }));
 }
-// Versatz je Achse am Weg vom Bezug zum Startpunkt
-function drawCreateDims(P3) {
-  const { ref, off } = create, T = createPos();
-  let a = ref.pos;
-  off.forEach((v, k) => {
-    if (!v) return;
-    const e = [0, 0, 0]; e[k] = v;
-    const b = V.add(a, e);
-    dimLine(P3(a), P3(b), `${'XYZ'[k]} ${fmt(v)}`, P3(V.mul(V.add(ref.pos, T), 0.5)), 26, null, { color: rgbCss(AX_RGB[k]) });
+// Weg von A entlang der Achsen; Achsen ohne Versatz entfallen
+const axisSegs = (A, d, order = [0, 1, 2]) => {
+  let a = A;
+  return order.flatMap(k => {
+    if (!d[k]) return [];
+    const e = [0, 0, 0]; e[k] = d[k];
+    const b = V.add(a, e), seg = { k, v: d[k], a, b };
     a = b;
+    return [seg];
   });
+};
+function drawSegs(segs, P3) {
+  segs.forEach(({ k, a, b }) => { ctx.save(); ctx.strokeStyle = rgbCss(AX_RGB[k]); ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(...P3(a)); ctx.lineTo(...P3(b)); ctx.stroke(); ctx.restore(); });
+}
+// Maß je Achse am Weg. Zeigt eine Achse aus dem Bild, steht ihr Wert nur in der Leiste
+function dimSegs(segs, P3) {
+  if (!segs.length) return;
+  const away = P3(V.mul(V.add(segs[0].a, segs.at(-1).b), 0.5));
+  segs.forEach(({ k, v, a, b }) => {
+    const pa = P3(a), pb = P3(b);
+    if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > 2) dimLine(pa, pb, `${'XYZ'[k]} ${fmt(v)}`, away, 26, null, { color: rgbCss(AX_RGB[k]) });
+  });
+}
+function drawCreate(P3) {
+  if (create.step === 'ref') { drawCands(createCands(), create.hover, 0.7, P3); return; }
+  const { ref, off } = create, T = createPos();
+  drawSegs(axisSegs(ref.pos, off), P3);
+  ctx.beginPath(); ctx.arc(...P3(ref.pos), 6, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2; ctx.stroke();
+  knob(...P3(T), 7, css('--accent'));
+  axisArrows(T, [0, 1, 2], g => gizmo.push({ type: 'cofs', ...g }));
 }
 function drawStub() {
   const S = points(proj())[0];
   knob(...view.P3(S), 7, css('--accent'));
   axisArrows(S, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'first', ...g }); });
+}
+// ---------- Befehl „Messen“: nur orthogonal, ändert nichts und landet nicht im Verlauf ----------
+const MEASURE_TURNS = [[0, 1, 2], [2, 0, 1], [1, 2, 0]];
+$('#measBtn').addEventListener('click', () => {
+  const on = !measure;
+  startCmd();
+  if (on) measure = { a: null, b: null, hover: null, turn: 0 };
+  renderBundleBar(); draw();
+});
+const planesCross = (a, b) => a?.plane && b?.plane && a.plane.axis !== b.plane.axis;
+function measurePick(c) {
+  const m = measure, from = m.b || m.a;
+  if (from?.id === c.id) return;
+  if (planesCross(from, c)) { toast('Nur parallele Ebenen haben einen Abstand.'); return; }
+  if (!m.a) m.a = c;
+  else if (!m.b) m.b = c;
+  else { m.a = m.b; m.b = c; } // weitermessen: Die Kette läuft vom letzten Punkt aus
+  m.hover = null;
+  renderBundleBar(); draw();
+}
+// Von a nach b. Bei einer Ebene zählt nur ihr senkrechter Abstand
+function measureResult() {
+  const { a } = measure, b = measure.b || createCands(true).find(c => c.id === measure.hover);
+  if (!a || !b || a.id === b.id || planesCross(a, b)) return null;
+  const k = (a.plane || b.plane)?.axis, S = [...a.pos], E = [...b.pos];
+  if (b.plane) { E.splice(0, 3, ...a.pos); E[k] = b.plane.c; } else if (a.plane) { S.splice(0, 3, ...b.pos); S[k] = a.plane.c; }
+  return { S, E, b, axes: k == null ? [0, 1, 2] : [k], d: V.sub(E, S).map(v => (Math.abs(v) < 0.05 ? 0 : v)) };
+}
+function renderMeasureBar(bar) {
+  const { a, b, hover } = measure, m = measureResult(), end = '<button data-me="end">Beenden</button>';
+  bar.hidden = false;
+  if (!m) { bar.innerHTML = `<span>${esc(createCands(true).find(c => c.id === hover)?.name || (a ? `Von ${a.name}: Punkt 2 wählen` : 'Messen: Punkt 1 wählen'))}</span>${a ? '<button data-me="new">Neu</button>' : ''}${end}`; return; }
+  const vals = m.axes.map(k => `<span class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(m.d[k])}</span>`).join('');
+  bar.innerHTML = `<span>${esc(a.name)} → ${esc(m.b.name)}</span>${vals}${b ? `${m.d.filter(Boolean).length > 1 ? '<button data-me="turn">Weg drehen</button>' : ''}<button data-me="new">Neu</button>` : ''}${end}`;
+}
+function drawMeasure(P3) {
+  const m = measureResult(), { a, b } = measure;
+  drawCands(createCands(true), measure.hover, b ? 0.35 : 0.7, P3);
+  if (!m) { if (a) { ctx.beginPath(); ctx.arc(...P3(a.pos), 8, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2.5; ctx.stroke(); } return; }
+  drawSegs(axisSegs(m.S, m.d, MEASURE_TURNS[measure.turn]), P3);
+  [m.S, m.E].forEach(q => { ctx.beginPath(); ctx.arc(...P3(q), 8, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2.5; ctx.stroke(); });
 }
 $('#bundleBar').addEventListener('click', e => {
   const b = e.target.closest('button'), p = proj();
@@ -5231,6 +5302,7 @@ function treeAct(a, k) {
 function browserGo(k) {
   const [t, a, b] = k.split(':');
   if (create) { const c = t === 'pt' && create.step === 'ref' && createCands().find(x => x.id === `${b}:${a}`); if (c) createPick(c); return; }
+  if (measure) { const c = createCands(true).find(x => x.id === (t === 'pl' ? `R:${a}` : `${b}:${a}`)); if (c) measurePick(c); return; }
   if (dropStub()) return;
   if (t === 'pl') {
     if (!vis.refPlanes) { vis.refPlanes = true; saveVis(); const c = $('[data-vis=refPlanes]'); if (c) c.checked = true; }
@@ -5307,7 +5379,7 @@ document.addEventListener('pointerover', e => {
 document.addEventListener('pointerout', e => { if (!e.relatedTarget) { hideTip(); tip.el = null; } });
 ['pointerdown', 'wheel', 'keydown'].forEach(n => document.addEventListener(n, hideTip, { capture: true, passive: true }));
 
-function fullRender() { create = null; spotMemo.clear(); extOpen = false; startOpen = false; bundleSel = -1; pick = null; clearSel(); adjusted = { set: new Set(), t: 0 }; sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { create = measure = null; spotMemo.clear(); extOpen = false; startOpen = false; bundleSel = -1; pick = null; clearSel(); adjusted = { set: new Set(), t: 0 }; sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = $('#offLegView').hidden = true; renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 setBrowser(!!vis.tree);
