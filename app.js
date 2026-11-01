@@ -212,7 +212,7 @@ function commit(key = null, snap = null) {
 // Rückgängig nimmt immer den letzten Befehl zurück, egal an welchem Rohr oder Projekt er lief
 function undoRedo(dir) {
   const from = dir < 0 ? hist.undo : hist.redo, to = dir < 0 ? hist.redo : hist.undo;
-  if (!from.length || gz || drag || inCmd()) return;
+  if (!from.length || gz || drag || (inCmd() && !measure)) return;
   const pid0 = db.currentId, sc0 = proj().sceneId;
   to.push(snapshot());
   restoreSnapshot(from.pop());
@@ -225,6 +225,7 @@ function undoRedo(dir) {
   }
   refit();
   renderProjectBar(); renderInputs(); recompute();
+  if (measure) measRefresh();
   const keepPlane = selPlane && scene(p).planes.some(x => x.id === selPlane) ? selPlane : null, keepPoint = selPoint && pipeById(selPoint.pid) ? selPoint : null, keepFit = selFit && fitById(selFit) ? selFit : null;
   selectLeg(sel < points(p).length - 1 ? sel : -1);
   if (keepPlane) selectPlane(keepPlane); else if (keepPoint) selectPoint(keepPoint.pid, keepPoint.w); else if (keepFit) selectFit(keepFit);
@@ -2034,8 +2035,8 @@ function render3d() {
   if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
   if (camTool === 'edit' && CONSTRAINTS) drawRefDims(P3, allDims);
   if (camTool === 'edit') drawLocks(P3);
-  if (create?.step === 'ofs') dimSegs(axisSegs(create.ref.pos, create.off), P3, true);
-  if (measure) { const m = measureResult(); if (m) dimSegs(axisSegs(m.S, m.d, MEASURE_TURNS[measure.turn]), P3); }
+  if (create?.step === 'ofs') dimSegs(axisSegs(create.ref.pos, create.off), P3, 'cof');
+  if (measure) { const m = measureResult(); if (m) dimSegs(axisSegs(m.S, m.d, MEASURE_TURNS[measure.turn]), P3, measMover() && 'mdim'); }
   // Fangen: Hilfslinie zum Punkt, auf dessen Höhe der gezogene Punkt eingerastet ist
   if (gz && snapLine) {
     const [bx, by] = P3(snapLine.of()), ring = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke(); };
@@ -2379,6 +2380,18 @@ function dimBox(d, value, signed = false) {
   res.className = 'dimres'; res.hidden = true; box.append(res);
   const show = () => { const on = hasCalc(inp.value), v = on ? calc(inp.value, value, signed) : null; res.hidden = !on; res.textContent = v == null ? '…' : `= ${fmt(r1(v))}`; res.classList.toggle('bad', on && v == null); };
   const settle = () => { if (!hasCalc(inp.value)) return; const v = calc(inp.value, value, signed); inp.value = String(r1(v ?? value)).replace('.', ','); };
+  // Tasten im Feld: Safari auf dem iPhone nimmt dem Eingabefeld beim Antippen den Fokus, das darf das Feld nicht schließen.
+  // Dieser Blur-Hörer steht vor allen anderen. Bleibt der Klick aus, holt der Nachlauf das Schließen nach
+  let keep = false, later = 0;
+  const release = () => {
+    keep = false;
+    if (box.isConnected && document.activeElement !== inp) inp.dispatchEvent(new Event('blur'));
+  };
+  inp.addEventListener('blur', e => { if (keep) e.stopImmediatePropagation(); });
+  box.addEventListener('pointerdown', e => { clearTimeout(later); if (e.target !== inp) keep = true; });
+  box.addEventListener('pointerup', () => { if (keep) later = setTimeout(release, 400); });
+  box.addEventListener('pointercancel', release);
+  box.addEventListener('click', e => { if (keep && e.target !== inp) { keep = false; inp.focus({ preventScroll: true }); } });
   inp.addEventListener('input', show);
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') settle(); });
   inp.addEventListener('blur', settle);
@@ -3562,7 +3575,7 @@ function bundleMove(lx, ly) {
     gz.label = `${'XYZ'[gz.k]} ${fmt(f.pos[gz.k] - gz.pos0[gz.k])}`;
     // Nahe an einem Rohrende oder Anschluss rastet das Fitting ganz ein, mit Lage und Richtung
     const hit = dockNear(f);
-    if (hit) { dockFit(f, hit.port, hit.T, hit.u, hit.mouth); snapLine = null; gz.label = `Angedockt · Anschluss ${hit.port + 1}`; }
+    if (hit) { dockFit(f, hit.port, hit.T, hit.u); snapLine = null; gz.label = `Angedockt · Anschluss ${hit.port + 1}`; }
     draw();
     return;
   }
@@ -4241,7 +4254,7 @@ cv.addEventListener('pointerdown', e => {
     // Direkt auf einem Eckpunkt hat der Eckpunkt Vorrang vor dem Längenpfeil daneben
     if (g?.type === 'len' || g?.type === 'lmove') { const c = hitCorner(lx, ly), q = c >= 1 && view.P3(points(proj())[c]); if (q && Math.hypot(q[0] - lx, q[1] - ly) < 12) g = null; }
     // Liegt ein Maß unter dem Finger, gilt Tippen dem Maß; erst Ziehen greift den Griff darunter
-    const onDim = camTool === 'edit' && !pick && (create ? !!hitDim(lx, ly, cofHits()) : !measure && !parPick && !!hitDim(lx, ly));
+    const onDim = camTool === 'edit' && !pick && (create ? !!hitDim(lx, ly, cofHits()) : measure ? !!hitDim(lx, ly, measHits()) : !parPick && !!hitDim(lx, ly));
     if (g && onDim) { ptrs.get(e.pointerId).grab = g; return; }
     if (g) { gzStart(g, e); return; }
     const i = camTool === 'edit' && isOrtho() && !onDim && !inCmd() && !proj().stub ? hitVertex(lx, ly) : -1;
@@ -4306,7 +4319,11 @@ cv.addEventListener('pointerup', e => {
     const [lx, ly] = local(e);
     if (create?.step === 'ofs') { const d = hitDim(lx, ly, cofHits()); if (d) createEditDim(d); return; }
     if (create) { const c = hitCand(createCands(), lx, ly); if (c) createPick(c); return; }
-    if (measure) { const c = hitCand(createCands(true), lx, ly); if (c) measurePick(c); return; }
+    if (measure) {
+      const d = hitDim(lx, ly, measHits()), c = !d && hitCand(createCands(true), lx, ly);
+      if (d) measureEditDim(d); else if (c) measurePick(c);
+      return;
+    }
     if (dockPick) { const c = hitCand(dockCands(), lx, ly); if (c) dockChoose(c); return; }
     if (parPick) { const g = hitGhost(lx, ly), q = hitLeg(lx, ly) >= 0 ? proj() : g && pipeById(g); if (q) openPar(q); return; }
     if (dropStub()) return;
@@ -4935,6 +4952,7 @@ $('#bundleBar').addEventListener('click', e => {
   };
   if (ds.me) {
     if (ds.me === 'end') measure = null;
+    else if (ds.me === 'swap') measure.swap = !measure.swap;
     else {
       // Achsen ohne Versatz zählen nicht: Der nächste Weg soll im Bild anders aussehen
       const d = measureResult().d, way = t => MEASURE_TURNS[t].filter(k => d[k]).join(), now = way(measure.turn);
@@ -5305,7 +5323,7 @@ function createCands(all = false) {
     const c = planeCorners(pl), id = `R:${pl.id}`;
     out.push({ id, pos: c.reduce(V.add).map(v => v / c.length), name: nodeName(id), to: id, axes: [pl.axis], plane: pl });
   });
-  fitsOf().forEach(f => fitPorts(f).forEach(o => out.push({ id: `P:${f.id}:${o.i}`, pos: o.p, name: `Anschluss ${o.i + 1}`, to: null, axes: [], port: o })));
+  fitsOf().forEach(f => fitPorts(f).forEach(o => out.push({ id: `P:${f.id}:${o.i}`, pos: o.p, name: `${fitLib(f.libId).name} · Anschluss ${o.i + 1}`, to: null, axes: [], port: o, fit: f.id })));
   add('O', [0, 0, 0], 'Nullpunkt');
   return out;
 }
@@ -5414,12 +5432,13 @@ function drawSegs(segs, P3) {
   segs.forEach(({ k, a, b }) => { ctx.save(); ctx.strokeStyle = rgbCss(AX_RGB[k]); ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(...P3(a)); ctx.lineTo(...P3(b)); ctx.stroke(); ctx.restore(); });
 }
 // Maß je Achse am Weg. Zeigt eine Achse aus dem Bild, steht ihr Wert nur in der Leiste
-function dimSegs(segs, P3, editable = false) {
+// editable: Feldname im Treffer, über den das Maß antippbar wird (cof beim Anlegen, mdim beim Messen)
+function dimSegs(segs, P3, editable = null) {
   if (!segs.length) return;
   const away = P3(V.mul(V.add(segs[0].a, segs.at(-1).b), 0.5));
   segs.forEach(({ k, v, a, b }) => {
     const pa = P3(a), pb = P3(b);
-    if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > 2) dimLine(pa, pb, `${'XYZ'[k]} ${fmt(v)}`, away, 26, editable ? { cof: k, key: `cof${k}` } : null, { color: rgbCss(AX_RGB[k]) });
+    if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > 2) dimLine(pa, pb, `${'XYZ'[k]} ${fmt(v)}`, away, 26, editable ? { [editable]: k, key: `${editable}${k}` } : null, { color: rgbCss(AX_RGB[k]) });
   });
 }
 function drawCreate(P3) {
@@ -5442,7 +5461,7 @@ const fitsOf = (p = proj()) => scene(p).fittings || [];
 const fitById = id => fitsOf().find(f => f.id === id);
 const mulR = (R, v) => [0, 1, 2].map(r => R[r * 3] * v[0] + R[r * 3 + 1] * v[1] + R[r * 3 + 2] * v[2]);
 const fitPoint = (f, v) => V.add(f.pos, mulR(f.rot, v));
-const fitPorts = f => (fitLib(f.libId)?.ports || []).map((o, i) => ({ i, p: fitPoint(f, o.p), m: fitPoint(f, o.mouth), d: mulR(f.rot, o.d), D: o.D }));
+const fitPorts = f => (fitLib(f.libId)?.ports || []).map((o, i) => ({ i, p: fitPoint(f, o.p), d: mulR(f.rot, o.d), D: o.D }));
 // Festgelegte Drehachse im Modell: durch einen Anschluss oder in X, Y, Z durch die Mitte; null heißt frei
 function libAxis(l) {
   const a = l?.axis, o = a?.[0] === 'p' && l.ports[+a.slice(1)], k = 'xyz'.indexOf(a);
@@ -5497,16 +5516,14 @@ function selectFit(id) {
   $('#legPanel').hidden = $('#offLegView').hidden = true;
   renderBundleBar(); draw();
 }
-// Am Rohr sitzt der Anschlag auf dem Rohrende, an einem Fitting treffen sich die Mündungen (mouth)
-function dockFit(f, port, T, u, mouth = false) {
+function dockFit(f, port, T, u) {
   const o = fitLib(f.libId).ports[port];
   f.rot = rotFromTo(o.d, V.mul(u, -1));
-  f.pos = V.sub(T, mulR(f.rot, mouth ? o.mouth : o.p));
-  fitDock = { id: f.id, port, T, u, mouth };
+  f.pos = V.sub(T, mulR(f.rot, o.p));
+  fitDock = { id: f.id, port, T, u };
 }
-// Andockziel am Bezugspunkt: Rohrende oder freier Anschluss; u zeigt vom Bezug nach außen
+// Andockziel am Bezugspunkt: nur Rohrenden, ein Fitting richtet sich nicht an einem anderen aus; u zeigt vom Bezug nach außen
 function dockTarget(ref) {
-  if (ref.port) return { T: ref.port.m, u: ref.port.d, D: ref.port.D, mouth: true };
   const [w, id] = ref.to?.split(':') || [], q = id && pipeById(id);
   if (!q || (w !== 'S' && w !== 'E')) return null;
   const P = points(q), u = w === 'S' ? V.norm(V.sub(P[0], P[1])) : V.norm(V.sub(P.at(-1), P.at(-2)));
@@ -5518,7 +5535,7 @@ function placeFit() {
   commit();
   create = null; lastFit = libId;
   scene().fittings.push(f);
-  if (dock) dockFit(f, 0, dock.T, dock.u, dock.mouth);
+  if (dock) dockFit(f, 0, dock.T, dock.u);
   const keep = fitDock;
   selectFit(f.id);
   fitDock = keep;
@@ -5532,9 +5549,9 @@ function delFit(id) {
   fitCache.delete(id);
   recompute(); renderBundleBar();
 }
-// Andockziele der Szene: Rohrenden und Anschlüsse anderer Fittings
-function dockTargets(f) {
-  const out = fitsOf().filter(o => o.id !== f.id).flatMap(o => fitPorts(o).map(po => ({ T: po.m, u: po.d, mouth: true })));
+// Andockziele der Szene: die Rohrenden
+function dockTargets() {
+  const out = [];
   scenePipes().filter(q => !q.hidden && !q.stub).forEach(q => {
     const P = points(q);
     out.push({ T: P[0], u: V.norm(V.sub(P[0], P[1])) }, { T: P.at(-1), u: V.norm(V.sub(P.at(-1), P.at(-2))) });
@@ -5543,9 +5560,10 @@ function dockTargets(f) {
 }
 function dockNear(f) {
   let best = null, bd = hitTol(14);
-  const [ports, targets] = [fitPorts(f), dockTargets(f)];
-  for (const o of ports) {
-    for (const t of targets) { const [x, y] = view.P3(t.mouth ? o.m : o.p), [a, b] = view.P3(t.T), d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = { ...t, port: o.i }; } }
+  const targets = dockTargets();
+  for (const o of fitPorts(f)) {
+    const [x, y] = view.P3(o.p);
+    for (const t of targets) { const [a, b] = view.P3(t.T), d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = { ...t, port: o.i }; } }
   }
   return best;
 }
@@ -5575,7 +5593,7 @@ function fitAct(a) {
   if (a === 'del') { delFit(f.id); return; }
   if (a === 'move' || a === 'rot') { fitMode = a; renderBundleBar(); draw(); return; }
   commit();
-  if (a === 'port') dockFit(f, (d.port + 1) % fitLib(f.libId).ports.length, d.T, d.u, d.mouth);
+  if (a === 'port') dockFit(f, (d.port + 1) % fitLib(f.libId).ports.length, d.T, d.u);
   if (a === 'dup') {
     const n = { ...structuredClone(f), id: uid() };
     n.pos = V.add(f.pos, [0, 0, 60]);
@@ -5607,7 +5625,7 @@ function drawFit(P3) {
     axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); });
   }
 }
-// ---------- Befehl „Messen“: nur orthogonal, ändert nichts und landet nicht im Verlauf ----------
+// ---------- Befehl „Messen“: nur orthogonal. Über das Maß lässt sich ein Abstand einstellen, sonst ändert der Befehl nichts ----------
 const MEASURE_TURNS = [[0, 1, 2], [2, 0, 1], [1, 2, 0]];
 $('#measBtn').addEventListener('click', () => {
   const on = !measure;
@@ -5618,7 +5636,7 @@ $('#measBtn').addEventListener('click', () => {
 const planesCross = (a, b) => a?.plane && b?.plane && a.plane.axis !== b.plane.axis;
 function measurePick(c) {
   const m = measure;
-  if (m.b || !m.a) { m.a = c; m.b = null; } // nach dem Ergebnis beginnt der nächste Punkt eine neue Messung
+  if (m.b || !m.a) { m.a = c; m.b = null; m.swap = false; } // nach dem Ergebnis beginnt der nächste Punkt eine neue Messung
   else if (m.a.id === c.id) return;
   else if (planesCross(m.a, c)) { toast('Nur parallele Ebenen haben einen Abstand.'); return; }
   else m.b = c;
@@ -5633,19 +5651,95 @@ function measureResult() {
   if (b.plane) { E.splice(0, 3, ...a.pos); E[k] = b.plane.c; } else if (a.plane) { S.splice(0, 3, ...b.pos); S[k] = a.plane.c; }
   return { S, E, b, axes: k == null ? [0, 1, 2] : [k], d: V.sub(E, S).map(v => (Math.abs(v) < 0.05 ? 0 : v)) };
 }
+// Bewegen lassen sich Fittings, freie Ebenen, Eckpunkte und ungesperrte Rohrenden; Parallelrohre und der Nullpunkt nicht
+function measMovable(c) {
+  if (c.fit) return true;
+  if (c.plane) return !c.plane.locked;
+  const [w, id] = c.id.split(':'), q = pipeById(id);
+  return !!q && (w === 'C' || (w === 'S' && !q.startFixed) || (w === 'E' && !q.endFixed));
+}
+// Punkt, der beim Eingeben wandert: Punkt 1 ist fest, außer nur er ist beweglich oder der Festpunkt wurde getauscht
+function measMover() {
+  const { a, b, swap } = measure;
+  if (!a || !b || (a.fit && a.fit === b.fit)) return null;
+  const ma = measMovable(a), mb = measMovable(b);
+  return ma && mb ? (swap ? a : b) : mb ? b : ma ? a : null;
+}
+const measHits = () => dimHits.filter(d => d.mdim != null);
+// Die Punkte merken sich ihre Lage: nach einer Änderung neu holen
+function measRefresh() {
+  const c = createCands(true), re = o => (o && c.find(x => x.id === o.id)) || null;
+  measure.a = re(measure.a); measure.b = measure.a && re(measure.b);
+}
+// Eckpunkt i auf Achse k versetzen, die Nachbarschenkel gleichen aus; die Rohrenden bleiben stehen
+function moveCorner(q, i, k, by) {
+  return withPipe(q, () => {
+    ensureDeltas();
+    const ds = q.deltas, a = deltaVec(ds[i - 1]), b = deltaVec(ds[i]), e = [0, 0, 0], before = structuredClone(ds);
+    if (ds[i - 1].lock || ds[i].lock) return 'Dieser Schenkel ist fest. Erst lösen.';
+    e[k] = by;
+    const a1 = V.add(a, e), b1 = V.sub(b, e);
+    ds[i - 1] = { ...ds[i - 1], x: a1[0], y: a1[1], z: a1[2] }; ds[i] = { ...ds[i], x: b1[0], y: b1[1], z: b1[2] };
+    if (V.dot(a1, a) > 0 && V.dot(b1, b) > 0 && bendsFit(q)) return true;
+    q.deltas = before;
+    return 'Schenkel zu kurz für diesen Bogen';
+  });
+}
+// Punkt c auf Achse k nach v bringen. Ergebnis: true oder ein Hinweistext; false heißt, der Ausgleich geht nicht
+function measApply(c, k, v) {
+  if (c.fit) {
+    fitById(c.fit).pos[k] += v - c.pos[k];
+    if (fitDock?.id === c.fit) fitDock = null;
+    return true;
+  }
+  if (c.id[0] === 'C') { const [, id, i] = c.id.split(':'); return moveCorner(pipeById(id), +i + 1, k, v - c.pos[k]); }
+  return setNodeCoord(c.id, k, v);
+}
+// Eingabe = Betrag des Abstands; der Punkt bleibt auf seiner Seite, negativ wechselt er sie
+function measureEditDim(d) {
+  const k = d.mdim, m = measureResult(), mv = measMover(), isB = mv === measure.b, { inp, close } = dimBox(d, Math.abs(m.d[k]), true);
+  let done = false;
+  const finish = ok => {
+    if (done) return;
+    done = true;
+    const raw = inp.value.trim();
+    close();
+    const want = Math.sign(m.d[k]) * num(raw), by = want - m.d[k];
+    if (ok && /\d/.test(raw) && Math.abs(by) > 1e-6) {
+      const snap = snapshot();
+      let res = measApply(mv, k, (isB ? m.E : m.S)[k] + (isB ? by : -by));
+      if (res === true) {
+        recompute(); measRefresh();
+        const r = measure.a && measure.b ? measureResult() : null;
+        if (r && Math.abs(r.d[k] - want) > 0.05) res = 'Der Festpunkt würde mitwandern.';
+      }
+      if (res === true) { commit(null, snap); save(); renderInputs(); }
+      else { restoreSnapshot(snap); recompute(); measRefresh(); toast(res || 'So nicht möglich – kein Schenkel kann ausgleichen'); }
+    }
+    renderBundleBar(); draw();
+  };
+  inp.focus({ preventScroll: true }); inp.select();
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
+}
 function renderMeasureBar(bar) {
   const { a, b, hover } = measure, m = measureResult(), end = '<button data-me="end">Fertig</button>';
   bar.hidden = false;
   if (!m) { bar.innerHTML = `<span class="bprompt">${esc(createCands(true).find(c => c.id === hover)?.name || (a ? `Von ${a.name}: Punkt 2 wählen` : 'Messen: Punkt 1 wählen'))}</span>${end}`; return; }
   const vals = m.axes.map(k => `<span class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(m.d[k])}</span>`).join('');
-  bar.innerHTML = `<span>${esc(a.name)} → ${esc(m.b.name)}</span>${vals}${b && m.d.filter(Boolean).length > 1 ? '<button data-me="turn">Weg drehen</button>' : ''}${end}`;
+  const mv = measMover(), fixed = mv && (mv === a ? b : a), swap = mv && measMovable(a) && measMovable(b) ? '<button data-me="swap">Festpunkt tauschen</button>' : '';
+  bar.innerHTML = `<span>${mv ? `Fest: ${esc(fixed.name)}` : `${esc(a.name)} → ${esc(m.b.name)}`}</span>${vals}${swap}${b && m.d.filter(Boolean).length > 1 ? '<button data-me="turn">Weg drehen</button>' : ''}${end}`;
 }
 function drawMeasure(P3) {
   const m = measureResult(), { a, b } = measure;
   drawCands(createCands(true), measure.hover, b ? 0.35 : 0.7, P3);
   if (!m) { if (a) { ctx.beginPath(); ctx.arc(...P3(a.pos), 8, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2.5; ctx.stroke(); } return; }
   drawSegs(axisSegs(m.S, m.d, MEASURE_TURNS[measure.turn]), P3);
-  [m.S, m.E].forEach(q => { ctx.beginPath(); ctx.arc(...P3(q), 8, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2.5; ctx.stroke(); });
+  const mv = b && measMover();
+  [m.S, m.E].forEach((q, i) => {
+    ctx.beginPath(); ctx.arc(...P3(q), 8, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2.5; ctx.stroke();
+    if (mv && (mv === a) === !!i) { ctx.fillStyle = css('--mark'); ctx.fill(); } // gefüllt = Festpunkt
+  });
 }
 $('#bundleBar').addEventListener('click', e => {
   const b = e.target.closest('button'), p = proj();
