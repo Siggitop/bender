@@ -27,8 +27,8 @@ const marksOf = f => [
 ];
 function defaultProfiles() {
   return [
-    { ...CLAMP_DEFAULTS, id: 'es6', name: 'Edelstahl 6 mm', D: 6, R: 16, minStraight: 20 },
-    { ...CLAMP_DEFAULTS, id: 'es8', name: 'Edelstahl 8 mm', D: 8, R: 24, minStraight: 25 },
+    { ...CLAMP_DEFAULTS, id: 'es6', name: 'Biegezange 6 mm', D: 6, R: 16, minStraight: 23 },
+    { ...CLAMP_DEFAULTS, id: 'es8', name: 'Biegezange 8 mm', D: 8, R: 24, minStraight: 25 },
   ];
 }
 // Schellen-Regeln je Profil: größter Abstand, kleinster Abstand auf einer Geraden, Abstand zum Bogen bzw. Rohrende,
@@ -106,6 +106,8 @@ function migrate(d) {
   d.profiles.forEach(f => { ['marks', 'pref', 'springback', 'k', 'mark', 'insert', 'calibrated'].forEach(k => delete f[k]); });
   // Standardradius 6 mm ist 16 mm (früher 15): einmalig nachziehen, solange die Vorgabe nicht geändert wurde
   if (!d.r16) { d.profiles.forEach(f => { if (f.id === 'es6' && f.R === 15) f.R = 16; }); d.r16 = true; }
+  // Standard-Mindestgerade 6 mm ist 23 mm (früher 20): ebenso einmalig
+  if (!d.st23) { d.profiles.forEach(f => { if (f.id === 'es6' && f.minStraight === 20) f.minStraight = 23; }); d.st23 = true; }
   return d;
 }
 
@@ -125,7 +127,8 @@ function newProject(typeId, name) {
 function seed() {
   const profiles = defaultProfiles();
   const p = newProject(`t-${profiles[0].id}`, 'Rohr 1');
-  return migrate({ profiles, projects: [p], rooms: [], currentId: p.id, r16: true });
+  const pipeTypes = profiles.map(f => ({ id: `t-${f.id}`, name: `Edelstahl ${f.D} mm`, D: f.D, toolId: f.id }));
+  return migrate({ profiles, pipeTypes, projects: [p], rooms: [], currentId: p.id, r16: true, st23: true });
 }
 function load() {
   try { const d = JSON.parse(localStorage.getItem(STORE)); if (d?.profiles?.length && d?.projects?.length) return migrate(d); } catch {}
@@ -1392,6 +1395,29 @@ async function importFit(file) {
     toast(ports.length ? `${ports.length} ${ports.length === 1 ? 'Anschluss' : 'Anschlüsse'} erkannt. Bitte die Tiefe prüfen.` : 'Keine Anschlüsse erkannt.');
   } catch (err) { toast(err.message || 'Datei lässt sich nicht lesen.'); }
 }
+// Fittings, die mit der App kommen. db.stdFits merkt sich die Namen: Ein gelöschtes Fitting kommt nicht wieder, ein vorhandenes gleichen Namens bleibt
+const STD_FITS = [
+  { name: 'CLA-6M', file: 'GLB/CLA-6M.glb', D: 6, depth: 13.18 },
+  { name: 'CUA-6M', file: 'GLB/CUA-6M.glb', D: 6, depth: 14.585 },
+];
+async function addStdFits() {
+  const seen = db.stdFits ||= [];
+  let added = false;
+  for (const s of STD_FITS) {
+    if (seen.includes(s.name)) continue;
+    if (!db.fittings.some(l => l.name === s.name)) {
+      const mesh = readGlb(await (await fetch(s.file)).arrayBuffer()), id = uid();
+      const ports = detectPorts(mesh).map(o => ({ ...o, D: s.D, depth: s.depth, p: V.sub(o.mouth, V.mul(o.d, s.depth)) }));
+      await saveMesh(id, mesh);
+      fitMeshes.set(id, mesh);
+      db.fittings.push({ id, name: s.name, ports, mn: mesh.mn, mx: mesh.mx });
+      added = true;
+    }
+    seen.push(s.name);
+  }
+  save();
+  if (added) renderTools();
+}
 // Kleines Bild des Fittings mit nummerierten Anschlüssen
 function drawFitPreview(c, l) {
   const m = fitMeshes.get(l?.id);
@@ -1420,7 +1446,7 @@ function drawFitPreview(c, l) {
     g.fillStyle = '#fff'; g.font = '700 11px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(i + 1, ax, ay + 0.5);
   });
 }
-loadMeshes().then(m => { m.forEach((v, k) => fitMeshes.set(k, v)); draw(); }).catch(() => {});
+loadMeshes().then(m => { m.forEach((v, k) => fitMeshes.set(k, v)); draw(); return addStdFits(); }).catch(() => {});
 async function delSetItem(key) {
   if (key.startsWith('fit')) {
     const l = setItem(key), used = db.scenes.reduce((n, s) => n + (s.fittings || []).filter(f => f.libId === l.id).length, 0);
