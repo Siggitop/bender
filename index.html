@@ -19,7 +19,7 @@
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <div class="floatbar">
   <button id="menuBtn" class="flbtn" title="Menü" aria-label="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg></button>
-  <button id="treeBtn" class="flbtn fl-undo" title="Browser" aria-label="Browser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg></button>
+  <button id="treeBtn" class="flbtn fl-undo" title="Projektmanager" aria-label="Projektmanager"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg></button>
   <button id="undoBtn" class="flbtn fl-undo" title="Rückgängig (⌘Z)" aria-label="Rückgängig" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
   <button id="redoBtn" class="flbtn fl-undo" title="Wiederholen (⇧⌘Z)" aria-label="Wiederholen" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
 </div>
@@ -90,14 +90,16 @@
       <div class="popover fmenu addpop" id="addPop" hidden>
         <div class="mlabel">Hinzufügen</div>
         <button class="mi" id="addPipe" title="Weiteres Rohr in dieses Projekt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/></svg>Rohr</button>
-        <button class="mi" id="addPar" title="Parallelrohr im Abstand des ersten"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/><path d="M8 21v-8a3 3 0 0 1 3-3h10"/></svg>Parallelrohr</button>
+        <button class="mi" id="addPar" title="Parallelrohre am gewählten Rohr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/><path d="M8 21v-8a3 3 0 0 1 3-3h10"/></svg>Parallelrohr</button>
+        <button class="mi" id="addFit" title="Fitting aus der Bibliothek"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h6a4 4 0 0 1 4 4v7M4 15h4a2 2 0 0 1 0 0M9 15v5M14 9v-5M20 4v5a0 0 0 0 1 0 0H14"/></svg>Fitting</button>
         <button class="mi" id="addPlane" title="Referenzebene anlegen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Ebene</button>
       </div>
       <div class="popover fmenu" id="visPop" hidden>
         <div class="mlabel">Maße</div>
         <div class="seg" id="dimLevel"><button data-lv="quiet">Ruhig</button><button data-lv="sel">Auswahl</button><button data-lv="all">Alle</button></div>
         <label class="chk">Gesamtmaße<input type="checkbox" data-vis="total"></label>
-        <label class="chk">Winkelmaße<input type="checkbox" data-vis="angles"></label>
+        <label class="chk">Biegewinkel<input type="checkbox" data-vis="angles"></label>
+        <label class="chk">Drehwinkel<input type="checkbox" data-vis="twist"></label>
         <label class="chk">Versatzmaße<input type="checkbox" data-vis="offsets"></label>
         <label class="chk">Beschriftungen<input type="checkbox" data-vis="labels"></label>
         <div class="msep"></div>
@@ -117,6 +119,8 @@
       <div class="toast" id="toast" hidden></div>
       <div class="roombar" id="roomBar" hidden></div>
       <div class="roombar" id="bundleBar" hidden></div>
+      <div class="bartitle" id="barTitle" hidden></div>
+      <div class="popover fmenu typepop" id="typePop" hidden></div>
       <div class="popover fmenu planepop" id="planePop" hidden>
         <div class="mlabel">Ebene senkrecht zu</div>
         <button class="mi" data-ax="0"><span class="mdot" style="background:var(--ax-x)"></span>X-Achse</button>
@@ -124,14 +128,14 @@
         <button class="mi" data-ax="2"><span class="mdot" style="background:var(--ax-z)"></span>Z-Achse</button>
       </div>
       <div class="legpanel" id="legPanel" hidden>
-        <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Schließen">Fertig</button></div>
+        <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Fertig">Fertig</button></div>
         <div class="row2">
           <label>Achsmaß (mm)<input id="lpLen" inputmode="decimal"></label>
           <label>Richtung in Ansicht<select id="lpDir"></select></label>
         </div>
         <p class="hint" id="lpNote"></p>
         <label id="lpBundleL" class="lpbundle" hidden>Bündel auf diesem Schenkel<select id="lpBundle"></select></label>
-        <div class="btnrow"><button id="lpIns">+ Danach einfügen</button><button id="lpOff">⤳ Versatz</button><button id="lpDel" class="danger">Löschen</button></div>
+        <div class="btnrow"><button id="lpIns">+ Danach einfügen</button><button id="lpOff">Versatz</button><button id="lpDel" class="danger">Löschen</button></div>
       </div>
     </div>
   </aside>
@@ -186,6 +190,5 @@
 
 <script src="version.js"></script>
 <script type="module" src="app.js"></script>
-<input type="file" id="pImportFile" accept=".json,application/json" hidden>
 </body>
 </html>

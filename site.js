@@ -264,12 +264,12 @@ function solve(A, b, m) {
 // Wird ein Schenkel für seine Bögen zu kurz, gibt der Abstand auf den schrägen Schenkeln so wenig wie nötig nach (give 0 = exakt, 1 = verschoben wie das Quellrohr).
 export function bundleGeometry(pts, dist, dir0, txs, opts) {
   const at = give => bundleAt(pts, dist, dir0, txs, opts, give), exact = at(0);
-  if (!exact.short || txs?.length || at(1).short) return exact;
+  if (!exact.short || txs?.length || opts.slants?.length || opts.exact || at(1).short) return exact;
   let lo = 0, hi = 1, best = at(1);
   for (let k = 0; k < 8; k++) { const mid = (lo + hi) / 2, g = at(mid); if (g.short) lo = mid; else { hi = mid; best = g; } }
   return best;
 }
-function bundleAt(pts, dist, dir0, txs, { R, minStraight = 0 }, give) {
+function bundleAt(pts, dist, dir0, txs, { R, minStraight = 0, slants = [] }, give) {
   const n = pts.length - 1, d = pts.slice(1).map((p, i) => V.norm(V.sub(p, pts[i])));
   const tx = new Map((txs || []).filter(t => t.bend >= 0 && t.bend < n - 1).map(t => [t.bend, t]));
   const off = [], turns = [];
@@ -309,17 +309,32 @@ function bundleAt(pts, dist, dir0, txs, { R, minStraight = 0 }, give) {
     const a1 = V.dot(off[i - 1], nn), a2 = V.dot(off[i], nn), b = V.dot(off[i - 1], m1), c = V.dot(off[i], m2), s = (b - c * cs) / sn;
     const u = V.add(V.mul(m2, c), V.mul(d2, s));
     push(V.add(V.add(pts[i], V.mul(nn, a1)), u), d1, i - 1, 'leg');
-    if (Math.abs(a2 - a1) > 0.01) push(V.add(V.add(pts[i], V.mul(nn, a2)), u), V.mul(nn, Math.sign(a2 - a1)), i, 'drop');
+    if (Math.abs(a2 - a1) > 0.01) {
+      // Zwischenstück: senkrecht, oder schräg (ang) in Richtung des nächsten Schenkels, wenn es für zwei 90°-Bögen zu kurz ist
+      const q = V.add(V.add(pts[i], V.mul(nn, a2)), u), up = V.mul(nn, Math.sign(a2 - a1)), ang = tx.get(i - 1)?.ang;
+      if (!ang || ang >= 90) push(q, up, i, 'drop');
+      else { const th = ang * Math.PI / 180; push(V.add(q, V.mul(d2, Math.abs(a2 - a1) / Math.tan(th))), V.add(V.mul(up, Math.sin(th)), V.mul(d2, Math.cos(th))), i, 'drop'); }
+    }
   }
   push(V.add(pts[n], off[n - 1]), d[n - 1], n - 1, 'leg');
-  // Soll-Länge je Strecke: Tangenten der angrenzenden Bögen (+ Mindest-Gerade zwischen zwei Bögen)
+  // Zu kurzes Stück zwischen zwei Bögen: schräg stellen, in Richtung des nächsten oder (back) des vorigen Schenkels
+  slants.forEach(({ leg, ang, back }) => {
+    const k = segs.findIndex(sg => sg.leg === leg && sg.kind === 'leg');
+    if (k < 1 || k >= segs.length - 1) return;
+    const sg = segs[k], A = out[sg.a], B = out[sg.a + 1], run = V.len(V.sub(B, A)) / Math.tan(ang * Math.PI / 180);
+    if (back) out[sg.a] = V.sub(A, V.mul(segs[k - 1].dir, run)); else out[sg.a + 1] = V.add(B, V.mul(segs[k + 1].dir, run));
+    sg.dir = V.norm(V.sub(out[sg.a + 1], out[sg.a]));
+  });
+  // Soll-Länge je Strecke: Tangenten der angrenzenden Bögen (+ Mindest-Gerade zwischen zwei Bögen). Stücke der Länge 0 entfallen, die Nachbarn treffen sich direkt
+  const lenOf = sg => V.dot(V.sub(out[sg.a + 1], out[sg.a]), sg.dir);
+  const real = segs.filter(sg => Math.abs(lenOf(sg)) > 0.01);
   const Tof = a => R * Math.tan(a * Math.PI / 360);
-  const T = segs.map((sg, k) => (k ? Tof(Math.acos(Math.max(-1, Math.min(1, V.dot(segs[k - 1].dir, sg.dir)))) * 180 / Math.PI) : 0));
+  const T = real.map((sg, k) => (k ? Tof(Math.acos(Math.max(-1, Math.min(1, V.dot(real[k - 1].dir, sg.dir)))) * 180 / Math.PI) : 0));
   let short = null;
-  segs.forEach((sg, k) => {
+  real.forEach((sg, k) => {
     if (short) return;
-    const len = V.dot(V.sub(out[sg.a + 1], out[sg.a]), sg.dir);
-    const need = T[k] + (T[k + 1] || 0) + (k > 0 && k < segs.length - 1 ? minStraight : 0);
+    const len = lenOf(sg);
+    const need = T[k] + (T[k + 1] || 0) + (k > 0 && k < real.length - 1 ? minStraight : 0);
     if (len < need - 0.05) short = { ...sg, len, need, bend: sg.kind === 'drop' ? sg.leg - 1 : null };
   });
   return { pts: out, segs, offsets: off, turns, short };
