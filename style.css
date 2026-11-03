@@ -517,6 +517,8 @@ body:not(.lab) .labonly { display: none !important; }
 #bundleBar button:active { background: var(--accent-soft); }
 #bundleBar button.on { background: var(--accent); color: #fff; }
 #bundleBar button.danger { color: var(--err); }
+#bundleBar button.icbtn { display: inline-grid; place-items: center; min-width: 38px; }
+#bundleBar button.icbtn .ic { width: 19px; height: 19px; vertical-align: 0; }
 #bundleBar button.off { opacity: .4; }
 #bundleBar button.lockbtn { padding: 4px 7px; }
 #bundleBar button.lockbtn.open { color: var(--muted); }

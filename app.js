@@ -10,7 +10,7 @@ const num = s => { const v = parseFloat(String(s ?? '').replace(',', '.')); retu
 const r1 = n => Math.round(n * 10) / 10;
 const uid = () => Math.random().toString(36).slice(2, 9);
 // Liniensymbole im Text, gleiche Bauart wie die Knöpfe
-const IC_PATHS = { x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3' };
+const IC_PATHS = { copy: 'M9 9h10v12H9zM5 15V3h10', trash: 'M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6', x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', ortho: 'M5 4v15h15M5 14h5v5', paste: 'M8 5H6v16h12V5h-2M9 3h6v4H9z', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3' };
 const IC = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${IC_PATHS[n]}"/></svg>`;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const normRot = r => { let x = ((r % 360) + 360) % 360; return x > 180 ? x - 360 : x; };
@@ -224,9 +224,9 @@ function commit(key = null, snap = null) {
 }
 // Rückgängig nimmt immer den letzten Befehl zurück, egal an welchem Rohr oder Projekt er lief
 function undoRedo(dir) {
-  if (copyC?.step === 'edit') copyC = null; // Rückgängig nimmt die eben eingefügte Kopie samt ihren Maßen zurück
+  if (copyC?.step === 'edit') copyC = null; // Rückgängig nimmt das eben eingefügte Objekt samt seinen Maßen zurück
   const from = dir < 0 ? hist.undo : hist.redo, to = dir < 0 ? hist.redo : hist.undo;
-  if (!from.length || gz || drag || (inCmd() && !measure)) return;
+  if (!from.length || gz || drag || (inCmd() && !measure && copyC?.step !== 'dest')) return;
   const pid0 = db.currentId, sc0 = proj().sceneId, keepObjs = objs, keepMulti = multi;
   to.push(snapshot());
   restoreSnapshot(from.pop());
@@ -240,10 +240,16 @@ function undoRedo(dir) {
   refit();
   renderProjectBar(); renderInputs(); recompute();
   if (measure) measRefresh();
+  if (copyC?.made) {
+    copyC.made = copyC.made.filter(objGet);
+    // Weiterrücken: Nach Rückgängig zählt der Abstand wieder ab der vorherigen Kopie
+    if (copyC.from && dir < 0) copyC.from = copyC.made.length ? V.sub(copyC.from, copyC.off) : null;
+  }
   const keepPlane = selPlane && scene(p).planes.some(x => x.id === selPlane) ? selPlane : null, keepPoint = selPoint && pipeById(selPoint.pid) ? selPoint : null, keepFit = selFit && fitById(selFit) ? selFit : null;
   selectLeg(sel < points(p).length - 1 ? sel : -1);
   if (keepPlane) selectPlane(keepPlane); else if (keepPoint) selectPoint(keepPoint.pid, keepPoint.w); else if (keepFit) selectFit(keepFit);
   if (keepObjs.length || keepMulti) { objs = keepObjs.filter(objGet); multi = keepMulti; renderBundleBar(); draw(); }
+  save(); // sonst kommt der zurückgenommene Schritt beim Neuladen wieder
   updateUndoButtons();
 }
 function updateUndoButtons() {
@@ -991,6 +997,16 @@ const ANIM_MS = 300;
 let anim = null, animLayout = null, animRunning = false, shown = null;
 const curLayout = () => animLayout || layout;
 const ease = t => 1 - Math.pow(1 - t, 3);
+// Übergänge der Griffe (DESIGN, Grundsatz 6): Fortschritt 0…1, zeichnet weiter, bis der Übergang fertig ist
+const GRIP_MS = 250, stillMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function gfx(t0) {
+  const t = (performance.now() - t0) / GRIP_MS;
+  if (t >= 1 || stillMotion()) return 1;
+  requestAnimationFrame(() => draw());
+  return ease(Math.max(0, t));
+}
+// grabE: Anfassen (0 → 1), relE: Loslassen (0 → 1), handA: Einblenden nach neuer Auswahl
+let grabE = 1, relE = 1, handA = 1, gzRel = null, selKey = '', selT0 = 0;
 const lerpN = (a, b, t) => a + (b - a) * t;
 const geomOf = p => { const r = activeRoom(p); return { pid: p.id, pts: points(p), outline: r ? structuredClone(r.outline) : null, z0: r?.z0 || 0, h: r?.height || 0 }; };
 // Unterschiedliche Punktzahl (Schenkel dazu/weg): das kürzere Rohr endet in seinem letzten Punkt
@@ -1563,6 +1579,8 @@ const VIEWS = {
   right: [-Math.PI / 2, 0], left: [Math.PI / 2, 0],
 };
 const isOrtho = () => cam.view !== 'iso';
+// Achse k zeigt in die Bildtiefe – nur in den 2D-Ansichten (Vorne, Oben …). Im 3D bleiben alle Griffe, wie man auch dreht
+const depthAxis = k => isOrtho() && Math.abs(viewDir()[k]) > 0.99;
 let fit = null, lastBase = null, view = null; // fit: gesperrte Grundskalierung (beim Bearbeiten springt nichts)
 // Nach dem Bearbeiten neu einpassen – außer der Nutzer hat selbst gedreht, geschoben oder gezoomt (cam.held)
 let refitDue = false, fitGlide = null;
@@ -1573,7 +1591,7 @@ let extOpen = false, extHover = false;
 // startOpen: Pfeile am Griff des Rohranfangs offen, bundleSel: gewähltes Parallelrohr (Index in p.bundle)
 let startOpen = false, bundleSel = -1;
 const RING_GZ = ['bend', 'rot', 'head'];
-const BUNDLE_GZ = ['cpoff', 'omove', 'orot', 'opiv', 'fmove', 'frot', 'start', 'bnew', 'bdist', 'brot', 'badd', 'pt', 'plane', 'pmove', 'lmove', 'ofs', 'ofsc', 'spin', 'cmove', 'first', 'cofs'];
+const BUNDLE_GZ = ['oalign', 'oanc', 'oaxis', 'oeq', 'ogap', 'cpoff', 'omove', 'orot', 'opiv', 'fmove', 'frot', 'start', 'bnew', 'bdist', 'brot', 'badd', 'pt', 'plane', 'pmove', 'lmove', 'ofs', 'ofsc', 'spin', 'cmove', 'first', 'cofs'];
 // ofs: Versatz-X auf Schenkel i, t mm ab dessen Anfang, ang = Winkel, n = gewählte Ebene (null = automatisch), cur = angezeigte Ebene
 let ofs = null;
 // selPoint: gewählter Punkt { pid, w }, selPlane: gewählte Ebene, pointMove: Verschiebepfeile, pick: Maß wird festgelegt { key, to }
@@ -1586,8 +1604,8 @@ let measure = null;
 let parPick = false;
 // selFit: gewähltes Fitting, fitDock: es wurde gerade angedockt { id, T, u, port }
 let selFit = null, fitDock = null, lastFit = null;
-// fitMode: Griff des gewählten Fittings, dockPick: Rohrpunkt wartet auf die Wahl eines Anschlusses { pid, w }
-let fitMode = 'move', dockPick = null;
+// dockPick: Rohrpunkt wartet auf die Wahl eines Anschlusses { pid, w }
+let dockPick = null;
 const fitMeshes = new Map();
 const inCmd = () => !!(create || measure || parPick || dockPick || objCmd());
 // Maßbezüge (refs, pl.ref, d.ref) sind vorerst abgeschaltet: Der Code bleibt, gespeicherte Bezüge wirken nicht
@@ -1735,9 +1753,9 @@ function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
   // Projektion wie project(): Zeilen für Bildschirm-x, Bildschirm-y (nach unten) und Tiefe
   const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const rx = [cy, -sy, 0], ry = [-sy * sp, -cy * sp, -cp], rz = [sy * cp, cy * cp, -sp];
-  const opaque = new Float32Array(scene.opaque), trans = new Float32Array(scene.trans), refPl = new Float32Array(scene.refPl || []);
+  const opaque = new Float32Array(scene.opaque), trans = new Float32Array(scene.trans), refPl = new Float32Array(scene.refPl || []), preview = new Float32Array(scene.preview || []);
   let z0 = Infinity, z1 = -Infinity;
-  for (const arr of [opaque, trans, refPl]) for (let i = 0; i < arr.length; i += 9) {
+  for (const arr of [opaque, trans, refPl, preview]) for (let i = 0; i < arr.length; i += 9) {
     const z = rz[0] * arr[i] + rz[1] * arr[i + 1] + rz[2] * arr[i + 2];
     if (z < z0) z0 = z; if (z > z1) z1 = z;
   }
@@ -1770,6 +1788,12 @@ function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     gl.uniform1f(glp.uAlpha, 0.2);
     gl.bufferData(gl.ARRAY_BUFFER, trans, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, trans.length / 9);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+  }
+  if (preview.length) { // Vorschau der Kopie: durchsichtig, sie verdeckt nichts
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+    gl.uniform1f(glp.uAlpha, 0.45);
+    gl.bufferData(gl.ARRAY_BUFFER, preview, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, preview.length / 9);
     gl.depthMask(true); gl.disable(gl.BLEND);
   }
   if (refPl.length) { // Referenzebenen: sehr durchscheinend, Rohre bleiben davor und dahinter sichtbar
@@ -1925,7 +1949,28 @@ function render3d() {
   const exCol = lighter([0.45, 0.47, 0.5], 0.1);
   if (create?.step === 'ofs' && create.kind === 'fit') add(fitTris({ id: '_neu', libId: create.libId, pos: createPos(), rot: [1, 0, 0, 0, 1, 0, 0, 0, 1] }, true));
   if (create?.step === 'ofs' && create.kind === 'ex') { const T = createPos(), h = [db.exLen / 2, 0, 0]; add(tubeMesh([{ p: V.sub(T, h), b: -1 }, { p: V.add(T, h), b: -1 }], Math.max(typeOf({ typeId: create.typeId }).D / 2, 1 / sc), () => exCol)); }
-  exOf(p).filter(x => !x.hidden).forEach(x => { const [a, b] = exEnds(x); add(tubeMesh([{ p: a, b: -1 }, { p: b, b: -1 }], Math.max(typeOf(x).D / 2, 1 / sc), () => exCol)); });
+  // Kopie in Vorschau: hängt am Zeiger oder, mit „Orthogonal“, am Gimbal
+  const preview = [], cT = copyC?.step === 'dest' && (copyC.ortho ? V.add(copyC.from || copyC.base, copyC.off) : copyC.at);
+  if (cT) {
+    const d = V.sub(cT, copyC.base), col = lighter([0.04, 0.49, 0.74], 0.3), mv = s => ({ ...s, p: V.add(s.p, d) });
+    copyC.tubes ||= copyC.items.pipes.flatMap(q => { const L = buildLayout(q); return [L, ...L.bundle.filter(B => !B.def.hidden)].map(x => ({ samples: x.samples, D: prof(q).D })); });
+    copyC.tubes.forEach(t => add(tubeMesh(t.samples.map(mv), Math.max(t.D / 2, 1 / sc), () => col), preview));
+    copyC.items.fits.forEach(fi => add(fitTris({ ...fi, id: `_k${fi.id}`, pos: V.add(fi.pos, d) }, true), preview));
+    copyC.items.ex.forEach(x => { const [a, b] = exEnds(x); add(tubeMesh([{ p: V.add(a, d), b: -1 }, { p: V.add(b, d), b: -1 }], Math.max(typeOf(x).D / 2, 1 / sc), () => col), preview); });
+  }
+  // Probeweise Lage (Ausrichten, Verteilen): Die Teile stehen schon am Ziel, ihre alte Lage bleibt als blasser Schatten
+  if (prevw?.amt > 0.02) {
+    const col = dark ? [0.5, 0.52, 0.56] : [0.8, 0.82, 0.85];
+    prevw.moves.forEach(({ o, d: d0 }) => {
+      const d = V.mul(d0, -prevw.amt), v = objGet(o), mv = s => ({ ...s, p: V.add(s.p, d) });
+      if (o.t === 'pipe') { const L = buildLayout(v); [L, ...L.bundle.filter(B => !B.def.hidden)].forEach(B => add(tubeMesh(B.samples.map(mv), Math.max(prof(v).D / 2, 1 / sc), () => col), preview)); }
+      else if (o.t === 'fit') add(fitTris({ ...v, id: `_a${v.id}`, pos: V.add(v.pos, d) }, true), preview);
+      else if (o.t === 'ex') { const [p0, p1] = exEnds(v); add(tubeMesh([{ p: V.add(p0, d), b: -1 }, { p: V.add(p1, d), b: -1 }], Math.max(typeOf(v).D / 2, 1 / sc), () => col), preview); }
+    });
+  }
+  // Bestand blass und durchsichtig: Es ist Vorlage, kein Teil der Planung
+  const exPale = dark ? [0.6, 0.62, 0.66] : [0.68, 0.7, 0.73];
+  exOf(p).filter(x => !x.hidden).forEach(x => { const [a, b] = exEnds(x); add(tubeMesh([{ p: a, b: -1 }, { p: b, b: -1 }], Math.max(typeOf(x).D / 2, 1 / sc), () => exPale), preview); });
   const clampSets = pipes.map(L => L.clampInfo);
   if (vis.clamps) clampSets.flat().forEach(c => add(tubeMesh([{ p: V.sub(c.p, V.mul(c.t, 5)), b: -1 }, { p: V.add(c.p, V.mul(c.t, 5)), b: -1 }], r * 1.45 + 0.8, () => clampCol)));
   const trans = [], wallCol = [0.85, 0.74, 0.55], floorCol = [0.55, 0.62, 0.72];
@@ -1944,7 +1989,7 @@ function render3d() {
     if (selPlane !== pl.id && !pick) return;
     const n = [0, 0, 0]; n[pl.axis] = 1; add(quadMesh(planeCorners(pl), n, AX_RGB[pl.axis]), refPl);
   });
-  if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans, refPl })) {
+  if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans, refPl, preview })) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = tw; ctx.strokeStyle = css('--tube');
     pipes.forEach(L => { ctx.beginPath(); L.samples.forEach((s, i) => { const [x, y] = P3(s.p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); });
   }
@@ -1983,7 +2028,7 @@ function render3d() {
     ctx.beginPath(); ctx.moveTo(...P3(L.verts[0])); ctx.lineTo(...P3(L.verts.at(-1))); ctx.stroke(); ctx.restore();
   });
   if (vis.refPlanes) drawPlanesOverlay(P3);
-  if (vis.origin) drawOrigin(P3);
+  if (vis.origin || originTemp()) drawOrigin(P3);
   drawExOverlay(P3);
   if (p.empty && !scene(p).planes.length && !fitsAll(p).length && !exOf(p).length && !inCmd()) { ctx.fillStyle = cMuted; ctx.font = '13px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Mit + beginnen', W / 2, H * 0.7); ctx.textAlign = 'left'; }
   if (vis.axis && !p.unrouted) {
@@ -2066,8 +2111,9 @@ function render3d() {
   if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
   if (camTool === 'edit' && CONSTRAINTS) drawRefDims(P3, allDims);
   if (camTool === 'edit') drawLocks(P3);
-  if (copyC && (copyC.step === 'edit' || (copyC.step === 'dest' && copyC.ortho))) dimSegs(axisSegs(copyC.base, copyC.off), P3, 'ccof');
-  if (create?.step === 'ofs' && create.ref.id !== 'F') dimSegs(axisSegs(create.ref.pos, create.off), P3, 'cof');
+  drawChain(P3);
+  if (copyC && (copyC.step === 'edit' || (copyC.step === 'dest' && copyC.ortho))) dimSegs(axisSegs(copyC.from || copyC.base, copyC.off), P3, 'ccof');
+  if (create?.step === 'ofs') dimSegs(axisSegs(create.ref.pos, create.off), P3, 'cof');
   if (measure) { const m = measureResult(); if (m) dimSegs(axisSegs(m.S, m.d, MEASURE_TURNS[measure.turn]), P3, measMover() && 'mdim'); }
   // Fangen: Hilfslinie zum Punkt, auf dessen Höhe der gezogene Punkt eingerastet ist
   if (gz && snapLine) {
@@ -2972,17 +3018,25 @@ function extCandidates(E, d) {
 
 function drawGizmo() {
   gizmo = [];
+  grabE = gz ? gfx(gz.t0g ?? 0) : 1;
+  relE = gzRel ? gfx(gzRel.t0) : 1;
+  if (relE >= 1) gzRel = null;
+  const key = `${selFit}|${objs.map(o => o.id).join()}|${sel}|${selCorner}|${selPoint?.pid}${selPoint?.w}|${selPlane}`;
+  if (key !== selKey) { selKey = key; selT0 = performance.now(); chainK = null; }
+  handA = gfx(selT0);
   // Leiste sitzt direkt über den Knöpfen, auch wenn diese zweizeilig werden
   const bbar = $('#bundleBar');
   if (!bbar.hidden) bbar.style.bottom = `${$('#viewwrap').getBoundingClientRect().bottom - $('.viewacts').getBoundingClientRect().top + 6}px`;
   if (create) { drawCreate(view.P3); return; }
   if (measure) { drawMeasure(view.P3); return; }
   if (boxSel) drawBox(view.P3);
+  // Beim Kopieren stören die Griffe: Die Auswahl leuchtet nur, darüber liegen die Punkte
   if (copyC) {
-    if (copyC.step === 'edit') drawObj(view.P3);
+    if (copyC.step !== 'dest') drawObj(view.P3);
     drawCopy(view.P3);
-    if (copyC.step !== 'ref') return;
+    return;
   }
+  if (pivotPick) drawCands(createCands(true), cmdHover, 0.7, view.P3);
   if (objs.length || multi) { drawObj(view.P3); return; }
   if (dockPick) { drawDockPick(view.P3); return; }
   if (selFit && fitById(selFit)) { drawFit(view.P3); return; }
@@ -3231,7 +3285,7 @@ function gzStart(g, e) {
   const before = snapshot();
   ensureDeltas();
   const pts = points(p), n = pts.length - 1;
-  gz = { ...g, before, committed: false, sx: e.clientX, sy: e.clientY, px: lx, py: ly, moved: false, orig: structuredClone(p.deltas), E0: endOf(p), label: '', pool: [...pts, ...layout.bundle.filter(B => !B.def.hidden).flatMap(B => B.verts), ...(layout.ghosts || []).flatMap(q => q.verts), ...fitsOf(p).filter(f => f.id !== g.fit).flatMap(f => fitPorts(f).map(o => o.p)), ...exOf(p).filter(x => !x.hidden).flatMap(exEnds), ...(vis.origin ? [[0, 0, 0]] : [])], planes: snapPlanes(p, g) };
+  gz = { ...g, t0g: performance.now(), before, committed: false, sx: e.clientX, sy: e.clientY, px: lx, py: ly, moved: false, orig: structuredClone(p.deltas), E0: endOf(p), label: '', pool: [...pts, ...layout.bundle.filter(B => !B.def.hidden).flatMap(B => B.verts), ...(layout.ghosts || []).flatMap(q => q.verts), ...fitsOf(p).filter(f => f.id !== g.fit).flatMap(f => fitPorts(f).map(o => o.p)), ...exOf(p).filter(x => !x.hidden).flatMap(exEnds), ...(vis.origin ? [[0, 0, 0]] : [])], planes: snapPlanes(p, g) };
   fit = lastBase;
   if (BUNDLE_GZ.includes(g.type)) {
     gz.bOrig = structuredClone(p.bundle); gz.As = view.P3(layout.verts[0]);
@@ -3247,14 +3301,15 @@ function gzStart(g, e) {
     if (g.type === 'first') { gz.S = pts[0]; gz.min = minLengths(); gz.pool = (layout.ghosts || []).flatMap(q => q.verts); }
     if (g.type === 'cofs') { gz.v0 = create.off[g.k]; gz.base = create.ref.pos[g.k]; }
     if (g.type === 'fmove') { const f = fitById(g.fit); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.at0 = fitPorts(f)[0]?.p || f.pos; gz.dock0 = fitDock; fitDock = null; }
+    if (g.type === 'oalign' || g.type === 'oeq') previewFor(g); else previewOff(true);
     if (g.type === 'cpoff') gz.off0 = copyC.off[g.k];
     if (g.type === 'omove' || g.type === 'orot') {
-      gz.mark = sceneMark(); gz.at0 = pivotOf(); gz.A = g.A; gz.r = 60 / view.sc;
+      gz.mark = sceneMark(); gz.at0 = pivotOf(); gz.A = g.A; gz.r = g.r || 60 / view.sc;
       gz.pool = allObjs().filter(o => !objs.some(q => sameObj(q, o))).flatMap(objPts);
       if (vis.origin) gz.pool.push([0, 0, 0]);
       if (g.type === 'orot') gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly);
     }
-    if (g.type === 'frot') { const f = fitById(g.fit); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.A = g.A; gz.r = 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly); }
+    if (g.type === 'frot') { const f = fitById(g.fit); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.A = g.A; gz.r = g.r || 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly); }
     if (g.type === 'cmove') { gz.A0 = pts[g.i]; gz.dOrig = structuredClone(p.deltas); gz.t = 0; }
     if (g.type === 'spin') { gz.A = pts[0]; gz.r = 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly); }
     if (g.type === 'bnew') {
@@ -3619,7 +3674,7 @@ function bundleMove(lx, ly) {
     const [mx, my] = gz.pxPerMm, f = fitById(gz.fit), t = Math.round(((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my)), at = gz.at0;
     gzChanged();
     f.pos = [...gz.pos0]; f.rot = [...gz.rot0]; fitDock = null;
-    f.pos[gz.k] += fang(gz.k, at[gz.k] + t, Math.hypot(mx, my), [at], () => fitPorts(f)[0]?.p || f.pos) - at[gz.k];
+    f.pos[gz.k] += fangAll(gz.k, t, Math.hypot(mx, my), [fitCenter(f), ...fitPorts(f).map(o => o.p)]);
     gz.label = `${'XYZ'[gz.k]} ${fmt(f.pos[gz.k] - gz.pos0[gz.k])}`;
     // Nahe an einem Rohrende oder Anschluss rastet das Fitting ganz ein, mit Lage und Richtung
     const hit = !f.links?.length && dockNear(f);
@@ -3628,7 +3683,7 @@ function bundleMove(lx, ly) {
     return;
   }
   if (gz.type === 'cpoff') {
-    const [mx, my] = gz.pxPerMm, t = Math.round(((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my));
+    const [mx, my] = gz.pxPerMm, t0 = Math.round(((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my)), t = Math.abs(t0) * Math.hypot(mx, my) < SNAP_PX ? 0 : t0;
     setOff(gz.k, gz.off0 + t);
     gz.label = `${'XYZ'[gz.k]} ${fmt(copyC.off[gz.k])}`;
     return;
@@ -3638,8 +3693,8 @@ function bundleMove(lx, ly) {
     if (!t && !gz.committed) return;
     gzChanged();
     sceneBack(gz.mark);
-    const v = fang(gz.k, gz.at0[gz.k] + t, Math.hypot(mx, my), [gz.at0], () => gz.at0), d = [0, 0, 0];
-    d[gz.k] = v - gz.at0[gz.k];
+    const d = [0, 0, 0];
+    d[gz.k] = fangAll(gz.k, t, Math.hypot(mx, my), objs.filter(o => !objFixed(o)).flatMap(objPts));
     objs.filter(o => !objFixed(o)).forEach(o => objShift(o, d));
     gz.label = `${'XYZ'[gz.k]} ${fmt(d[gz.k])}`;
     recompute(true);
@@ -3654,7 +3709,7 @@ function bundleMove(lx, ly) {
     recompute(true);
     return;
   }
-  if (gz.type === 'opiv') return;
+  if (gz.type === 'opiv' || CHAIN_GZ.includes(gz.type)) return;
   if (gz.type === 'frot') {
     const f = fitById(gz.fit), t = Math.round(normRot(ringAngle(gz.u, gz.v, 0, 359, lx, ly) - gz.t0) / ANGLE_STEP) * ANGLE_STEP, R = rotMat(gz.n, t * Math.PI / 180);
     if (t || gz.committed) gzChanged();
@@ -3678,7 +3733,7 @@ function bundleMove(lx, ly) {
   if (gz.type === 'cmove') {
     const [mx, my] = gz.pxPerMm, e = [0, 0, 0];
     let t = Math.round(((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my));
-    t = fang(gz.k, gz.A0[gz.k] + t, Math.hypot(mx, my), [gz.A0], () => points(p)[gz.i]) - gz.A0[gz.k];
+    t = Math.abs(t) * Math.hypot(mx, my) < SNAP_PX ? 0 : fang(gz.k, gz.A0[gz.k] + t, Math.hypot(mx, my), [gz.A0], () => points(p)[gz.i]) - gz.A0[gz.k];
     e[gz.k] = t;
     const legs = structuredClone(gz.dOrig), put = (j, v) => { legs[j] = { ...legs[j], x: v[0], y: v[1], z: v[2] }; };
     put(gz.i - 1, V.add(deltaVec(gz.dOrig[gz.i - 1]), e)); put(gz.i, V.sub(deltaVec(gz.dOrig[gz.i]), e));
@@ -3724,7 +3779,7 @@ function bundleMove(lx, ly) {
     gzChanged();
     const [mx, my] = gz.pxPerMm, A = points({ ...p, deltas: gz.dOrig, origin: gz.oOrig })[gz.i], B = points({ ...p, deltas: gz.dOrig, origin: gz.oOrig })[gz.i + 1];
     const base = legGridBase(), tRaw = ((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my);
-    const t = fang(gz.k, A[gz.k] + Math.round(base + tRaw) - base, Math.hypot(mx, my), [A, B], () => { const n = gz?.res?.newI ?? gz?.i ?? 0, q = points(p); return V.mul(V.add(q[n], q[n + 1]), 0.5); }) - A[gz.k];
+    const t = Math.abs(tRaw) * Math.hypot(mx, my) < SNAP_PX ? 0 : fang(gz.k, A[gz.k] + Math.round(base + tRaw) - base, Math.hypot(mx, my), [A, B], () => { const n = gz?.res?.newI ?? gz?.i ?? 0, q = points(p); return V.mul(V.add(q[n], q[n + 1]), 0.5); }) - A[gz.k];
     let r = legMoveTo(t), limit = false;
     if (!r) { const lim = legLimit(t, base); if (lim != null) { r = legMoveTo(lim); limit = !!r; } }
     if (r) { gz.t = r.t; gz.res = r; } else if (gz.res || gz.t === 0) legMoveTo(gz.t);
@@ -3737,7 +3792,8 @@ function bundleMove(lx, ly) {
     gzChanged();
     restoreSceneState(p, gz.sOrig); p.deltas = structuredClone(gz.dOrig); p.origin = [...gz.oOrig];
     const [mx, my] = gz.pxPerMm, dx = gz.px - gz.gx, dy = gz.py - gz.gy, A0 = gz.key[0] === 'R' ? null : gz.nodeA ??= nodePos(gz.key);
-    const v = fang(gz.k, Math.round(gz.v0 + (dx * mx + dy * my) / (mx * mx + my * my)), Math.hypot(mx, my), A0 ? [A0] : [], () => (A0 ? nodePos(gz.key) : view.mid));
+    const raw = Math.round(gz.v0 + (dx * mx + dy * my) / (mx * mx + my * my));
+    const v = Math.abs(raw - gz.v0) * Math.hypot(mx, my) < SNAP_PX ? gz.v0 : fang(gz.k, raw, Math.hypot(mx, my), A0 ? [A0] : [], () => (A0 ? nodePos(gz.key) : view.mid));
     const ok = setNodeCoord(gz.key, gz.k, v);
     gz.label = ok ? `${'XYZ'[gz.k]} ${fmt(v)}` : 'So nicht möglich – kein Schenkel kann ausgleichen';
     recompute(true);
@@ -3783,6 +3839,11 @@ function bundleEnd(g) {
   if (g.type === 'badd') { if (!g.moved) { addBundlePipe(p); selectPoint(p.id, 'S'); } return; }
   if (g.type === 'cofs') { renderBundleBar(); draw(); return; }
   if (g.type === 'cpoff') { if (copyC?.step === 'edit') { recompute(); save(); } renderBundleBar(); draw(); return; }
+  if (CHAIN_GZ.includes(g.type)) {
+    const over = Math.hypot(g.px - g.at[0], g.py - g.at[1]) < g.r + 8;
+    if (!g.moved || over) chainAct(g); else previewOff();
+    draw(); return;
+  }
   if (g.type === 'opiv') { if (!g.moved) { pivotPick = true; renderBundleBar(); draw(); } return; }
   if (g.type === 'omove' || g.type === 'orot') { recompute(); save(); renderBundleBar(); draw(); return; }
   if (g.type === 'fmove' || g.type === 'frot') {
@@ -3835,6 +3896,7 @@ function bundleEnd(g) {
 function gzEnd() {
   const g = gz, p = proj();
   gz = null;
+  gzRel = { t0: performance.now(), type: g.type, k: g.k, s: g.s, mid: g.mid };
   if (BUNDLE_GZ.includes(g.type)) { bundleEnd(g); return; }
   if (g.fail) toast(g.fail);
   // Rohrende beim Loslassen: Zu kurzes verschwindet, sonst gilt die Mindestlänge
@@ -3897,6 +3959,22 @@ function fang(k, val, px, skip, of) {
   if (!best) return val;
   snapLine = { at: best, of };
   return best[k];
+}
+// Fangen mit allen Punkten des Gezogenen (Enden, Eckpunkte, Anschlüsse): Es zählt der Punkt, der einem Ziel am nächsten kommt.
+// Liefert die Verschiebung auf Achse k; die Hilfslinie geht von genau diesem Punkt aus
+function fangAll(k, t, px, own) {
+  if (Math.abs(t) * px < SNAP_PX) { snapLine = null; return 0; } // zurück in die Ausgangslage
+  let best = null;
+  for (const q of own) {
+    const raw = q[k] + t, v = fang(k, raw, px, own, () => q);
+    if (v !== raw && (!best || Math.abs(v - raw) < best.e)) best = { q, v, e: Math.abs(v - raw) };
+  }
+  snapLine = null;
+  if (!best) return t;
+  const at = [...best.q];
+  at[k] = best.v;
+  fang(k, best.v, px, own, () => at);
+  return best.v - best.q[k];
 }
 // Fangen auf schrägen Schenkeln: Jede Achse, in der sich der Punkt bewegt, zählt. Liefert die Länge bis zum nächsten Treffer
 function fangAlong(start, dir, L, tol, skip, of, min = 1) {
@@ -4235,7 +4313,10 @@ let navMode = null;
 let touchUI = false; // letzter Zeiger war Finger/Stift → größere Trefferflächen
 const hitTol = px => (touchUI ? px * 1.6 : px);
 // Drehpunkt der Navigation: die aktuelle Auswahl (Schenkel und Rohr in der Mitte); null = nichts gewählt
+// Drehpunkt der Kamera: Wo ein Gimbal steht, dreht und zoomt die Ansicht um dessen Mitte, sonst um die Auswahl
 function selPivot() {
+  if (copyC && (copyC.ortho || copyC.step === 'edit') && copyC.step !== 'ref') return V.add(copyC.from || copyC.base, copyC.off);
+  if (objs.length && !copyC && !objs.every(objFixed)) return pivotOf();
   const p = proj(), pts = points(p);
   if (selCorner >= 1 && pts[selCorner]) return pts[selCorner];
   if (sel >= 0 && pts[sel + 1]) return V.mul(V.add(pts[sel], pts[sel + 1]), 0.5);
@@ -4245,7 +4326,7 @@ function selPivot() {
   const pl = selPlane && planeById(selPlane);
   if (pl) { const c = planeCorners(pl); return c.reduce(V.add).map(v => v / c.length); }
   const fi = selFit && fitById(selFit);
-  if (fi) return fitCenter(fi);
+  if (fi) { const d = fitD(fi); return d ? d.T : fitCenter(fi); }
   return null;
 }
 // Drehen um die Auswahl: ihr Bildpunkt bleibt stehen
@@ -4338,7 +4419,8 @@ cv.addEventListener('pointerdown', e => {
     // Gimbal und Schnittpunkt-Anfasser gehören nur zum Werkzeug „Rohr“
     let g = camTool === 'edit' && !parPick ? hitGizmo(lx, ly) : null;
     // Sitzt ein Fitting am Rohrende, gilt das Fitting, außer man trifft den Griff genau
-    if (['ext', 'pt', 'start', 'fmove'].includes(g?.type) && hitFit(lx, ly)) { ptrs.get(e.pointerId).grab = g; return; }
+    // Liegt unter einem Griff ein Objekt, gilt Tippen dem Objekt und erst Ziehen dem Griff
+    if ((['ext', 'pt', 'start', 'fmove'].includes(g?.type) && hitFit(lx, ly)) || (['omove', 'orot', 'frot'].includes(g?.type) && !inCmd() && hitObj(lx, ly)) || (g?.type === 'cpoff' && onCopyTarget(lx, ly))) { ptrs.get(e.pointerId).grab = g; return; }
     // Direkt auf einem Eckpunkt hat der Eckpunkt Vorrang vor dem Längenpfeil daneben
     if (g?.type === 'len' || g?.type === 'lmove') { const c = hitCorner(lx, ly), q = c >= 1 && view.P3(points(proj())[c]); if (q && Math.hypot(q[0] - lx, q[1] - ly) < 12) g = null; }
     // Liegt ein Maß unter dem Finger, gilt Tippen dem Maß; erst Ziehen greift den Griff darunter
@@ -4361,8 +4443,16 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const prev = ptrs.get(e.pointerId);
   if (!prev) {
+    // In Befehlen zeigt der Zeiger, was ein Klick träfe: Hand über einem Punkt, einem änderbaren Maß oder dem Zielpunkt der Kopie
+    if (view && (inCmd() || multi)) {
+      const [lx, ly] = local(e), h = cmdHit(lx, ly), dm = copyC ? hitDim(lx, ly, copyHits()) : create ? hitDim(lx, ly, cofHits()) : inCmd() ? null : hitDim(lx, ly);
+      const dk = dm ? { dk: dm.key } : null, tgt = copyC?.ortho && copyC.step === 'dest' && onCopyTarget(lx, ly);
+      if (h.id !== cmdHover || JSON.stringify(dk) !== JSON.stringify(hover)) { cmdHover = h.id; hover = dk; draw(); }
+      cv.style.cursor = h.id != null || dm || tgt ? 'pointer' : '';
+      cmdCursor = true;
+    } else if (cmdCursor) { cmdCursor = false; cmdHover = null; hover = null; cv.style.cursor = ''; }
     if (copyC && view) {
-      const [x, y] = local(e), c = copyC.step === 'dest' && !copyC.ortho ? hitCand(createCands(true), x, y) || freePoint(x, y) : null;
+      const [x, y] = local(e), c = copyC.step === 'dest' && !copyC.ortho ? hitCand(createCands(true), x, y) : null;
       copyC.at = c?.pos || null; copyC.hover = c?.id ?? null;
       draw();
       return;
@@ -4373,6 +4463,7 @@ cv.addEventListener('pointermove', e => {
       return;
     }
     if (camTool === 'room' && roomDraw && view) roomHover(...local(e));
+    if (e.pointerType === 'mouse' && view && objs.length > 1 && !gz) previewFor(hitGizmo(...local(e)));
     if (e.pointerType === 'mouse' && view && camTool === 'edit') {
       const [lx, ly] = local(e), knob = gizmo.find(g => g.type === 'ext' && g.at), h = !!knob && Math.hypot(lx - knob.at[0], ly - knob.at[1]) < knob.r + 6;
       if (h !== extHover) { extHover = h; draw(); }
@@ -4393,7 +4484,7 @@ cv.addEventListener('pointermove', e => {
   if (ptrs.size === 1 && !prev.moved && Math.hypot(e.clientX - prev.x0, e.clientY - prev.y0) < 6) return; // Zittern beim Antippen bewegt nichts
   const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
   holdView();
-  if (ptrs.size === 1 && navMode === 'zoom') zoomAt(prev.x0, prev.y0, Math.exp(-dy * 0.01));
+  if (ptrs.size === 1 && navMode === 'zoom') zoomAt(prev.x0, prev.y0, Math.exp(dy * 0.01)); // nach unten ziehen = näher heran
   else if (ptrs.size === 1 && prev.pan) { cam.panX += dx; cam.panY += dy; }
   else if (ptrs.size === 1) {
     orbitBy(dx, dy);
@@ -4420,7 +4511,7 @@ cv.addEventListener('pointerup', e => {
   if (pt && (ptrs.size === 0 || (multi && ptrs.get([...ptrs.keys()][0])?.long)) && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
     if (create?.step === 'ofs') { const d = hitDim(lx, ly, cofHits()); if (d) createEditDim(d); return; }
-    if (create) { const c = hitCand(createCands(), lx, ly) || freePoint(lx, ly); if (c) createPick(c); return; }
+    if (create) { const c = hitCand(createCands(), lx, ly); if (c) createPick(c); return; }
     if (measure) {
       const d = hitDim(lx, ly, measHits()), c = !d && hitCand(createCands(true), lx, ly);
       if (d) measureEditDim(d); else if (c) measurePick(c);
@@ -4428,11 +4519,10 @@ cv.addEventListener('pointerup', e => {
     }
     if (dockPick) { const c = hitCand(dockCands(), lx, ly); if (c) dockChoose(c); return; }
     if (copyC) { copyTap(lx, ly); return; }
-    if (alignC || distC) { anchorTap(lx, ly); return; }
     if (pivotPick) { const c = hitCand(createCands(true), lx, ly); if (c) { objPivot = c.pos; pivotPick = false; renderBundleBar(); draw(); } return; }
     if (camTool === 'edit' && (multi || ((e.shiftKey || e.metaKey) && !proj().stub))) {
       const o = hitObj(lx, ly);
-      if (o) { if (!multi) startMulti(); toggleObj(o); }
+      if (o) { if (!multi) startMulti(); toggleObj(o); } else if (multi) endMulti(); // Tipp in den freien Raum beendet die Mehrfachauswahl
       return;
     }
     if (parPick) { const g = hitGhost(lx, ly), q = hitLeg(lx, ly) >= 0 ? proj() : g && pipeById(g); if (q) openPar(q); return; }
@@ -5107,7 +5197,7 @@ $('#bundleBar').addEventListener('click', e => {
       pop.innerHTML = `<div class="mlabel">${fit ? 'Fitting' : 'Rohrtyp'}</div>${(fit ? db.fittings : db.pipeTypes).map(t => `<button class="mi${t.id === cur ? ' on' : ''}" data-ty="${t.id}"><span class="mname">${esc(t.name)}</span>${t.id === cur ? CHECK : ''}</button>`).join('')}`;
       pop.hidden = !pop.hidden;
     } else if (ds.co === 'last') { create.off = [...lastOff]; renderBundleBar(); draw(); }
-    else { const k = +ds.co, base = create.ref.id === 'F' ? create.ref.pos[k] : 0; askNum(base + create.off[k], v => { create.off[k] = v - base; return true; }, true); }
+    else { const k = +ds.co; askNum(create.off[k], v => { create.off[k] = v; return true; }, true); }
     return;
   }
   if (ds.bb === 'stubdrop') { dropStub(); return; }
@@ -5153,15 +5243,13 @@ $('#typePop').addEventListener('click', e => {
 });
 $('#addFit').addEventListener('click', () => {
   if (!db.fittings.length) { toast('Erst unter Einstellungen → Fittings eine GLB-Datei importieren.'); return; }
-  const workPl = selPlane;
   startCmd();
-  create = { kind: 'fit', workPl, step: 'ref', ref: null, off: [0, 0, 0], hover: null, libId: db.fittings.some(f => f.id === lastFit) ? lastFit : db.fittings[0].id };
+  create = { kind: 'fit', step: 'ref', ref: null, off: [0, 0, 0], hover: null, libId: db.fittings.some(f => f.id === lastFit) ? lastFit : db.fittings[0].id };
   renderBundleBar(); draw();
 });
 $('#addEx').addEventListener('click', () => {
-  const workPl = selPlane;
   startCmd();
-  create = { kind: 'ex', workPl, step: 'ref', ref: null, off: [0, 0, 0], hover: null, typeId: db.pipeTypes.some(t => t.id === lastType) ? lastType : proj().typeId };
+  create = { kind: 'ex', step: 'ref', ref: null, off: [0, 0, 0], hover: null, typeId: db.pipeTypes.some(t => t.id === lastType) ? lastType : proj().typeId };
   renderBundleBar(); draw();
 });
 $('#addPaste').addEventListener('click', () => { if (clip) startPaste(); });
@@ -5224,24 +5312,30 @@ function drawSceneHandles() {
   });
   void cAcc;
 }
-function axisArrows(A, axes, push, only = null, gap = 18) {
-  const [x, y] = view.P3(A);
+// Pfeile, die vom Betrachter weg in die Tiefe zeigen, sind blasser und dünner und liegen unter den vorderen
+function axisArrows(A, axes, push, only = null, gap = 18, type = null) {
+  const [x, y] = view.P3(A), z0 = project(A).z, list = [];
   axes.forEach(k => {
     const e = [0, 0, 0]; e[k] = 100;
     const [px, py] = view.P3(V.add(A, e)), mx = (px - x) / 100, my = (py - y) / 100, l = Math.hypot(mx, my);
-    if (l < view.sc * 0.2) return;
-    const ux = mx / l, uy = my / l, col = rgbCss(AX_RGB[k]);
+    if (depthAxis(k) || l < 1e-6) return; // zeigt in die Bildtiefe: In Vorne, Oben, Rechts lässt sich darauf nicht sinnvoll ziehen
+    const ux = mx / l, uy = my / l, col = rgbCss(AX_RGB[k]), dz = project(V.add(A, e)).z - z0;
     for (const s of [1, -1]) {
       if (only && !only(k, s)) continue;
-      const seg = [x + s * ux * gap, y + s * uy * gap, x + s * ux * (gap + 38), y + s * uy * (gap + 38)];
-      arrow(...seg, col, 4);
-      push({ k, s, seg, pxPerMm: [mx, my] });
+      list.push({ k, s, col, back: s * dz > 0.5, seg: [x + s * ux * gap, y + s * uy * gap, x + s * ux * (gap + 38), y + s * uy * (gap + 38)], pxPerMm: [mx, my] });
     }
+  });
+  // Beim Anfassen blenden die übrigen Griffe aus, beim Loslassen und nach neuer Auswahl wieder ein
+  const fade = (k, s) => (gz ? (gz.type === type && gz.k === k && gz.s === s ? 1 : 1 - grabE) : gzRel?.type === type && gzRel.k === k && gzRel.s === s ? 1 : relE * handA);
+  list.sort((a, b) => b.back - a.back).forEach(({ k, s, col, back, seg, pxPerMm }) => {
+    const f = fade(k, s);
+    if (f > 0.02) { ctx.save(); ctx.globalAlpha = (back ? 0.45 : 1) * f; arrow(...seg, col, back ? 3 : 4); ctx.restore(); }
+    push({ k, s, seg, pxPerMm });
   });
 }
 function moveArrows(key, axes) {
   const pl = key[0] === 'R' && planeById(key.slice(2)), c = pl && planeCorners(pl);
-  axisArrows(pl ? [0, 1, 2].map(i => (c[0][i] + c[2][i]) / 2) : nodePos(key), axes, g => gizmo.push({ type: 'pmove', key, ...g }));
+  axisArrows(pl ? [0, 1, 2].map(i => (c[0][i] + c[2][i]) / 2) : nodePos(key), axes, g => gizmo.push({ type: 'pmove', key, ...g }), null, 18, 'pmove');
 }
 // Maße der Bezüge: je Achse eine Linie vom Bezug zum Punkt, antippbar; 0 heißt fluchtend/gleiche Höhe
 function drawRefDims(P3, all) {
@@ -5398,8 +5492,6 @@ function renderBar() {
   if (measure) { renderMeasureBar(bar); return; }
   if (dockPick) { bar.hidden = false; bar.innerHTML = '<span class="bprompt">Anschluss wählen</span><button data-bb="dockno">Abbrechen</button>'; return; }
   if (copyC) { renderCopyBar(bar); return; }
-  if (alignC) { renderAlignBar(bar); return; }
-  if (distC) { renderDistBar(bar); return; }
   if (objs.length || multi) { renderObjBar(bar); return; }
   if (selFit && fitById(selFit)) { renderFitBar(bar); return; }
   if (parPick) { bar.hidden = false; bar.innerHTML = '<span class="bprompt">Parallelrohr: Rohr wählen</span><button data-bb="parno">Abbrechen</button>'; return; }
@@ -5450,14 +5542,13 @@ function setTx(bend, r) {
 }
 // ---------- Befehl „Rohr anlegen“: Bezugspunkt, Versatz, dann Richtung und Länge am Gimbal ----------
 $('#addPipe').addEventListener('click', () => {
-  const workPl = selPlane;
   startCmd();
-  create = { workPl, step: 'ref', ref: null, off: [0, 0, 0], hover: null, typeId: db.pipeTypes.some(t => t.id === lastType) ? lastType : proj().typeId };
+  create = { step: 'ref', ref: null, off: [0, 0, 0], hover: null, typeId: db.pipeTypes.some(t => t.id === lastType) ? lastType : proj().typeId };
   renderBundleBar(); draw();
 });
 function startCmd() {
   dropStub();
-  objCmdEnd(false); copyC = null;
+  copyC = null;
   create = measure = dockPick = null; parPick = false;
   if (camTool !== 'edit') setTool('edit');
   ofs = null; pick = null;
@@ -5466,7 +5557,7 @@ function startCmd() {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (multi && !inCmd()) { endMulti(); return; }
-  if (inCmd()) { objCmdEnd(false); copyC = null; pivotPick = false; create = measure = dockPick = null; parPick = false; renderBundleBar(); draw(); } else dropStub();
+  if (inCmd()) { copyC = null; pivotPick = false; create = measure = dockPick = null; parPick = false; renderBundleBar(); draw(); } else dropStub();
 });
 const createPos = () => V.add(create.ref.pos, create.off);
 // Mögliche Bezüge. to = Punkt, an dem der neue Anfang hängen bleibt, axes = Achsen dieses Bezugs; Eckpunkte und Ursprung kennt das Maß-System nicht
@@ -5492,9 +5583,12 @@ function createCands(all = false) {
   });
   // Belegte Anschlüsse sind dasselbe wie das Rohrende dort
   fitsOf().forEach(f => fitPorts(f).filter(o => !(f.links || []).some(L => L.port === o.i)).forEach(o => out.push({ id: `P:${f.id}:${o.i}`, pos: o.p, name: `${fitLib(f.libId).name} · Anschluss ${o.i + 1}`, to: null, axes: [], port: o, fit: f.id })));
-  if (vis.origin) add('O', [0, 0, 0], 'Ursprung');
+  if (vis.origin || (!out.length && insertCmd())) add('O', [0, 0, 0], 'Ursprung');
   return out;
 }
+// Einfügen braucht einen Bezug: Ist der Ursprung ausgeblendet und sonst kein Punkt da, erscheint er für die Dauer des Befehls
+const insertCmd = () => !!create || copyC?.step === 'dest';
+const originTemp = () => !vis.origin && insertCmd() && createCands(!!copyC).every(c => c.id === 'O');
 function hitCand(cands, x, y) {
   let best = null, bd = hitTol(18);
   for (const c of cands) { const [px, py] = view.P3(c.pos), d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = c; } }
@@ -5521,25 +5615,23 @@ function createEditDim(d) {
 }
 function createPick(c) {
   create.ref = c; create.step = 'ofs'; create.hover = null;
-  // Am Rohrende oder Anschluss gibt es nichts mehr zu entscheiden; Versatz geht danach über „Anderer Bezug“ oder den Griff
-  if ((create.kind === 'fit' && /^[SEX]:/.test(c.to || '')) || (!create.kind && c.port)) { createOk(); return; }
-  renderBundleBar(); draw();
+  // Der Bezugspunkt genügt: Das Objekt entsteht sofort, verschoben wird danach mit Maßen und Griffen
+  createOk();
 }
 function renderCreateBar(bar) {
   bar.hidden = false;
   const isFit = create.kind === 'fit', isEx = create.kind === 'ex', cancel = '<button data-co="cancel">Abbrechen</button>', list = isFit ? db.fittings : db.pipeTypes;
   const type = list.length > 1 ? `<button data-co="type">${esc(isFit ? fitLib(create.libId).name : typeOf({ typeId: create.typeId }).name)}</button>` : '';
-  if (create.step === 'ref') { bar.innerHTML = `<span class="bprompt">${esc(createCands().find(c => c.id === create.hover)?.name || `${isFit ? 'Fitting' : isEx ? 'Bestandsrohr' : 'Rohr'}: Punkt wählen oder frei tippen (${workPlane().name})`)}</span>${type}${cancel}`; return; }
-  // Am freien Punkt zählen die echten Koordinaten, ein Versatz von nichts sagt nichts
-  const free = create.ref.id === 'F', T = createPos();
-  bar.innerHTML = `<span>${free ? 'Freier Punkt' : `Von ${esc(create.ref.name)}`}</span>${[0, 1, 2].map(k => `<button data-co="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(free ? T[k] : create.off[k])}</button>`).join('')}${lastOff ? '<button data-co="last">Wie zuletzt</button>' : ''}<button data-co="ref">Anderer Bezug</button>${type}${cancel}<button data-co="ok" class="on">OK</button>`;
+  if (create.step === 'ref') { bar.innerHTML = `<span class="bprompt">${esc(createCands().find(c => c.id === create.hover)?.name || `${isFit ? 'Fitting' : isEx ? 'Bestandsrohr' : 'Rohr'}: Punkt wählen`)}</span>${type}${cancel}`; return; }
+  bar.innerHTML = `<span>Von ${esc(create.ref.name)}</span>${[0, 1, 2].map(k => `<button data-co="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(create.off[k])}</button>`).join('')}${lastOff ? '<button data-co="last">Wie zuletzt</button>' : ''}<button data-co="ref">Anderer Bezug</button>${type}${cancel}<button data-co="ok" class="on">OK</button>`;
 }
 function placeEx() {
-  const { typeId } = create, x = { id: uid(), name: `Bestand ${exOf().length + 1}`, typeId, pos: createPos(), dir: [1, 0, 0], len: db.exLen };
+  const { typeId, ref } = create, x = { id: uid(), name: `Bestand ${exOf().length + 1}`, typeId, pos: createPos(), dir: [1, 0, 0], len: db.exLen };
   commit();
   create = null; lastType = typeId;
   exOf().push(x);
   selectObj({ t: 'ex', id: x.id });
+  placeEdit({ t: 'ex', id: x.id }, ref.pos);
 }
 function createOk() {
   if (create.kind === 'fit') { placeFit(); return; }
@@ -5599,30 +5691,6 @@ function drawOrigin(P3) {
   });
   ctx.beginPath(); ctx.arc(...o, 3.5, 0, 7); ctx.fillStyle = css('--text'); ctx.fill();
 }
-// Arbeitsebene: gewählte Ebene, sonst der Boden. Sieht man den Boden fast von der Seite, gilt die Fläche, die am besten zum Betrachter zeigt
-let cmdPlane = null; // Arbeitsebene für Befehle außer Anlegen
-function workPlane() {
-  const id = create?.workPl || cmdPlane, pl = id && planeById(id);
-  if (pl) return { k: pl.axis, c: pl.c, name: `R${planeNo(pl)}` };
-  const det = workDets(), m = det.indexOf(Math.max(...det));
-  return det[2] < det[m] * 0.25 ? { k: m, c: 0, name: `${'YZX'[m]}${'ZXY'[m]}-Ebene` } : { k: 2, c: 0, name: 'Boden' };
-}
-function workBasis() {
-  const P = view.P3, o = P([0, 0, 0]);
-  return { o, E: [0, 1, 2].map(i => { const e = [0, 0, 0]; e[i] = 1000; const q = P(e); return [(q[0] - o[0]) / 1000, (q[1] - o[1]) / 1000]; }) };
-}
-const workDets = () => { const { E } = workBasis(); return [0, 1, 2].map(k => { const [a, b] = [(k + 1) % 3, (k + 2) % 3]; return Math.abs(E[a][0] * E[b][1] - E[a][1] * E[b][0]); }); };
-// Tipp auf freie Fläche: Punkt auf der Arbeitsebene, auf 10 mm gerastet
-function freePoint(x, y) {
-  const { k, c } = workPlane(), { o, E } = workBasis(), [a, b] = [(k + 1) % 3, (k + 2) % 3];
-  const dx = x - o[0] - E[k][0] * c, dy = y - o[1] - E[k][1] * c, det = E[a][0] * E[b][1] - E[a][1] * E[b][0];
-  if (Math.abs(det) < 1e-6) return null;
-  const pos = [0, 0, 0];
-  pos[a] = Math.round((dx * E[b][1] - dy * E[b][0]) / det / 10) * 10;
-  pos[b] = Math.round((dy * E[a][0] - dx * E[a][1]) / det / 10) * 10;
-  pos[k] = c;
-  return { id: 'F', pos, name: 'Freier Punkt', to: null, axes: [] };
-}
 function drawCands(cands, hoverId, alpha, P3) {
   const cAcc = css('--accent');
   cands.forEach(c => {
@@ -5663,13 +5731,13 @@ function drawCreate(P3) {
   drawSegs(axisSegs(ref.pos, off), P3);
   ctx.beginPath(); ctx.arc(...P3(ref.pos), 6, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2; ctx.stroke();
   knob(...P3(T), 7, css('--accent'));
-  axisArrows(T, [0, 1, 2], g => gizmo.push({ type: 'cofs', ...g }));
+  axisArrows(T, [0, 1, 2], g => gizmo.push({ type: 'cofs', ...g }), null, 18, 'cofs');
 }
 function drawStub() {
   const S = points(proj())[0];
   knob(...view.P3(S), 7, css('--accent'));
   const sd = proj().stubDir;
-  axisArrows(S, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'first', ...g }); }, sd ? (k, s) => sd[k] * s > 0.9 : null);
+  axisArrows(S, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'first', ...g }); }, sd ? (k, s) => sd[k] * s > 0.9 : null, 18, 'first');
 }
 // ---------- Fittings im Raum ----------
 const fitLib = id => db.fittings.find(l => l.id === id);
@@ -5734,8 +5802,9 @@ function selectFit(id) {
   renderBundleBar(); draw();
 }
 function dockFit(f, port, T, u) {
+  // Nur so weit drehen, bis der Anschluss aufs Rohr zeigt: Passt er schon, bleibt die Drehung, sonst die kleinste Drehung dorthin
   const o = fitLib(f.libId).ports[port];
-  f.rot = rotFromTo(o.d, V.mul(u, -1));
+  f.rot = mulRR(rotFromTo(V.norm(mulR(f.rot, o.d)), V.mul(u, -1)), f.rot || [1, 0, 0, 0, 1, 0, 0, 0, 1]);
   f.pos = V.sub(T, mulR(f.rot, o.p));
   fitDock = { id: f.id, port, T, u };
 }
@@ -5756,6 +5825,7 @@ function placeFit() {
   scene().fittings.push(f);
   if (dock) dockFit(f, 0, dock.T, dock.u);
   selectFit(f.id);
+  if (!dock) placeEdit({ t: 'fit', id: f.id }, ref.pos);
   if (dock && Math.abs(l.ports[0].D - dock.D) > 1) toast(`Anschluss Ø ${fmt(l.ports[0].D)} mm, Rohr Ø ${fmt(dock.D)} mm.`);
   refit(); recompute(); renderBundleBar();
 }
@@ -5798,19 +5868,18 @@ function dockChoose(c) {
   if (o && e && V.len(V.add(o.d, e.u)) > 0.05) toast('Das Rohr trifft den Anschluss nicht in Achsrichtung.');
 }
 function drawDockPick(P3) {
-  dockCands().forEach(c => knob(...P3(c.pos), 7, css('--accent')));
+  dockCands().forEach(c => knob(...P3(c.pos), cmdHover === c.id ? 10 : 7, css('--accent')));
 }
 const linkName = to => { const [w, id] = to.split(':'); return w === 'X' ? exById(id)?.name || 'Bestand' : pipeById(id)?.name || 'Rohr'; };
 function renderFitBar(bar) {
   const f = fitById(selFit), l = fitLib(f.libId), d = fitD(f), n = f.links?.length || 0, fixed = objFixed({ t: 'fit', id: f.id });
   bar.hidden = false;
-  bar.innerHTML = `<span>${esc(l?.name || 'Fitting')}${n ? ` · verbunden mit ${esc(f.links.map(L => linkName(L.to)).join(', '))}` : ''}${fixed ? ' · fest' : ''}</span><button data-fi="move"${fitMode === 'move' ? ' class="on"' : ''}>Verschieben</button><button data-fi="rot"${fitMode === 'rot' ? ' class="on"' : ''}>Drehen</button><i class="bsep"></i>${d?.link && n === 1 && l.ports.length > 1 ? `<button data-fi="port">Anschluss ${d.port + 1}</button>` : ''}${n ? '<button data-fi="free">Lösen</button>' : ''}${n ? '<button data-fi="strand">Ganzer Strang</button>' : ''}${n ? '<i class="bsep"></i>' : ''}<button data-fi="copy">Kopieren</button><button class="lockbtn${f.locked ? '' : ' open'}" data-fi="lock" title="Sperren" aria-label="Sperren" aria-pressed="${!!f.locked}">${lockIcon(f.locked)}</button><button data-fi="del" class="danger">Löschen</button>`;
+  bar.innerHTML = `<span>${esc(l?.name || 'Fitting')}${n ? ` · verbunden mit ${esc(f.links.map(L => linkName(L.to)).join(', '))}` : ''}${fixed ? ' · fest' : ''}</span>${d?.link && n === 1 && l.ports.length > 1 ? `<button data-fi="port">Anschluss ${d.port + 1}</button>` : ''}${n ? '<button data-fi="free">Lösen</button>' : ''}${n ? '<button data-fi="strand">Ganzer Strang</button>' : ''}${n ? '<i class="bsep"></i>' : ''}<button class="icbtn" data-fi="copy" title="Kopieren" aria-label="Kopieren">${IC('copy')}</button><button class="lockbtn${f.locked ? '' : ' open'}" data-fi="lock" title="Sperren" aria-label="Sperren" aria-pressed="${!!f.locked}">${lockIcon(f.locked)}</button><button data-fi="del" class="danger icbtn" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
 }
 function fitAct(a) {
   const f = fitById(selFit), d = f && fitD(f);
   if (!f) return;
   if (a === 'del') { delFit(f.id); return; }
-  if (a === 'move' || a === 'rot') { fitMode = a; if (a === 'rot' && f.links?.length > 1) { fitMode = 'move'; toast('Zwei Rohre halten das Fitting, es lässt sich nicht drehen.'); } renderBundleBar(); draw(); return; }
   if (a === 'copy') { startCopy([{ t: 'fit', id: f.id }]); return; }
   if (a === 'strand') { const s = strandOf({ t: 'fit', id: f.id }); startMulti(); objs = s; renderBundleBar(); draw(); return; }
   commit();
@@ -5828,21 +5897,39 @@ function drawFit(P3) {
     ctx.save(); ctx.fillStyle = '#fff'; ctx.font = '700 10px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.i + 1, ax, ay + 0.5); ctx.restore();
   });
   if (fixed) return;
-  if (fitMode === 'rot' || gz?.type === 'frot') {
-    if (!gz) ballShade(...P3(c));
-    // Angedockt dreht es um das Rohr, sonst um die festgelegte Achse oder frei um alle drei
-    const u = d?.u || ax?.n, side = u && V.norm(V.cross(u, Math.abs(u[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
-    (u ? [[side, V.cross(u, side), u]] : SPIN_AX).forEach(([a, b, n], k) => {
-      if (gz && gz.k !== k) return;
-      const ring = ballRing(c, a, b, 60 / view.sc, axisColor(n), !gz);
-      if (ring && !gz) gizmo.push({ type: 'frot', fit: f.id, k, u: a, v: b, n, A: c, poly: ring });
-    });
-  } else {
-    // Die Griffe beginnen außerhalb des Fittings, sonst liegt es unter ihnen
-    const m = d ? d.T : fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => { const [a, b] = P3(q); return Math.hypot(a - mx, b - my); }));
-    knob(mx, my, 4, css('--accent'));
-    axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, Math.max(18, r + 10));
-  }
+  // Ein Griff wie in Fusion: Pfeile verschieben, Bögen außen drehen. Die Griffe beginnen außerhalb des Fittings
+  const m = d ? d.T : fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => { const [a, b] = P3(q); return Math.hypot(a - mx, b - my); })), gap = Math.max(18, r + 10);
+  if (!gz || gz.type === 'fmove') knob(mx, my, 4, css('--accent'));
+  axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
+  // Angedockt dreht es um das Rohr, sonst um die festgelegte Achse oder frei um alle drei. Zwei Rohre halten es fest
+  if (f.links?.length > 1) return;
+  const u = d?.u || ax?.n, side = u && V.norm(V.cross(u, Math.abs(u[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
+  rotHandles(c, u ? [[side, V.cross(u, side), u]] : SPIN_AX, gap + 52, g => ({ type: 'frot', fit: f.id, ...g }), 'frot');
+}
+// Drehgriffe: kurze Bögen in Achsfarbe zwischen den Pfeilen. Angefasst wächst der Bogen zum Ring, losgelassen schrumpft er zurück
+function rotHandles(A, axes, px, make, type) {
+  axes.forEach(([a, b, n], k) => {
+    const mine = gz?.type === type && gz.k === k, rel = !gz && gzRel?.type === type && gzRel.k === k, r = mine ? gz.r : px / view.sc, col = axisColor(n);
+    if (mine && grabE >= 1) { ballRing(A, a, b, r, col, false); return; }
+    // Ein Ring, den man von der Kante sieht, dreht um eine Achse quer zur Ansicht: in 2D-Ansichten weglassen
+    if (!mine && !rel && isOrtho() && Math.abs(V.dot(n, viewDir())) < 0.01) return;
+    const at = t => V.add(A, V.add(V.mul(a, r * Math.cos(t * Math.PI / 180)), V.mul(b, r * Math.sin(t * Math.PI / 180))));
+    const front = [45, 135, 225, 315].reduce((m, t) => (project(at(t)).z < project(at(m)).z ? t : m), 45); // die Seite zum Betrachter
+    const mid = mine ? gz.mid ?? front : rel ? gzRel.mid ?? front : front, span = mine ? 30 + 150 * grabE : rel ? 180 - 150 * relE : 30;
+    const alpha = mine || rel ? 1 : (gz ? 1 - grabE : relE) * handA;
+    const arc = [];
+    for (let t = mid - span; t <= mid + span + 0.01; t += 5) arc.push(view.P3(at(t)));
+    if (!mine && !rel && isOrtho() && arc.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - arc[i][0], q[1] - arc[i][1]), 0) < 18) return; // Ring von der Kante gesehen
+    if (alpha > 0.02) {
+      // Gebogener Doppelpfeil: schmaler als die Verschiebepfeile, mit Spitzen an beiden Enden
+      const head = (from, to) => { const l = Math.hypot(to[0] - from[0], to[1] - from[1]) || 1, ux = (to[0] - from[0]) / l, uy = (to[1] - from[1]) / l; ctx.beginPath(); ctx.moveTo(to[0] + ux * 6, to[1] + uy * 6); ctx.lineTo(to[0] - ux * 5 - uy * 6, to[1] - uy * 5 + ux * 6); ctx.lineTo(to[0] - ux * 5 + uy * 6, to[1] - uy * 5 - ux * 6); ctx.closePath(); ctx.fillStyle = col; ctx.fill(); };
+      ctx.save(); ctx.globalAlpha = alpha;
+      polyline(arc, col, 3);
+      if (span < 60) { head(arc[1], arc[0]); head(arc.at(-2), arc.at(-1)); }
+      ctx.restore();
+    }
+    if (!gz) gizmo.push(make({ k, u: a, v: b, n, A, r, mid, poly: arc }));
+  });
 }
 // ---------- Objekte: Bestand, Auswahl, Bewegen, Kopieren, Ausrichten, Verteilen, Verbindungen ----------
 // Objekt = { t: 'pipe' | 'fit' | 'ex' | 'plane', id, at, a }. at = Rohrende am Tipp, a = gewählter Bezugspunkt
@@ -5903,9 +5990,9 @@ function objTurn(o, R, A) {
   else if (o.t === 'ex') { v.dir = mulR(R, v.dir); v.pos = at(v.pos); }
 }
 // Auswahl
-let objs = [], multi = false, objMode = 'move', objPivot = null, pivotPick = false, boxSel = null, lastTap = null, pressT = 0;
-let copyC = null, alignC = null, distC = null;
-const objCmd = () => !!(copyC || alignC || distC || pivotPick);
+let objs = [], multi = false, objPivot = null, pivotPick = false, boxSel = null, lastTap = null, pressT = 0;
+let copyC = null;
+const objCmd = () => !!(copyC || pivotPick);
 function hitEx(x, y) {
   let best = null, bd = hitTol(14);
   exOf().filter(q => !q.hidden && !q.locked).forEach(q => { const [a, b] = exEnds(q), d = segDist(x, y, ...view.P3(a), ...view.P3(b)); if (d < bd) { bd = d; best = q.id; } });
@@ -5928,7 +6015,7 @@ function selectObj(o) {
   if (o.t === 'fit') { selectFit(o.id); return; }
   if (o.t === 'pipe' && o.id !== db.currentId) { db.currentId = o.id; highlight = -1; }
   sel = -1; selCorner = -1; bundleSel = -1; startOpen = false; clearSel();
-  objs = [o]; objMode = 'move';
+  objs = [o];
   $('#legPanel').hidden = true; $('#offLegView').classList.add('blass');
   renderProjectBar(); renderInputs(); recompute(); renderBundleBar(); draw();
 }
@@ -5972,18 +6059,15 @@ function boxEnd() {
 }
 function renderObjBar(bar) {
   objs = objs.filter(objGet);
-  const n = objs.length, end = multi ? '<button data-ob="end">Fertig</button>' : '';
+  const n = objs.length, end = '';
   bar.hidden = false;
   if (pivotPick) { bar.innerHTML = '<span class="bprompt">Drehpunkt: Punkt tippen</span><button data-ob="pivno">Abbrechen</button>'; return; }
   if (!n) { bar.innerHTML = `<span class="bprompt">Objekte antippen</span>${end}`; return; }
   const ref = objs.at(-1), fixed = objs.filter(objFixed).length, one = n === 1 && ref;
   const title = (n > 1 ? `${n} Objekte · Bezug: ${objName(ref)}` : objName(ref)) + (fixed ? (n > 1 ? ` · ${fixed} fest, ${fixed > 1 ? 'bleiben' : 'bleibt'} stehen` : ' · gesperrt') : '');
-  const modes = `<button data-ob="move"${objMode === 'move' ? ' class="on"' : ''}>Verschieben</button><button data-ob="rot"${objMode === 'rot' ? ' class="on"' : ''}>Drehen</button><i class="bsep"></i>`;
-  const ex = one?.t === 'ex' ? `<span>Richtung</span>${[0, 1, 2].map(k => `<button data-ob="dir${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]}</button>`).join('')}<i class="bsep"></i>` : '';
-  const several = n > 1 ? '<button data-ob="align">Ausrichten</button><button data-ob="dist">Verteilen</button><i class="bsep"></i>' : '';
   const strand = n === 1 && strandOf(ref).length > 1 ? '<button data-ob="strand">Ganzer Strang</button>' : '';
   const locked = objs.every(o => objGet(o).locked);
-  bar.innerHTML = `<span>${esc(title)}</span>${modes}${ex}${several}${strand}<button data-ob="copy">Kopieren</button><button class="lockbtn${locked ? '' : ' open'}" data-ob="lock" title="Sperren" aria-label="Sperren" aria-pressed="${locked}">${lockIcon(locked)}</button><button data-ob="del" class="danger">Löschen</button>${end}`;
+  bar.innerHTML = `<span>${esc(title)}</span>${strand}<button class="icbtn" data-ob="copy" title="Kopieren" aria-label="Kopieren">${IC('copy')}</button><button class="lockbtn${locked ? '' : ' open'}" data-ob="lock" title="Sperren" aria-label="Sperren" aria-pressed="${locked}">${lockIcon(locked)}</button><button data-ob="del" class="danger icbtn" title="Löschen" aria-label="Löschen">${IC('trash')}</button>${end}`;
 }
 const pivotOf = () => objPivot || meanOf(objs.map(objCenter));
 function drawObj(P3) {
@@ -6000,19 +6084,33 @@ function drawObj(P3) {
     // Was verbunden ist, läuft mit und leuchtet deshalb schon vor dem Ziehen
     if (o.t === 'pipe' && !multi) fitsAll().filter(f => (f.links || []).some(L => L.to.endsWith(`:${o.id}`))).forEach(f => { ctx.save(); ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(...P3(fitCenter(f)), 11, 0, 7); ctx.strokeStyle = cAcc; ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); });
   });
-  if (alignC || distC) { objs.forEach((o, i) => { const [x, y] = P3(objAnchor(o)); knob(x, y, i === objs.length - 1 ? 8 : 6, css('--mark')); }); return; }
+  // Erst der Griff, danach Kreuz und Schilder: Sie suchen sich freien Platz um ihn herum. Während der Vorschau fehlt der Griff,
+  // er würde das Ergebnis verdecken
+  if (!prevw) drawObjGrip(P3);
+  drawAlignGrips(P3);
+}
+function drawObjGrip(P3) {
+  const cAcc = css('--accent');
   if (copyC || !objs.length || objs.every(objFixed)) return;
-  const c = pivotOf(), [cx, cy] = P3(c);
-  if (objMode === 'rot' || gz?.type === 'orot') {
-    if (!gz) ballShade(cx, cy);
-    SPIN_AX.forEach(([a, b, n], k) => {
-      if (gz && gz.k !== k) return;
-      const ring = ballRing(c, a, b, 60 / view.sc, axisColor(n), !gz);
-      if (ring && !gz) gizmo.push({ type: 'orot', k, u: a, v: b, n, A: c, poly: ring });
-    });
-  } else axisArrows(c, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'omove', ...g }); }, null, objs.length === 1 && objs[0].t === 'ex' ? Math.max(18, exEnds(objGet(objs[0])).reduce((m, q) => { const [a, b] = P3(q); return Math.max(m, Math.hypot(a - cx, b - cy)); }, 0) + 10) : 18);
-  knob(cx, cy, objs.length === 1 && objs[0].t === 'ex' ? 4 : 7, cAcc);
+  const c = pivotOf(), [cx, cy] = P3(c), small = objs.length === 1 && objs[0].t === 'ex';
+  const gap = small ? Math.max(18, exEnds(objGet(objs[0])).reduce((m, q) => { const [a, b] = P3(q); return Math.max(m, Math.hypot(a - cx, b - cy)); }, 0) + 10) : 18;
+  axisArrows(c, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'omove', ...g }); }, null, gap, 'omove');
+  rotHandles(c, SPIN_AX, gap + 52, g => ({ type: 'orot', ...g }), 'orot');
+  if (gz && gz.type !== 'opiv') return;
+  knob(cx, cy, small ? 4 : 7, cAcc);
   if (!gz) gizmo.push({ type: 'opiv', at: [cx, cy], r: 9 });
+}
+let cmdHover = null, cmdCursor = false;
+function cmdHit(x, y) {
+  const near = (list, tol = 22) => { let best = -1, bd = hitTol(tol); list.forEach((q, i) => { const [a, b] = view.P3(q), d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = i; } }); return best; };
+  if (create?.step === 'ref') return { id: hitCand(createCands(), x, y)?.id ?? null };
+  if (measure) return { id: hitCand(createCands(true), x, y)?.id ?? null };
+  if (copyC?.step === 'ref') { const i = near(copyC.pts); return { id: i >= 0 ? `k${i}` : null }; }
+  if (copyC) return { id: hitCand(createCands(true), x, y)?.id ?? null };
+  if (pivotPick) return { id: hitCand(createCands(true), x, y)?.id ?? null };
+  if (dockPick) return { id: hitCand(dockCands(), x, y)?.id ?? null };
+  if (multi) { const o = hitObj(x, y); return { id: o ? `${o.t}:${o.id}` : null }; }
+  return { id: null };
 }
 function drawBox(P3) {
   const { x0, y0, x1, y1 } = boxSel;
@@ -6024,7 +6122,6 @@ function drawExOverlay(P3) {
   const cM = css('--muted');
   exOf().filter(x => !x.hidden).forEach(x => {
     const [a, b] = exEnds(x), pa = P3(a), pb = P3(b), l = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) || 1, ux = (pb[0] - pa[0]) / l, uy = (pb[1] - pa[1]) / l, r = Math.max(x.len ? typeOf(x).D : 6, 6) * view.sc / 2 + 3;
-    [pa, pb].forEach(q => { ctx.save(); ctx.strokeStyle = cM; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(q[0] - uy * r, q[1] + ux * r); ctx.lineTo(q[0] + uy * r, q[1] - ux * r); ctx.stroke(); ctx.restore(); });
     if (gz || create || copyC) { ctx.save(); ctx.strokeStyle = cM; ctx.globalAlpha = 0.6; ctx.setLineDash([6, 5]); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(pa[0] - ux * 2000, pa[1] - uy * 2000); ctx.lineTo(pb[0] + ux * 2000, pb[1] + uy * 2000); ctx.stroke(); ctx.restore(); }
     if (x.locked) lockMark((pa[0] + pb[0]) / 2 + 14, (pa[1] + pb[1]) / 2 + 14, true, lockFade());
   });
@@ -6095,10 +6192,10 @@ function pasteAt(T) {
     n.links = (f.links || []).map(L => ({ ...L, to: reTo(L.to) })).filter(L => L.to);
     (sc.fittings ||= []).push(n); made.push({ t: 'fit', id: n.id });
   });
-  ex.forEach(x => { const n = { ...structuredClone(x), id: uid(), pos: V.add(x.pos, d), locked: false, hidden: false }; exOf().push(n); made.push({ t: 'ex', id: n.id }); });
+  ex.forEach(x => { const n = { ...structuredClone(x), id: uid(), name: `Bestand ${exOf().length + 1}`, pos: V.add(x.pos, d), locked: false, hidden: false }; exOf().push(n); made.push({ t: 'ex', id: n.id }); });
   planes.forEach(pl => { const n = { ...structuredClone(pl), id: uid(), locked: false, hidden: false, ref: null }; [0, 1, 2].forEach(k => { n[planeKey(n, k)] += d[k]; }); sc.planes.push(n); made.push({ t: 'plane', id: n.id }); });
-  objs = made; copyC.last = made; copyC.made = [...(copyC.made || []), ...made];
-  copyC.off = d; copyC.step = 'edit';
+  // Der Befehl bleibt offen: Jeder weitere Tipp oder „Einfügen“ setzt die nächste Kopie, „Fertig“ beendet
+  copyC.last = made; copyC.made = [...(copyC.made || []), ...made];
   refit(); recompute(); save(); renderBundleBar(); draw();
 }
 // Maße der Kopie. Im Schritt „edit“ wandert die eben eingefügte Kopie mit; das zählt mit dem Einfügen als ein Rückgängig-Schritt
@@ -6125,37 +6222,42 @@ function copyEditDim(d) {
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); });
   inp.addEventListener('blur', () => finish(true));
 }
+// Nach dem Einfügen: Maße vom Bezugspunkt aus bleiben stehen wie bei einer Kopie, bis ein Tipp in den leeren Raum beendet
+function placeEdit(o, base) {
+  copyC = { step: 'edit', place: true, base, off: V.sub(objGet(o).pos, base).map(v => r1(v)), last: [o], made: [o], items: { pipes: [], fits: [], ex: [], planes: [] }, pts: [], list: [] };
+  renderBundleBar(); draw();
+}
 function copyDone(keep = true) {
   const made = keep ? copyC?.made : null;
-  copyC = null; cmdPlane = null;
+  copyC = null;
   selFit = null;
-  objs = made ? made.filter(objGet) : []; multi = objs.length > 1;
+  // Die Kopien bleiben gewählt, der Modus „Auswählen“ aber nicht: Der nächste Tipp wählt wieder ein einzelnes Objekt
+  objs = made ? made.filter(objGet) : []; multi = false;
   recompute(); renderBundleBar(); draw();
 }
 function drawCopy(P3) {
-  if (copyC.step === 'ref') { copyC.pts.forEach(q => knob(...P3(q), 5, css('--accent'))); return; }
+  if (copyC.step === 'ref') { copyC.pts.forEach((q, i) => knob(...P3(q), cmdHover === `k${i}` ? 9 : 5, css('--accent'))); return; }
   drawCands(createCands(true), copyC.hover, 0.5, P3);
-  const axes = copyC.ortho || copyC.step === 'edit', T = axes ? V.add(copyC.base, copyC.off) : copyC.at;
+  const from = copyC.from || copyC.base, axes = copyC.ortho || copyC.step === 'edit', T = axes ? V.add(from, copyC.off) : copyC.at;
   if (axes) {
-    ctx.beginPath(); ctx.arc(...P3(copyC.base), 6, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2; ctx.stroke();
-    drawSegs(axisSegs(copyC.base, copyC.off), P3);
+    ctx.beginPath(); ctx.arc(...P3(from), 6, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2; ctx.stroke();
+    drawSegs(axisSegs(from, copyC.off), P3);
     knob(...P3(T), 6, css('--accent'));
-    axisArrows(T, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'cpoff', ...g }); });
+    axisArrows(T, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'cpoff', ...g }); }, null, 18, 'cpoff');
   }
-  if (!T || copyC.step === 'edit') return;
-  const d = V.sub(T, copyC.base), { pipes, fits, ex } = copyC.items, line = q => { ctx.save(); ctx.globalAlpha = 0.5; polyline(q.map(c => P3(V.add(c, d))), css('--accent'), 3); ctx.restore(); };
-  pipes.forEach(q => line(points(q)));
-  ex.forEach(x => line(exEnds(x)));
-  fits.forEach(f => { ctx.save(); ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(...P3(V.add(f.pos, d)), 10, 0, 7); ctx.strokeStyle = css('--accent'); ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); });
+  // Die Kopie selbst zeichnet das 3D-Modell durchsichtig mit (render3d)
 }
 function renderCopyBar(bar) {
   bar.hidden = false;
-  if (copyC.step === 'ref') { bar.innerHTML = '<span class="bprompt">Kopieren: Referenzpunkt wählen</span><button data-ob="cno">Abbrechen</button>'; return; }
-  const xyz = [0, 1, 2].map(k => `<button data-ob="co${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(copyC.off[k])}</button>`).join(''), back = `<button data-ob="${copyC.made ? 'cend' : 'cno'}">${copyC.made ? 'Fertig' : 'Abbrechen'}</button>`;
-  if (copyC.step === 'edit') { bar.innerHTML = `<span>Kopie: Maße ändern, leer tippen beendet</span>${xyz}<i class="bsep"></i><button data-ob="cmore">Noch eine</button><button data-ob="cend">Fertig</button>`; return; }
-  const tog = `<button data-ob="cort"${copyC.ortho ? ' class="on"' : ''}>Orthogonal</button>`;
-  if (copyC.ortho) { bar.innerHTML = `<span>Abstand vom Referenzpunkt</span>${xyz}<i class="bsep"></i>${tog}${back}<button data-ob="cput" class="on">Einfügen</button>`; return; }
-  bar.innerHTML = `<span class="bprompt">Zielpunkt wählen oder frei tippen (${workPlane().name})</span>${tog}${back}`;
+  // Maße stehen im Bild an der Kopie; die Leiste trägt nur Modus, Einfügen und Beenden, als Symbole
+  const ib = (a, ic, t, cls = '') => `<button class="icbtn${cls}" data-ob="${a}" title="${t}" aria-label="${t}">${IC(ic)}</button>`;
+  const back = copyC.made ? ib('cend', 'check', 'Fertig') : ib('cno', 'x', 'Abbrechen');
+  if (copyC.step === 'ref') { bar.innerHTML = `<span class="bprompt">Kopieren: Referenzpunkt wählen</span>${ib('cno', 'x', 'Abbrechen')}`; return; }
+  if (copyC.place) { bar.innerHTML = `<span>Lage ändern: Maße antippen, leer tippen beendet</span>${ib('cend', 'check', 'Fertig')}`; return; }
+  const tog = `<button class="icbtn${copyC.ortho ? ' on' : ''}" data-ob="cort" title="Orthogonal" aria-label="Orthogonal" aria-pressed="${copyC.ortho}">${IC('ortho')}</button>`;
+  const n = copyC.made?.length ? ` · ${copyC.made.length} eingefügt` : '';
+  if (copyC.ortho) { bar.innerHTML = `<span>${copyC.from ? 'Abstand zur letzten Kopie' : 'Abstand vom Referenzpunkt'}${n}</span>${tog}${ib('cput', 'paste', 'Einfügen (oder Zielpunkt antippen)')}${back}`; return; }
+  bar.innerHTML = `<span class="bprompt">${copyC.made?.length ? `${copyC.made.length} eingefügt · nächstes Ziel` : 'Zielpunkt wählen'}</span>${tog}${back}`;
 }
 function copyTap(x, y) {
   if (copyC.step === 'ref') {
@@ -6166,60 +6268,228 @@ function copyTap(x, y) {
   }
   const d = hitDim(x, y, copyHits());
   if (d) { copyEditDim(d); return; }
-  const own = copyC.last?.flatMap(objPts) || [], near = q => own.some(o => V.len(V.sub(o, q)) < 0.5), c = hitCand(createCands(true).filter(q => !near(q.pos)), x, y);
-  if (copyC.step === 'edit') { if (c) pasteAt(c.pos); else if (!hitObj(x, y)) copyDone(false); return; }
-  if (copyC.ortho) { if (c) { copyC.off = V.sub(c.pos, copyC.base); renderBundleBar(); draw(); } return; }
-  const t = c || freePoint(x, y);
-  if (t) pasteAt(t.pos);
+  // Nur beim Nachjustieren eines eingefügten Objekts zählen seine eigenen Punkte nicht. Beim Kopieren sind die Enden
+  // der letzten Kopie gerade das Ziel der nächsten, sonst fiele der Tipp auf die gerasterte Fläche und säße ungenau
+  const own = copyC.place ? copyC.last.flatMap(objPts) : [], near = q => own.some(o => V.len(V.sub(o, q)) < 0.5), c = hitCand(createCands(true).filter(q => !near(q.pos)), x, y);
+  if (copyC.place) { if (c) [0, 1, 2].forEach(k => setOff(k, c.pos[k] - copyC.base[k])); else if (!hitObj(x, y)) copyDone(false); renderBundleBar(); return; }
+  if (copyC.ortho) {
+    if (onCopyTarget(x, y)) copyPut(); // Tipp auf den Zielpunkt am Gimbal setzt die Kopie dort ab
+    else if (c) { copyC.off = V.sub(c.pos, copyC.from || copyC.base); renderBundleBar(); draw(); }
+    return;
+  }
+  if (c) pasteAt(c.pos);
 }
-// ---------- Ausrichten und Verteilen: Die Referenz bleibt stehen, alles ist bis „Fertig“ Vorschau ----------
-function startAlign() { alignC = { mark: sceneMark(), before: snapshot(), ax: [false, false, false] }; renderBundleBar(); draw(); }
-function applyAlign() {
-  sceneBack(alignC.mark);
-  const ref = objs.at(-1), T = objAnchor(ref);
-  objs.slice(0, -1).filter(o => !objFixed(o)).forEach(o => { const A = objAnchor(o); objShift(o, [0, 1, 2].map(k => (alignC.ax[k] ? T[k] - A[k] : 0))); });
-  recompute(true); renderBundleBar();
-}
-function startDist() {
-  const q = objs.map(objAnchor), span = [0, 1, 2].map(k => Math.max(...q.map(c => c[k])) - Math.min(...q.map(c => c[k])));
-  distC = { mark: sceneMark(), before: snapshot(), k: span.indexOf(Math.max(...span)), gap: null, even: false };
+// Orthogonal: Zielpunkt der Kopie am Gimbal
+const copyTarget = () => V.add(copyC.from || copyC.base, copyC.off);
+const onCopyTarget = (x, y) => { const [a, b] = view.P3(copyTarget()); return Math.hypot(a - x, b - y) < hitTol(14); };
+function copyPut() {
+  const T = copyTarget();
+  pasteAt(T); copyC.from = T;
   renderBundleBar(); draw();
 }
-function applyDist() {
-  sceneBack(distC.mark);
-  const { k, gap, even } = distC, ref = objs.at(-1), list = [...objs].sort((a, b) => objAnchor(a)[k] - objAnchor(b)[k]), pos = list.map(o => objAnchor(o)[k]);
-  const put = (o, v) => { if (objFixed(o)) return; const d = [0, 0, 0]; d[k] = v - objAnchor(o)[k]; objShift(o, d); };
-  if (even && list.length > 2) {
-    const a = pos[0], step = (pos.at(-1) - a) / (list.length - 1);
-    list.forEach((o, i) => put(o, a + i * step));
-  } else if (gap != null) {
-    const i0 = list.findIndex(o => sameObj(o, ref)), base = pos[i0];
-    list.forEach((o, i) => { if (i !== i0) put(o, base + (i - i0) * gap); });
-  }
-  recompute(true); renderBundleBar();
+// ---------- Ausrichten und Verteilen im Raum: Fluchtgriffe am Bezug, Maßkette zwischen den Bezugspunkten ----------
+// Wirkt sofort und gleitet in die neue Lage; jede Aktion ist ein Rückgängig-Schritt. Der Bezug (zuletzt gewählt) bleibt stehen
+let chainK = null, slide = null;
+const CHAIN_GZ = ['oalign', 'oanc', 'oaxis', 'oeq', 'ogap'];
+function slideTo(moves) {
+  moves = moves.filter(m => !objFixed(m.o) && V.len(m.d) > 0.01);
+  if (!moves.length) return;
+  commit();
+  const mark = sceneMark(), t0 = performance.now();
+  slide = {};
+  const step = () => {
+    const e = gfx(t0);
+    sceneBack(mark);
+    moves.forEach(m => objShift(m.o, V.mul(m.d, e)));
+    if (e < 1) { recompute(true); requestAnimationFrame(step); return; }
+    slide = null;
+    recompute(); save(); renderBundleBar(); draw();
+  };
+  step();
 }
-function objCmdEnd(ok) {
-  const c = alignC || distC;
-  if (!c) return;
-  if (ok) commit(null, c.before); else sceneBack(c.mark);
-  alignC = distC = null;
+// Ausrichten: alle anderen auf die Koordinate k des Bezugs
+const alignMoves = k => { const T = objAnchor(objs.at(-1)); return objs.slice(0, -1).filter(o => !objFixed(o)).map(o => { const d = [0, 0, 0]; d[k] = T[k] - objAnchor(o)[k]; return { o, d }; }); };
+// Was nicht geht, bleibt blass und sagt warum: schon fluchtend, oder Teile lägen danach auf einem Punkt
+function alignBlock(k) {
+  const moves = alignMoves(k);
+  if (moves.every(m => Math.abs(m.d[k]) < 0.05)) return 'Schon ausgerichtet.';
+  const after = objs.map(o => { const m = moves.find(q => q.o === o); return m ? V.add(objAnchor(o), m.d) : objAnchor(o); });
+  return after.some((p, i) => after.some((q, j) => j > i && V.len(V.sub(p, q)) < 0.5)) ? 'Überlappung.' : null;
+}
+function alignTo(k) {
+  if (prevw?.key === `a${k}`) { previewCommit(); return; }
+  const why = alignBlock(k);
+  if (why) { toast(why); return; }
+  slideTo(alignMoves(k));
+}
+// Probeweise Lage: Die Teile gleiten ans Ziel und zurück, gespeichert wird erst beim Ausführen
+let prevw = null;
+function previewOn(key, movesOf) {
+  if (prevw?.key === key) { if (prevw.dir === 'out') { prevw.dir = 'in'; prevw.t0 = performance.now() - GRIP_MS * (1 - prevw.amt); previewStep(); } return; }
+  previewOff(true);
+  const blocks = [0, 1, 2].map(alignBlock), moves = movesOf().filter(m => !objFixed(m.o) && V.len(m.d) > 0.01);
+  if (!moves.length) return;
+  prevw = { key, moves, blocks, mark: sceneMark(), snap: snapshot(), t0: performance.now(), dir: 'in', amt: 0 };
+  previewStep();
+}
+function previewStep() {
+  const p = prevw;
+  if (!p) return;
+  const e = gfx(p.t0);
+  p.amt = p.dir === 'in' ? e : 1 - e;
+  sceneBack(p.mark);
+  p.moves.forEach(m => objShift(m.o, V.mul(m.d, p.amt)));
+  if (e >= 1 && p.dir === 'out') { prevw = null; sceneBack(p.mark); }
+  recompute(true);
+  if (e < 1 && prevw === p) requestAnimationFrame(previewStep);
+}
+function previewOff(instant = false) {
+  const p = prevw;
+  if (!p) return;
+  if (instant) { prevw = null; sceneBack(p.mark); recompute(true); return; }
+  if (p.dir === 'out') return;
+  p.dir = 'out'; p.t0 = performance.now() - GRIP_MS * (1 - p.amt);
+  previewStep();
+}
+function previewCommit() {
+  const p = prevw;
+  prevw = null;
+  sceneBack(p.mark);
+  p.moves.forEach(m => objShift(m.o, m.d));
+  commit(null, p.snap);
   recompute(); save(); renderBundleBar(); draw();
 }
-function renderAlignBar(bar) {
-  bar.hidden = false;
-  bar.innerHTML = `<span>Ausrichten an ${esc(objName(objs.at(-1)))}</span>${[0, 1, 2].map(k => `<button data-ob="ax${k}" class="ax-${'xyz'[k]}-b${alignC.ax[k] ? ' on' : ''}">${'XYZ'[k]}</button>`).join('')}<i class="bsep"></i><button data-ob="cmdno">Abbrechen</button><button data-ob="cmdok">Fertig</button>`;
+const previewKey = g => (g?.type === 'oalign' ? `a${g.k}` : g?.type === 'oeq' ? 'eq' : null);
+function previewFor(g) {
+  const key = previewKey(g);
+  if (!key) { previewOff(); return; }
+  if (g.type === 'oalign') { if (alignBlock(g.k) && prevw?.key !== key) { previewOff(); return; } previewOn(key, () => alignMoves(g.k)); }
+  else { const c = chainOf(); if (c) previewOn(key, () => evenMoves(chainOf())); }
 }
-function renderDistBar(bar) {
-  bar.hidden = false;
-  bar.innerHTML = `<span>Verteilen ab ${esc(objName(objs.at(-1)))}</span>${[0, 1, 2].map(k => `<button data-ob="dk${k}" class="ax-${'xyz'[k]}-b${distC.k === k ? ' on' : ''}">${'XYZ'[k]}</button>`).join('')}<i class="bsep"></i><button data-ob="gap">${distC.gap == null ? 'Abstand' : `Abstand ${fmt(distC.gap)}`}</button>${objs.length > 2 ? `<button data-ob="even"${distC.even ? ' class="on"' : ''}>Gleichmäßig</button>` : ''}<i class="bsep"></i><button data-ob="cmdno">Abbrechen</button><button data-ob="cmdok">Fertig</button>`;
+// Maßkette: ab zwei Objekten immer, entlang der Achse der größten Ausdehnung. Versatz quer dazu zählt nicht, Verteilen schiebt nur entlang der Achse
+function chainOf() {
+  if (objs.length < 2) return null;
+  const A = objs.map(objAnchor), span = [0, 1, 2].map(k => Math.max(...A.map(q => q[k])) - Math.min(...A.map(q => q[k])));
+  // Gewählt bleibt die gewählte Achse, auch wenn man dreht. Nur in einer 2D-Ansicht, in deren Tiefe sie zeigt, gilt solange die beste sichtbare
+  const vis = span.map((s, i) => (depthAxis(i) ? -1 : s)), k = chainK != null && !depthAxis(chainK) ? chainK : vis.indexOf(Math.max(...vis));
+  const order = objs.map((o, i) => i).sort((i, j) => A[i][k] - A[j][k]);
+  return { k, A, order };
 }
-function anchorTap(x, y) {
-  let best = null, bd = hitTol(18);
-  objs.forEach(o => { const [a, b] = view.P3(objAnchor(o)), d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = o; } });
-  if (!best) return;
-  const n = objPts(best).length, i = objPts(best).indexOf(objAnchor(best));
-  best.a = (i + 1) % n;
-  if (alignC) applyAlign(); else applyDist();
+function gapMoves(c, v) {
+  const { k, A, order } = c, i0 = order.indexOf(objs.length - 1), base = A[objs.length - 1][k];
+  return order.map((i, j) => { const d = [0, 0, 0]; d[k] = base + (j - i0) * v - A[i][k]; return { o: objs[i], d }; });
+}
+function evenMoves(c) {
+  const { k, A, order } = c, a = A[order[0]][k], step = (A[order.at(-1)][k] - a) / (order.length - 1);
+  return order.map((i, j) => { const d = [0, 0, 0]; d[k] = a + j * step - A[i][k]; return { o: objs[i], d }; });
+}
+// Zeichnen: Bezugspunkte, Fluchtgriffe am Bezug (Gimbal-Phase)
+// Abstand eines Bildpunkts zu allen Griffen, die schon liegen
+function gripClear(x, y) {
+  let m = Infinity;
+  for (const g of gizmo) {
+    let d = Infinity;
+    if (g.at) d = Math.hypot(x - g.at[0], y - g.at[1]) - (g.r || 8);
+    else if (g.seg) d = segDist(x, y, ...g.seg) - 4;
+    else if (g.poly) for (let k = 1; k < g.poly.length; k++) d = Math.min(d, segDist(x, y, ...g.poly[k - 1], ...g.poly[k]) - 3);
+    m = Math.min(m, d);
+  }
+  for (const h of dimHits) m = Math.min(m, Math.hypot(x - h.x, y - h.y) - Math.max(h.w, h.h) / 2); // Maßzahlen
+  return m;
+}
+// Nächste freie Stelle um (x, y): Ringe wachsender Größe, die erste Stelle mit genug Luft gewinnt, sonst die luftigste
+function freeSpot(x, y, test, need = 14) {
+  let best = null;
+  for (const r of [0, 36, 56, 80, 108]) for (let i = 0; i < (r ? 12 : 1); i++) {
+    const a = (i * 30 + 135) * Math.PI / 180, p = [x + Math.cos(a) * r, y + Math.sin(a) * r], c = test(p);
+    if (c >= need) return p;
+    if (!best || c > best.c) best = { p, c };
+  }
+  return best.p;
+}
+let triAt = null, chipAt = {}; // Lage von Kreuz und Schildern, während der Vorschau eingefroren
+function drawAlignGrips(P3) {
+  if (objs.length < 2 || inCmd()) return;
+  const show = !gz || CHAIN_GZ.includes(gz.type);
+  objs.forEach((o, i) => { const [x, y] = P3(objAnchor(o)); ctx.save(); ctx.globalAlpha = show ? handA : 0.4; knob(x, y, i === objs.length - 1 ? 6 : 4, css('--mark')); ctx.restore(); if (!gz) gizmo.push({ type: 'oanc', i, at: [x, y], r: 8 }); });
+  if (!show) return;
+  // Achsenkreuz wie der Ursprung am Bezugspunkt: Jeder Arm zeigt in seine 3D-Richtung, sein Endgriff richtet auf diese Achse aus.
+  // Sitzt der Verschiebegriff fast an derselben Stelle, rückt das Kreuz zur Seite
+  // Während der Vorschau wandert die Griffmitte mit den Teilen; das Kreuz bleibt dort, wo es vorher stand, sonst liefe es der Maus weg
+  const R = objAnchor(objs.at(-1)), [rx, ry] = P3(R);
+  const dirs = [0, 1, 2].map(k => { const e = [0, 0, 0]; e[k] = 100; const [ex, ey] = P3(V.add(R, e)), l = Math.hypot(ex - rx, ey - ry); return l > 8 ? [(ex - rx) / l, (ey - ry) / l, 34] : [...[[-0.7, -0.7], [0.7, -0.7], [0, -1]][k], 26]; });
+  // Das Kreuz sucht freien Platz: Mitte und alle drei Armenden brauchen Luft zu Pfeilen, Bögen und anderen Griffen
+  if (!prevw || !triAt) triAt = freeSpot(rx, ry, ([x, y]) => Math.min(gripClear(x, y), ...dirs.map(([ux, uy, l]) => gripClear(x + ux * l, y + uy * l)), ...dirs.map(([ux, uy, l]) => gripClear(x + ux * l / 2, y + uy * l / 2))), 24);
+  const [ox, oy] = triAt, crowd = Math.hypot(ox - rx, oy - ry) > 1; // auch das Kreuz steht während der Vorschau fest
+  if (crowd) { ctx.save(); ctx.globalAlpha = handA * 0.5; ctx.strokeStyle = css('--mark'); ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(ox, oy); ctx.stroke(); ctx.restore(); }
+  const active = prevw?.key?.[0] === 'a' ? +prevw.key[1] : null;
+  [0, 1, 2].forEach(k => {
+    if (depthAxis(k)) return; // Ausrichten in der Bildtiefe sähe man in 2D nicht
+    const [ux, uy, len] = dirs[k], x = ox + ux * len, y = oy + uy * len;
+    const blocked = !!(prevw ? prevw.blocks[k] : alignBlock(k)), on = active === k;
+    ctx.save(); ctx.globalAlpha = handA * (blocked ? 0.3 : active != null && !on ? 0.4 : 1);
+    ctx.strokeStyle = ctx.fillStyle = axCol(k); ctx.lineWidth = on ? 3 : 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(x, y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, on ? 8 : 6, 0, 7); ctx.fill();
+    ctx.strokeStyle = css('--card'); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+    if (!gz) gizmo.push({ type: 'oalign', k, at: [x, y], r: 12 });
+  });
+  ctx.save(); ctx.globalAlpha = handA; ctx.beginPath(); ctx.arc(ox, oy, 3, 0, 7); ctx.fillStyle = css('--text'); ctx.fill(); ctx.restore();
+}
+// Maßkette (Maß-Phase, damit die Maße antippbar sind)
+// Eine kleine Leiste an der Reihe statt einer Maßkette: Achse | Abstand | =. Der Abstand gilt für alle Lücken
+function drawChain(P3) {
+  // Während der Vorschau bleibt die Leiste stehen: Sonst verschwände „=“ unter der Maus, die Vorschau bräche ab und begänne neu
+  if ((gz && !CHAIN_GZ.includes(gz.type)) || inCmd()) return;
+  const c = chainOf();
+  if (!c) return;
+  const { k, A, order } = c, col = axCol(k), gaps = order.slice(1).map((i, j) => Math.abs(A[i][k] - A[order[j]][k]));
+  const same = Math.max(...gaps) - Math.min(...gaps) < 0.5, val = same ? fmt(gaps[0]) : '≠';
+  ctx.save(); ctx.font = '700 12px system-ui';
+  // Die Leiste steht auf dem Bildschirm fest, solange eine Vorschau läuft: Die Teile wandern, die Leiste unter der Maus nicht. Auch die Breite bleibt, sonst rückt „=“ mit dem neuen Abstandswert
+  const hold = prevw && chipAt.bar, tw = hold ? chipAt.tw : Math.max(34, ctx.measureText(val).width + 16);
+  const parts = [['oaxis', 'XYZ'[k], 24], ['ogap', val, tw], ...(order.length > 2 ? [['oeq', '=', 24]] : [])], W = parts.reduce((s, p) => s + p[2], 0);
+  const mid = P3(meanOf(order.map(i => A[i])));
+  if (!hold) { chipAt.bar = freeSpot(mid[0], mid[1], ([x, y]) => Math.min(...[-W / 2, 0, W / 2].map(dx => gripClear(x + dx, y))) - 12, 16); chipAt.tw = tw; }
+  const x0 = chipAt.bar[0] - W / 2, y = chipAt.bar[1];
+  ctx.fillStyle = css('--card'); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x0, y - 12, W, 24, 8); ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  let x = x0;
+  parts.forEach(([type, t, w], i) => {
+    if (i) { ctx.strokeStyle = col; ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke(); ctx.globalAlpha = 1; }
+    const on = prevw?.key === 'eq' && type === 'oeq';
+    if (on) { ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect(x + 2, y - 10, w - 4, 20, 6); ctx.fill(); }
+    ctx.fillStyle = on ? css('--card') : col; ctx.fillText(t, x + w / 2, y + 0.5);
+    gizmo.push({ type, at: [x + w / 2, y], r: Math.min(12, w / 2), w });
+    x += w;
+  });
+  ctx.restore();
+}
+function chainAct(g) {
+  if (g.type === 'oalign') alignTo(g.k);
+  else if (g.type === 'oanc') { const o = objs[g.i], n = objPts(o).length; o.a = ((o.a ?? objPts(o).indexOf(objAnchor(o))) + 1) % n; draw(); }
+  else if (g.type === 'oaxis') { let k = chainOf()?.k ?? -1; do k = (k + 1) % 3; while (depthAxis(k) && k !== chainOf()?.k); chainK = k; draw(); } // die Achse in der Bildtiefe wird übersprungen
+  else if (g.type === 'ogap') chainGapEdit(g);
+  else if (g.type === 'oeq' && prevw?.key === 'eq') previewCommit();
+  else if (g.type === 'oeq') { const c = chainOf(); if (c && c.A[c.order.at(-1)][c.k] - c.A[c.order[0]][c.k] < 0.5 * (c.order.length - 1)) toast('Überlappung.'); else if (c) slideTo(evenMoves(c)); }
+}
+function chainGapEdit(g) {
+  const c = chainOf();
+  if (!c) return;
+  const { k, A, order } = c, gap = Math.abs(A[order[1]][k] - A[order[0]][k]), { inp, close } = dimBox({ x: g.at[0], y: g.at[1], w: g.w, h: 24 }, gap);
+  let done = false;
+  const finish = ok => {
+    if (done) return;
+    done = true;
+    const raw = inp.value.trim();
+    close();
+    if (ok && /\d/.test(raw)) { if (num(raw) < 0.5) toast('Überlappung.'); else slideTo(gapMoves(c, num(raw))); }
+    draw();
+  };
+  inp.focus({ preventScroll: true }); inp.select();
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
 }
 // ---------- Verbindungen: Rohrende und Anschluss sind ein Knoten. to = 'S:rohr', 'E:rohr' oder 'X:bestand:0|1' ----------
 function linkEnd(to) {
@@ -6305,28 +6575,17 @@ function strandOf(o) {
 }
 function obAct(a, askNum) {
   if (a === 'end') { endMulti(); return; }
-  if (a === 'move' || a === 'rot') { objMode = a; renderBundleBar(); draw(); return; }
   if (a === 'del') { objDelete(); return; }
   if (a === 'lock') { objLock(); return; }
-  if (a === 'copy') { const list = objs.filter(objGet); cmdPlane = null; startCopy(list); return; }
+  if (a === 'copy') { const list = objs.filter(objGet); startCopy(list); return; }
   if (a === 'cno') { copyC = null; renderBundleBar(); draw(); return; }
   if (a === 'cort') { copyC.ortho = !copyC.ortho; renderBundleBar(); draw(); return; }
-  if (a === 'cput') { pasteAt(V.add(copyC.base, copyC.off)); return; }
-  if (a === 'cmore') { copyC.step = 'dest'; copyC.off = [0, 0, 0]; copyC.at = null; renderBundleBar(); draw(); return; }
-  if (a.startsWith('co')) { const k = +a[2]; askNum(copyC.off[k], v => { setOff(k, v); return true; }, true); return; }
+  // Jede weitere Kopie rückt um denselben Abstand weiter: 300, 600, 900 …
+  if (a === 'cput') { copyPut(); return; }
   if (a === 'cend') { copyDone(); return; }
   if (a === 'pivno') { pivotPick = false; renderBundleBar(); draw(); return; }
-  if (a === 'align') { startAlign(); return; }
-  if (a === 'dist') { startDist(); return; }
-  if (a === 'cmdok') { objCmdEnd(true); return; }
-  if (a === 'cmdno') { objCmdEnd(false); return; }
   if (a === 'strand') { const s = strandOf(objs[0]); startMulti(); objs = s; renderBundleBar(); draw(); return; }
   if (a === 'whole') { selectObj({ t: 'pipe', id: selPoint?.pid || proj().id }); return; }
-  if (a === 'even') { distC.even = !distC.even; applyDist(); return; }
-  if (a === 'gap') { askNum(distC.gap ?? 100, v => { distC.gap = v; distC.even = false; applyDist(); return true; }, true); return; }
-  if (a.startsWith('ax')) { alignC.ax[+a[2]] = !alignC.ax[+a[2]]; applyAlign(); return; }
-  if (a.startsWith('dk')) { distC.k = +a[2]; applyDist(); return; }
-  if (a.startsWith('dir')) { const x = exById(objs[0].id), d = [0, 0, 0]; d[+a[3]] = 1; commit(); x.dir = d; save(); recompute(); return; }
 }
 // ---------- Befehl „Messen“: nur orthogonal. Über das Maß lässt sich ein Abstand einstellen, sonst ändert der Befehl nichts ----------
 const MEASURE_TURNS = [[0, 1, 2], [2, 0, 1], [1, 2, 0]];
@@ -6766,7 +7025,7 @@ function syncBarTitle() {
 new MutationObserver(syncBarTitle).observe($('#bundleBar'), { childList: true, attributes: true, attributeFilter: ['hidden', 'style'] });
 new ResizeObserver(syncBarTitle).observe($('#bundleBar'));
 
-function fullRender() { copyC = alignC = distC = null; create = measure = dockPick = null; parPick = false; spotMemo.clear(); extOpen = false; startOpen = false; bundleSel = -1; pick = null; clearSel(); adjusted = { set: new Set(), t: 0 }; sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = true; $('#offLegView').classList.add('blass'); renderProjectBar(); renderInputs(); recompute(); }
+function fullRender() { copyC = null; create = measure = dockPick = null; parPick = false; spotMemo.clear(); extOpen = false; startOpen = false; bundleSel = -1; pick = null; clearSel(); adjusted = { set: new Set(), t: 0 }; sel = -1; selCorner = -1; guidePipe = 0; previewLeg = -1; freeLegs.clear(); oblPref.clear(); lastKey = null; updateUndoButtons(); $('#legPanel').hidden = true; $('#offLegView').classList.add('blass'); renderProjectBar(); renderInputs(); recompute(); }
 fullRender();
 resetView('iso');
 setBrowser(!!vis.tree);

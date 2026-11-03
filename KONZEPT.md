@@ -87,6 +87,8 @@ Beide zeigen dasselbe Schloss und bedeuten dasselbe: Das bewegt sich nicht.
 
 ## 7. Einfügen ohne Bezugspunkt
 
+*Stand v208: wieder entfernt. Getippt wird nur auf Fangpunkte, der Ursprung ist immer einer.*
+
 Der bestehende Befehl bekommt keinen neuen Modus, nur einen zusätzlichen Tipp. Die Aufforderung lautet: „Bezugspunkt wählen oder frei tippen“.
 
 - **Tipp auf Fangpunkt:** wie heute.
@@ -123,7 +125,7 @@ Es gibt mehrere Wege, die alle zum selben Zustand führen:
 - Gewählt werden immer **ganze Objekte**, keine Schenkel.
 - **Die Überschrift zählt:** „4 Objekte · Bezug: CLA-6M“.
 - **Das Zuletztgewählte** ist kräftig markiert, alle anderen zart. Erneutes Antippen eines Gewählten nimmt es heraus. Ein Knopf „Als Bezug“ gibt es nicht, weil die Reihenfolge reicht.
-- **Beenden:** erneut auf „Auswählen“ tippen oder „Fertig“. Ein Tipp daneben hebt die Auswahl nicht auf, weil man sich dabei leicht vertippt.
+- **Beenden:** Tipp in den freien Raum oder erneut auf „Auswählen“.
 - **Überlappung:** Liegen an einer Stelle mehrere Objekte, etwa Fitting und Rohrende, erscheint eine kleine Liste zur Wahl. Das löst auch das heutige Problem am Rohrende.
 
 **Leiste:** `Verschieben | Drehen ‖ Ausrichten | Verteilen ‖ Kopieren | Sperren | Löschen`
@@ -135,8 +137,8 @@ Es gibt mehrere Wege, die alle zum selben Zustand führen:
 Es gibt nur noch einen Befehl, „Duplizieren“ geht darin auf.
 
 1. **Kopieren** in der Leiste. Aufforderung: „Referenzpunkt wählen“. Angeboten werden alle Fangpunkte der Auswahl.
-2. **Zielpunkt tippen,** auf einen Fangpunkt oder frei auf die Arbeitsebene. Ein blasses Abbild zeigt vorher das Ergebnis.
-3. Die Kopie liegt dort, ihre Maße bleiben editierbar, bis ein Tipp in den leeren Raum beendet. „Noch eine“ oder ein Fangpunkt setzt die nächste.
+2. **Zielpunkt tippen,** auf einen Fangpunkt. Ein blasses Abbild zeigt vorher das Ergebnis.
+3. Die Kopie liegt dort. Weitere Ziele setzen weitere Kopien, „Fertig“ beendet.
 
 - **In andere Projekte:** Die Zwischenablage bleibt erhalten. `+` → „Einfügen“ fragt nur nach dem Zielpunkt.
 - **Mitkopiert werden:** Parallelrohre, Farbe und Rohrtyp. Sperren nicht. Verbindungen nur, wenn beide Seiten mitkopiert werden.
