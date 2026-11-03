@@ -77,9 +77,10 @@
           <button class="nvb" id="navFit" title="Einpassen" aria-label="Einpassen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
           <span class="nvsep"></span>
           <button class="nvb" id="measBtn" title="Messen" aria-label="Messen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 16 16 3l5 5L8 21z"/><path d="m7.5 11.5 2 2M11 8l3 3M14.5 4.5l2 2"/></svg></button>
+          <button class="nvb" id="selBtn" title="Mehrere auswählen" aria-label="Mehrere auswählen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12l3 3 5-6"/></svg></button>
           <button class="nvb" id="visBtn" title="Anzeige" aria-label="Anzeige"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
           <button class="nvb" id="addBtn" title="Hinzufügen" aria-label="Hinzufügen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
-          <button class="nvb" id="offLegView" title="Versatz" aria-label="Versatz" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h6l8-10h6"/></svg></button>
+          <button class="nvb blass" id="offLegView" title="Versatz" aria-label="Versatz"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h6l8-10h6"/></svg></button>
           <button class="nvb labonly" id="moreBtn" title="Werkzeuge" aria-label="Werkzeuge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
         </div>
         <span class="acts-more" id="actsMore" hidden>
@@ -87,11 +88,14 @@
         
       </div>
       <div class="browser" id="browser" hidden></div>
+      <div class="popover fmenu" id="pickPop" style="position:fixed;bottom:auto;min-width:180px" hidden></div>
       <div class="popover fmenu addpop" id="addPop" hidden>
         <div class="mlabel">Hinzufügen</div>
         <button class="mi" id="addPipe" title="Weiteres Rohr in dieses Projekt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/></svg>Rohr</button>
         <button class="mi" id="addPar" title="Parallelrohre am gewählten Rohr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21v-8a8 8 0 0 1 8-8h10"/><path d="M8 21v-8a3 3 0 0 1 3-3h10"/></svg>Parallelrohr</button>
         <button class="mi" id="addFit" title="Fitting aus der Bibliothek"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h6a4 4 0 0 1 4 4v7M4 15h4a2 2 0 0 1 0 0M9 15v5M14 9v-5M20 4v5a0 0 0 0 1 0 0H14"/></svg>Fitting</button>
+        <button class="mi" id="addEx" title="Bestandsrohr erfassen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9h18M3 15h18M7 7v10M17 7v10"/></svg>Bestandsrohr</button>
+        <button class="mi" id="addPaste" title="Kopiertes einfügen" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5a3 3 0 0 1 6 0"/></svg>Einfügen</button>
         <button class="mi" id="addPlane" title="Referenzebene anlegen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>Ebene</button>
       </div>
       <div class="popover fmenu" id="visPop" hidden>
@@ -111,6 +115,7 @@
         <label class="chk">Fangpunkte<input type="checkbox" data-vis="snap"></label>
         <div class="msep"></div>
         <div class="mlabel">Umgebung</div>
+        <label class="chk">Ursprung<input type="checkbox" data-vis="origin"></label>
         <label class="chk">Raster und Schatten<input type="checkbox" data-vis="grid"></label>
         <label class="chk">Referenzebenen<input type="checkbox" data-vis="refPlanes"></label>
         <label class="chk labonly">Wände, Boden, Decke<input type="checkbox" data-vis="planes"></label>
