@@ -11,7 +11,7 @@ const num = s => { const v = parseFloat(String(s ?? '').replace(',', '.')); retu
 const r1 = n => Math.round(n * 10) / 10;
 const uid = () => Math.random().toString(36).slice(2, 9);
 // Liniensymbole im Text, gleiche Bauart wie die Knöpfe
-const IC_PATHS = { copy: 'M9 9h10v12H9zM5 15V3h10', trash: 'M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6', x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', unlink: 'M9 15l-1 1a4 4 0 0 1-5.7-5.7l1-1M15 9l1-1a4 4 0 0 1 5.7 5.7l-1 1M8 3v3M3 8h3M16 21v-3M21 16h-3', ortho: 'M5 4v15h15M5 14h5v5', paste: 'M8 5H6v16h12V5h-2M9 3h6v4H9z', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3' };
+const IC_PATHS = { copy: 'M9 9h10v12H9zM5 15V3h10', trash: 'M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6', x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', unlink: 'M9 15l-1 1a4 4 0 0 1-5.7-5.7l1-1M15 9l1-1a4 4 0 0 1 5.7 5.7l-1 1M8 3v3M3 8h3M16 21v-3M21 16h-3', ortho: 'M5 4v15h15M5 14h5v5', paste: 'M8 5H6v16h12V5h-2M9 3h6v4H9z', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3', download: 'M12 4v11M7 10l5 5 5-5M5 20h14' };
 const IC = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${IC_PATHS[n]}"/></svg>`;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const normRot = r => { let x = ((r % 360) + 360) % 360; return x > 180 ? x - 360 : x; };
@@ -222,6 +222,32 @@ function commit(key = null, snap = null) {
   if (hist.undo.length > 100) hist.undo.shift();
   hist.redo = [];
   updateUndoButtons();
+  // Sicherheitsnetz: kürzeste Gerade zwischen zwei Bögen vor diesem Befehl merken (siehe bendNet)
+  const pp = proj();
+  bendGuard = { pid: pp.id, min: midStraight(pp).min, depth: hist.undo.length };
+}
+// Kürzeste Gerade zwischen zwei Bögen eines Rohrs (die Zange muss dort greifen); Endschenkel zählen nicht
+var bendGuard = null; // var: commit() kann vor dieser Zeile laufen
+function midStraight(p) {
+  const L = p === proj() && layout?.straights ? layout : null, s = L?.straights || [];
+  let min = Infinity, j0 = -1;
+  for (let j = 1; j < s.length - 1; j++) if (s[j] < min) { min = s[j]; j0 = j; }
+  return { min, j: j0 };
+}
+// Nach jedem Befehl: Ist eine Gerade zwischen zwei Bögen neu unter die Mindest-Gerade der Zange gefallen, wird der Befehl zurückgenommen.
+// Was vorher schon zu kurz war, darf bleiben, aber nicht kürzer werden.
+function bendNet() {
+  const g = bendGuard, p = proj();
+  if (!g || gz || p.id !== g.pid || hist.undo.length !== g.depth || p.unrouted || p.stub) return;
+  const ms = prof(p).minStraight || 0, now = midStraight(p);
+  if (now.min >= Math.min(ms, g.min) - 0.05) return;
+  bendGuard = null;
+  setTimeout(() => { // erst wenn der laufende Befehl fertig ist
+    if (hist.undo.length !== g.depth) return;
+    restoreSnapshot(hist.undo.pop()); lastKey = null; updateUndoButtons();
+    fullRender();
+    toast(`So nicht: Zwischen Bogen ${now.j} und ${now.j + 1} blieben nur ${fmt(Math.max(0, now.min))} mm gerade, die Zange braucht ${fmt(ms)} mm.`);
+  });
 }
 // Rückgängig nimmt immer den letzten Befehl zurück, egal an welchem Rohr oder Projekt er lief
 function undoRedo(dir) {
@@ -1071,7 +1097,9 @@ function animFrame() {
 // fit: Zwischenbilder (Ziehen am Rohrende, Gleiten): Ein kurzer letzter Schenkel nimmt den Bogen mit, statt ihn zu verzerren
 function buildLayout(p, pts = points(p), room = activeRoom(p), fit = !!(gz?.tail || gz?.soft) && p === proj()) {
   const f = prof(p), fitLast = fit ? f.D : 0;
-  const L = computeLayout(pts, { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, fitLast, fitAll: fit, pickMark: b => pickMark(f, b.angle) });
+  // Am Rohrende mit Fitting greift die Zange nicht: dort keine Warnung zur Mindest-Geraden der Zange
+  const fitEnds = p.id && !p.empty ? { S: !!endFit(p, 'S'), E: !!endFit(p, 'E') } : {};
+  const L = computeLayout(pts, { R: f.R, zugA: p.zugA, zugE: p.zugE, minStraight: f.minStraight, fitEnds, fitLast, fitAll: fit, pickMark: b => pickMark(f, b.angle) });
   L.collisions = selfCollisions(L.samples, f.D);
   L.A = pts[0]; L.E = pts.at(-1);
   L.room = room; L.planes = roomPlanes(room);
@@ -1092,7 +1120,7 @@ function recompute(light = false) {
   resolveScene(p);
   layout = buildLayout(p);
   layout.ghosts = sceneGhosts(p);
-  if (!light) renderBrowser();
+  if (!light) { renderBrowser(); bendNet(); }
   animateTo(p, light);
   if (light) { draw(); drawMini(); return; }
   if (layout.collisions.length) layout.errors.push(`Rohr berührt sich selbst (${layout.collisions.length}× – rot markiert).`);
@@ -1144,7 +1172,8 @@ function recompute(light = false) {
 
 function messages() {
   return layout.errors.map(m => `<div class="msg err">${IC('x')} ${esc(m)}</div>`).join('') +
-    layout.warnings.map(m => `<div class="msg warn">${IC('warn')} ${esc(m)}</div>`).join('');
+    [...layout.warnings, ...fitGapWarns(proj())].map(m => `<div class="msg warn">${IC('warn')} ${esc(m)}</div>`).join('') +
+    (layout.hints || []).map(m => `<div class="msg hint">${esc(m)}</div>`).join('');
 }
 
 // Abweichung Rohrende → Ziel-Anschluss
@@ -1425,9 +1454,11 @@ function renderTools() {
     <section><h2>Rohre</h2><div class="slist">${types}<button class="sadd" data-s="addType">${PLUS_IC}Rohrtyp hinzufügen</button></div></section>
     <section><h2>Zangen</h2><div class="slist">${tools}<button class="sadd" data-s="addTool">${PLUS_IC}Zange hinzufügen</button></div></section>
     <section><h2>Bestandsrohre</h2><div class="slist"><div class="sitem"><div class="sbody"><label class="sfield"><span>Länge neuer Stücke</span><span class="sinp"><input id="exLen" inputmode="decimal" value="${fmt(db.exLen)}"><i>mm</i></span></label></div></div></div></section>
-    <section><h2>Fittings</h2><div class="slist">${db.fittings.map(l => setRow(`fit:${l.id}`, l.name, fitSub(l), fitBody(l))).join('')}<button class="sadd" data-s="addFit">${PLUS_IC}GLB-Datei importieren</button><input type="file" id="fitFile" accept=".glb,model/gltf-binary" hidden></div></section>
+    <section><h2>Fittings</h2><div class="slist">${db.fittings.map(l => setRow(`fit:${l.id}`, l.name, fitSub(l), fitBody(l))).join('')}<button class="sadd" data-s="addFit">${PLUS_IC}GLB-Datei importieren</button>${db.fittings.length ? `<button class="sadd" data-s="exportCat">${IC('download')}Katalog exportieren</button>` : ''}<input type="file" id="fitFile" accept=".glb,model/gltf-binary" hidden></div></section>
     <section><h2>Anzeige</h2><div class="slist"><div class="spad">
       <label class="sfield"><span>Schlösser ausblenden unter</span><b id="lockVal">${lockText()}</b><input type="range" id="lockMin" min="0.2" max="2.5" step="0.05" value="${vis.lockMin}" aria-label="Maßstab, ab dem Schlösser verschwinden"><small>Weiter herausgezoomt verschwinden die Schlösser an Punkten und Ebenen. Maßstab der 3D-Ansicht gerade: ${view ? view.sc.toFixed(2).replace('.', ',') : '–'} px/mm</small></label>
+      <div class="swrow"><label class="chk sswitch">Abstandsschatten auf Ebenen<input type="checkbox" data-svis="planeShadow"${vis.planeShadow ? ' checked' : ''}></label></div>
+      <small class="shint">Rohre werfen weiche Schatten auf die Ebenen: je näher, desto dunkler und schärfer.</small>
     </div></div></section>
     <section><h2>App</h2><div class="slist"><div class="spad sapp"><span>Version <b>${APP_VERSION}</b> vom ${APP_DATE}</span><span id="appStatus">${updateStatus()}</span><button id="reloadBtn">Neu laden</button></div></div></section>
   </div>`;
@@ -1469,6 +1500,45 @@ async function importFit(file) {
     toast('Achsen, Drehpunkt und Anschlüsse am Modell festlegen.');
   } catch (err) { toast(err.message || 'Datei lässt sich nicht lesen.'); }
 }
+// ---------- Fitting-Katalog: Festlegungen aller Fittings als Datei, liegt mit den Modellen in GLB/ und kommt mit der App auf jedes Gerät ----------
+const CAT_FILE = 'GLB/fittings.json';
+const catKeys = ['ports', 'aux', 'pivot', 'axis', 'mount'];
+const glbName = n => `GLB/${n.replace(/[^\w.-]+/g, '_')}.glb`;
+function exportCatalog() {
+  const cat = { version: new Date().toISOString(), fittings: db.fittings.map(l => ({ name: l.name, file: glbName(l.name), ...Object.fromEntries(catKeys.filter(k => l[k] != null).map(k => [k, structuredClone(l[k])])) })) };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(cat, null, 1)], { type: 'application/json' }));
+  a.download = 'fittings.json';
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast(`Katalog mit ${cat.fittings.length} Fittings gespeichert. Datei „fittings.json“ in den Ordner GLB/ legen, dazu je Fitting die GLB-Datei (${cat.fittings.map(f => f.file.slice(4)).join(', ')}).`);
+}
+// Beim Start und nach jedem Update: Ist der Katalog neuer als der zuletzt übernommene, werden fehlende Fittings samt Modell angelegt
+// und vorhandene (gleicher Name) auf seine Festlegungen gebracht. Ohne Katalog bleibt alles, wie es ist
+async function loadCatalog() {
+  let cat;
+  try { const res = await fetch(CAT_FILE, { cache: 'no-cache' }); if (!res.ok) return; cat = await res.json(); } catch { return; }
+  if (!cat?.fittings?.length || cat.version === db.catalogVer) return;
+  let added = 0, updated = 0;
+  const missing = [];
+  for (const c of cat.fittings) {
+    const defs = Object.fromEntries(catKeys.filter(k => c[k] != null).map(k => [k, structuredClone(c[k])]));
+    const l = db.fittings.find(x => x.name === c.name);
+    if (l) { catKeys.forEach(k => delete l[k]); Object.assign(l, defs); l.ports ||= []; l.aux ||= { axes: [], pts: [] }; updated++; continue; }
+    try {
+      const res = await fetch(c.file);
+      if (!res.ok) throw new Error();
+      const mesh = readGlb(await res.arrayBuffer()), id = uid();
+      await saveMesh(id, mesh); fitMeshes.set(id, mesh);
+      db.fittings.push({ id, name: c.name, mn: mesh.mn, mx: mesh.mx, ports: [], ...defs });
+      added++;
+    } catch { missing.push(c.file); }
+  }
+  db.catalogVer = cat.version;
+  save(); fitCache.clear(); thumbCache.clear();
+  renderTools(); recompute(); draw();
+  if (added || missing.length) toast(`Fitting-Katalog übernommen: ${added} neu, ${updated} aktualisiert.${missing.length ? ` Fehlt: ${missing.join(', ')}.` : ''}`);
+}
 // Fittings, die mit der App kommen. db.stdFits merkt sich die Namen: Ein gelöschtes Fitting kommt nicht wieder, ein vorhandenes gleichen Namens bleibt
 const STD_FITS = [
   { name: 'CLA-6M', file: 'GLB/CLA-6M.glb', D: 6, depth: 13.18 },
@@ -1492,6 +1562,42 @@ async function addStdFits() {
   if (added) renderTools();
 }
 // Kleines Bild des Fittings mit nummerierten Anschlüssen
+// Vorschaubild eines Fittings: WebGL auf einer eigenen, versteckten Fläche, Ergebnis als Bild gespeichert
+const thumbCache = new Map();
+let thumbGL;
+function fitThumb(l, m, W, H, dpr, pr, sc) {
+  const key = `${l.id}|${W}x${H}|${dpr}|${isDark() ? 1 : 0}|${m.idx.length}`;
+  if (thumbCache.has(key)) return thumbCache.get(key);
+  const S = Math.max(2, Math.ceil(dpr * 1.5)), w = Math.round(W * S), h = Math.round(H * S);
+  if (!thumbGL) {
+    const c = document.createElement('canvas'), gl = c.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true });
+    if (!gl) { thumbGL = null; return null; }
+    const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); return o; };
+    const pg = gl.createProgram();
+    gl.attachShader(pg, sh(gl.VERTEX_SHADER, 'attribute vec3 p;attribute vec3 n;varying vec3 vn;void main(){vn=n;gl_Position=vec4(p,1.0);}'));
+    gl.attachShader(pg, sh(gl.FRAGMENT_SHADER, 'precision mediump float;varying vec3 vn;uniform vec3 base;void main(){vec3 N=normalize(vn);if(N.z>0.0)N=-N;vec3 L=normalize(vec3(-0.35,0.55,-0.75));float d=max(dot(N,L),0.0);vec3 H=normalize(L+vec3(0.0,0.0,-1.0));float s=pow(max(dot(N,H),0.0),24.0);gl_FragColor=vec4(base*(0.42+0.6*d)+vec3(0.25*s),1.0);}'));
+    gl.linkProgram(pg);
+    thumbGL = { c, gl, pg, buf: gl.createBuffer(), aP: gl.getAttribLocation(pg, 'p'), aN: gl.getAttribLocation(pg, 'n'), uB: gl.getUniformLocation(pg, 'base') };
+  }
+  const { c, gl, pg, buf, aP, aN, uB } = thumbGL, diag = Math.hypot(...l.mx.map((v, k) => v - l.mn[k])) || 1;
+  c.width = w; c.height = h;
+  // Gleiche Drehung wie die flache Vorschau; Normalen mit derselben (orthonormalen) Drehung
+  const rot = q => { const o = pr(q.map((v, k) => v + (l.mn[k] + l.mx[k]) / 2)); return o; };
+  const data = new Float32Array(m.idx.length * 6);
+  m.idx.forEach((a, i) => {
+    const q = pr([m.pos[a * 3], m.pos[a * 3 + 1], m.pos[a * 3 + 2]]), n0 = rot([m.nor[a * 3], m.nor[a * 3 + 1], m.nor[a * 3 + 2]]), n1 = rot([0, 0, 0]);
+    data.set([(W / 2 + q[0] * sc) / W * 2 - 1, 1 - (H / 2 + q[1] * sc) / H * 2, q[2] / diag, n0[0] - n1[0], -(n0[1] - n1[1]), n0[2] - n1[2]], i * 6);
+  });
+  gl.viewport(0, 0, w, h); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(pg); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(aN); gl.vertexAttribPointer(aN, 3, gl.FLOAT, false, 24, 12);
+  gl.uniform3fv(uB, isDark() ? [0.62, 0.66, 0.72] : [0.6, 0.64, 0.7]);
+  gl.drawArrays(gl.TRIANGLES, 0, m.idx.length);
+  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(c, 0, 0);
+  thumbCache.set(key, out);
+  return out;
+}
 function drawFitPreview(c, l) {
   const m = fitMeshes.get(l?.id);
   if (!c || !m) return;
@@ -1499,14 +1605,19 @@ function drawFitPreview(c, l) {
   c.width = W * dpr; c.height = H * dpr; g.scale(dpr, dpr);
   const cy = Math.cos(0.6), sy = Math.sin(0.6), cp = Math.cos(0.5), sp = Math.sin(0.5), mid = l.mn.map((v, k) => (v + l.mx[k]) / 2);
   const pr = q => { const [x, y, z] = V.sub(q, mid); return [cy * x - sy * y, -sy * sp * x - cy * sp * y - cp * z, sy * cp * x + cy * cp * y - sp * z]; };
-  const sc = 0.8 * Math.min(W, H) / (Math.hypot(...l.mx.map((v, k) => v - l.mn[k])) || 1), P = q => { const [x, y] = pr(q); return [W / 2 + x * sc, H / 2 + y * sc]; };
-  const tris = [];
-  for (let i = 0; i < m.idx.length; i += 3) {
-    const v = [m.idx[i], m.idx[i + 1], m.idx[i + 2]].map(a => [m.pos[a * 3], m.pos[a * 3 + 1], m.pos[a * 3 + 2]]), a = m.idx[i] * 3;
-    tris.push({ z: pr(v[0])[2] + pr(v[1])[2] + pr(v[2])[2], v, s: Math.max(0.2, Math.abs(m.nor[a] * 0.3 - m.nor[a + 1] * 0.5 + m.nor[a + 2] * 0.8)) });
+  const sc = 0.92 * Math.min(W, H) / (Math.hypot(...l.mx.map((v, k) => v - l.mn[k])) || 1), P = q => { const [x, y] = pr(q); return [W / 2 + x * sc, H / 2 + y * sc]; };
+  // Modell glatt schattiert über WebGL (doppelt aufgelöst, einmal je Fitting und Größe gespeichert); ohne WebGL flach gemalt
+  const img = fitThumb(l, m, W, H, dpr, pr, sc);
+  if (img) g.drawImage(img, 0, 0, W, H);
+  else {
+    const tris = [];
+    for (let i = 0; i < m.idx.length; i += 3) {
+      const v = [m.idx[i], m.idx[i + 1], m.idx[i + 2]].map(a => [m.pos[a * 3], m.pos[a * 3 + 1], m.pos[a * 3 + 2]]), a = m.idx[i] * 3;
+      tris.push({ z: pr(v[0])[2] + pr(v[1])[2] + pr(v[2])[2], v, s: Math.max(0.2, Math.abs(m.nor[a] * 0.3 - m.nor[a + 1] * 0.5 + m.nor[a + 2] * 0.8)) });
+    }
+    tris.sort((a, b) => b.z - a.z);
+    tris.forEach(t => { const v = Math.round(120 + 110 * t.s); g.fillStyle = g.strokeStyle = `rgb(${v},${v + 3},${v + 8})`; g.beginPath(); t.v.forEach((q, k) => { const [x, y] = P(q); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.fill(); g.stroke(); });
   }
-  tris.sort((a, b) => b.z - a.z);
-  tris.forEach(t => { const v = Math.round(120 + 110 * t.s); g.fillStyle = g.strokeStyle = `rgb(${v},${v + 3},${v + 8})`; g.beginPath(); t.v.forEach((q, k) => { const [x, y] = P(q); k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.fill(); g.stroke(); });
   const ax = libAxis(l);
   if (ax) {
     const L = Math.hypot(...l.mx.map((v, k) => v - l.mn[k])) * 0.6, [x0, y0] = P(V.sub(ax.A, V.mul(ax.n, L))), [x1, y1] = P(V.add(ax.A, V.mul(ax.n, L)));
@@ -1520,7 +1631,7 @@ function drawFitPreview(c, l) {
     g.fillStyle = '#fff'; g.font = '700 11px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(i + 1, ax, ay + 0.5);
   });
 }
-loadMeshes().then(m => { m.forEach((v, k) => fitMeshes.set(k, v)); draw(); return addStdFits(); }).catch(() => {});
+loadMeshes().then(m => { m.forEach((v, k) => fitMeshes.set(k, v)); draw(); return addStdFits(); }).then(loadCatalog).catch(() => {});
 async function delSetItem(key) {
   if (key.startsWith('fit')) {
     const l = setItem(key), used = db.scenes.reduce((n, s) => n + (s.fittings || []).filter(f => f.libId === l.id).length, 0);
@@ -1554,6 +1665,7 @@ $('#tab-tools').addEventListener('input', e => {
   afterToolChange();
 });
 $('#tab-tools').addEventListener('change', e => {
+  if (e.target.dataset.svis) { vis[e.target.dataset.svis] = e.target.checked; saveVis(); draw(); return; }
   if (e.target.id === 'fitFile') { const f = e.target.files?.[0]; if (f) importFit(f); return; }
   const id = e.target.dataset.st;
   if (!id) return;
@@ -1570,6 +1682,7 @@ $('#tab-tools').addEventListener('click', e => {
   else if (a === 'ren') { setUi.ren = k; setUi.menu = null; }
   else if (a === 'del') { delSetItem(k); return; }
   else if (a === 'addFit') { $('#fitFile').click(); return; }
+  else if (a === 'exportCat') { exportCatalog(); return; }
   else if (a === 'editFit') { editFit(fitLib(k)); return; }
   else if (a === 'addType') {
     const t = { id: uid(), name: 'Neuer Rohrtyp', D: db.pipeTypes.at(-1).D, toolId: db.pipeTypes.at(-1).toolId };
@@ -1856,7 +1969,7 @@ const COLOR_NAMES = ['Blau', 'Rot', 'Grün', 'Orange', 'Violett', 'Türkis', 'Pi
 const PIPE_COLORS = [[0.13, 0.45, 0.85], [0.84, 0.2, 0.2], [0.15, 0.6, 0.33], [0.93, 0.55, 0.1], [0.55, 0.3, 0.8], [0.05, 0.63, 0.68], [0.85, 0.3, 0.6], [0.5, 0.38, 0.25]];
 const rgbCss = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
 const lighter = (c, t) => c.map(v => v + (1 - v) * t);
-const VIS_DEFAULT = { origin: true, snap: false, cornerMove: false, offsets: false, extAng: 90, tree: false, actsOpen: false, colors: true, labels: true, twist: true, lockMin: 0.8, refPlanes: true, dollhouse: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
+const VIS_DEFAULT = { origin: true, snap: false, cornerMove: false, offsets: false, extAng: 90, tree: false, actsOpen: false, colors: true, labels: true, twist: true, lockMin: 0.8, refPlanes: true, dollhouse: true, planeShadow: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -1966,6 +2079,11 @@ function render3d() {
     fp.forEach(line => { bctx.beginPath(); line.forEach((q, i) => { const [x, y] = P(q); i ? bctx.lineTo(x - off, y) : bctx.moveTo(x - off, y); }); bctx.stroke(); });
     bctx.restore();
   }
+  // Tiefe an den Ebenen: Rohre werfen Abstandsschatten (nur in 3D, Ansichten von vorn zeigen keine Tiefe)
+  if (!ortho && vis.refPlanes) {
+    const shown = scene(p).planes.filter(pl => !pl.hidden && planeFront(pl) < 0.5);
+    if (vis.planeShadow) drawPlaneShadows(shown, P3, sc, tw, dark, [...(p.unrouted ? [] : pipes).map(L => L.samples.map(x => x.p)), ...ghosts.filter(g => !g.unrouted).map(g => g.samples.map(x => x.p)), ...exOf(p).filter(x => !x.hidden).map(exEnds)], fitsOf(p).map(fitShadowPts));
+  }
 
   // 3D-Szene: Rohre, Nachbarrohre im Raum, Schellen-Hülsen, Raumflächen
   const r = Math.max(f.D / 2, 1 / sc); // maßstäblich, nur unter 2 px bleibt das Rohr sichtbar
@@ -1983,6 +2101,7 @@ function render3d() {
   if (create?.step === 'ofs' && create.kind === 'ex') { const T = createPos(), h = [db.exLen / 2, 0, 0]; add(tubeMesh([{ p: V.sub(T, h), b: -1 }, { p: V.add(T, h), b: -1 }], Math.max(typeOf({ typeId: create.typeId }).D / 2, 1 / sc), () => exCol)); }
   // Kopie in Vorschau: hängt am Zeiger oder, mit „Orthogonal“, am Gimbal
   const preview = [], cT = copyC?.step === 'dest' && (copyC.ortho ? V.add(copyC.from || copyC.base, copyC.off) : copyC.at);
+  if (create?.step === 'ref' && !create.hover && create.inline?.plan.ok) add(fitTris(create.inline.plan.f, true), preview); // Fitting in der Leitung: Vorschau an der Stelle
   if (cT) {
     const d = V.sub(cT, copyC.base), col = lighter([0.04, 0.49, 0.74], 0.3), mv = s => ({ ...s, p: V.add(s.p, d) });
     copyC.tubes ||= copyC.items.pipes.flatMap(q => { const L = buildLayout(q); return [L, ...L.bundle.filter(B => !B.def.hidden)].map(x => ({ samples: x.samples, D: prof(q).D })); });
@@ -2134,6 +2253,7 @@ function render3d() {
     if (ortho && !inCmd() && !p.stub && !p.empty) drawEditOverlay(P3, cAcc);
     drawGizmo();
   } else gizmo = [];
+  drawShortStraights(P3);
 
   // Maße nach dem Gimbal: Sie weichen den Griffen aus und liegen obenauf, damit sie lesbar und antippbar bleiben
   dimHits = []; placed = []; spotSeen = new Map();
@@ -2873,7 +2993,13 @@ let adjusted = { set: new Set(), t: 0 }; // zuletzt ausgeglichene Schenkel (kurz
 function legMinLen(j, n) {
   const p = proj(), L = computeLayout(points(p), { R: prof(p).R }), direct = L.verts.length === p.deltas.length + 1;
   const T = k => (direct && L.bends[k] ? L.bends[k].T : prof(p).R);
-  return (j > 0 ? T(j - 1) : 0) + (j < n - 1 ? T(j) : 0) + (j > 0 && j < n - 1 ? prof(p).minStraight || 0 : 0);
+  let extra = j > 0 && j < n - 1 ? prof(p).minStraight || 0 : 0;
+  // Endschenkel mit Fitting: hinter dem Anschluss bis zum Bogen mindestens „gerade min.“ und die Mindest-Gerade der Zange
+  if (n > 1) for (const [w, end] of [['S', 0], ['E', n - 1]]) {
+    const e = j === end && endFit(p, w);
+    if (e) extra = Math.max(extra, e.need);
+  }
+  return (j > 0 ? T(j - 1) : 0) + (j < n - 1 ? T(j) : 0) + extra;
 }
 // Kleinste Längenänderungen c (je Kandidat) mit Σ c·u = diff; Kandidaten werden nur aufgenommen, wenn sie den Rest verkleinern
 function solveLengths(diff, pool) {
@@ -2918,7 +3044,7 @@ function keepEnd(p, edited, E0, force = false) {
       last = r;
       if (!r.ok) break;
       // Ausgleich darf keinen Schenkel umdrehen oder unter seine Mindestlänge drücken
-      const bad = r.S.findIndex((l, k) => l.L + r.c[k] < Math.max(1, legMinLen(l.j, n)) - 0.05);
+      const bad = r.S.findIndex((l, k) => l.L + r.c[k] < Math.max(1, Math.min(legMinLen(l.j, n), l.L)) - 0.05); // schon zu kurz: darf bleiben, aber nicht kürzer werden
       if (bad < 0) {
         r.S.forEach((l, k) => setDelta(l.j, V.mul(l.u, l.L + r.c[k])));
         return { ok: true, changed: r.S.map(l => l.j) };
@@ -3061,6 +3187,17 @@ function extCandidates(E, d) {
   return all.filter(c => Math.hypot(c.sx, c.sy) >= 0.3 * max && !(c.n && Math.abs(V.dot(c.n, vd)) > 0.9));
 }
 
+// Zu kurze Gerade zwischen zwei Bögen: rot, damit man es nicht nur unter „Biegen“ sieht (auch ohne Auswahl)
+function drawShortStraights(P3) {
+  const p = proj();
+  if (p.empty || p.unrouted || p.stub || p.hidden) return;
+  const pts = points(p), msz = prof(p).minStraight || 0, sts = layout.straights || [];
+  for (let j = 1; j < sts.length - 1 && j < pts.length - 2; j++) {
+    if (sts[j] >= msz - 0.05) continue;
+    const u = V.norm(V.sub(pts[j + 1], pts[j])), a = V.add(pts[j], V.mul(u, layout.bends[j - 1]?.T || 0)), b = V.sub(pts[j + 1], V.mul(u, layout.bends[j]?.T || 0));
+    ctx.save(); ctx.globalAlpha = 0.85; ctx.lineCap = 'round'; polyline([P3(a), P3(sts[j] > 0.5 ? b : V.add(a, V.mul(u, 0.5)))], '#d83b3b', 7); ctx.restore();
+  }
+}
 function drawGizmo() {
   gizmo = [];
   grabE = gz ? gfx(gz.t0g ?? 0) : 1;
@@ -3120,15 +3257,20 @@ function drawGizmo() {
     const [ex, ey] = P3(E);
     // Pfeile nur beim Fortführen: Griff angetippt, gerade gezogen, Maus darüber (blass) oder „immer zeigen“
     const showArrows = !!gz || extOpen || vis.extAlways || extHover;
+    // Ein neuer Bogen am Ende macht den letzten Schenkel zum Mittelschenkel: Dann braucht er Bogen + Bogen + Mindest-Gerade der Zange
+    const pf = prof(), lastLen = V.len(V.sub(pts[n], pts[n - 1])), Tprev = n > 1 ? layout.bends.at(-1)?.T || 0 : 0;
+    const needFor = c => Tprev + pf.R * Math.tan(Math.acos(Math.max(-1, Math.min(1, V.dot(c.a, d)))) / 2) + (pf.minStraight || 0);
+    const blockedBy = c => (!gz && n > 1 && !c.straight && lastLen < needFor(c) - 0.05 ? `Schenkel ${n} hat ${fmt(lastLen)} mm. Für einen weiteren Bogen braucht er mindestens ${fmt(Math.ceil(needFor(c) - 1e-6))} mm (Zange: ${fmt(pf.minStraight)} mm gerade zwischen den Bögen).` : null);
     for (const c of showArrows ? extCandidates(E, d) : []) {
       if (V.dot(c.a, d) < -0.9999) continue; // „zurück“ nicht anzeigen, wirkt aber beim Ziehen (kürzen)
       // Flache Winkel liegen nah am Längspfeil: Der wird kurz, die schrägen werden länger und sind nur außen zu greifen
       const ang = vis.extAng || 90, far = ang < 60 ? Math.round(58 + (60 - ang) * 1.2) : 58, to = c.straight && ang < 60 ? 36 : far, from = !c.straight && ang < 60 ? far * 0.45 : 16;
       const l = Math.hypot(c.sx, c.sy), ux = c.sx / l, uy = c.sy / l, active = !!gz?.choice && V.dot(gz.choice, c.a) > 0.9999;
-      ctx.save(); ctx.globalAlpha = gz ? (active ? 1 : 0.18) : extOpen || vis.extAlways ? 0.55 : 0.25;
+      const blocked = blockedBy(c);
+      ctx.save(); ctx.globalAlpha = gz ? (active ? 1 : 0.18) : blocked ? 0.12 : extOpen || vis.extAlways ? 0.55 : 0.25;
       arrow(ex + ux * 16, ey + uy * 16, ex + ux * to, ey + uy * to, axisColor(c.n || c.a), c.straight ? 4 : 3);
       ctx.restore();
-      if (!gz && (extOpen || vis.extAlways)) gizmo.push({ type: 'ext', a: c.a, n: c.n, seg: [ex + ux * from, ey + uy * from, ex + ux * to, ey + uy * to] });
+      if (!gz && (extOpen || vis.extAlways)) gizmo.push({ type: 'ext', a: c.a, n: c.n, seg: [ex + ux * from, ey + uy * from, ex + ux * to, ey + uy * to], blocked });
     }
     if (!gz) {
       // Griff nur, wenn gewählt oder Stufe „Alle“; sonst ein kleiner Punkt – antippbar bleibt er immer
@@ -3329,6 +3471,7 @@ function hitGizmo(x, y) {
 }
 
 function gzStart(g, e) {
+  if (g.blocked) { toast(g.blocked); return; } // blasser Griff: sagt nur, warum es nicht geht
   const p = proj(), [lx, ly] = local(e);
   const before = snapshot();
   ensureDeltas();
@@ -3349,7 +3492,7 @@ function gzStart(g, e) {
     if (g.type === 'ofsc') gz.t0 = ofs.t;
     if (g.type === 'first') { gz.S = pts[0]; gz.min = minLengths(); gz.pool = (layout.ghosts || []).flatMap(q => q.verts); }
     if (g.type === 'cofs') { gz.v0 = create.off[g.k]; gz.base = create.ref.pos[g.k]; }
-    if (g.type === 'fmove') { const f = fitById(g.fit); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.at0 = fitPorts(f)[0]?.p || f.pos; gz.dock0 = fitDock; fitDock = null; }
+    if (g.type === 'fmove') { const f = fitById(g.fit); gz.mark = sceneMark(); gz.ends0 = endStraights(f); gz.far0 = farEnds(f, g.k, g.dir); gz.dirs0 = (f.links || []).map(L => linkEnd(L.to)?.u); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.at0 = fitPorts(f)[0]?.p || f.pos; gz.dock0 = fitDock; fitDock = null; }
     if (g.type === 'oalign' || g.type === 'oeq') previewFor(g); else previewOff(true);
     if (g.type === 'cpoff') gz.off0 = copyC.off[g.k];
     if (g.type === 'omove' || g.type === 'orot') {
@@ -3361,7 +3504,7 @@ function gzStart(g, e) {
     if (g.type === 'frot') {
       const f = fitById(g.fit); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.A = g.A; gz.r = g.r || 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly);
       // Um ein Rohr gedreht schwenkt alles andere Verbundene starr mit
-      gz.mark = sceneMark(); gz.follow = g.link == null ? [] : (f.links || []).filter((L, i) => i !== g.link).map(L => linkObj(L.to));
+      gz.mark = sceneMark(); gz.follow = g.follow ? g.follow.map(L => linkObj(L.to)) : g.link == null ? [] : (f.links || []).filter((L, i) => i !== g.link).map(L => linkObj(L.to)); gz.inline = !!inlineAxis(f);
     }
     if (g.type === 'cmove') { gz.A0 = pts[g.i]; gz.dOrig = structuredClone(p.deltas); gz.t = 0; }
     if (g.type === 'spin') { gz.A = pts[0]; gz.r = 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly); }
@@ -3724,15 +3867,60 @@ function bundleMove(lx, ly) {
   const p = proj(), D = prof(p).D;
   if (!gz.moved || gz.blocked) return;
   if (gz.type === 'fmove') {
-    const [mx, my] = gz.pxPerMm, f = fitById(gz.fit), t = Math.round(((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my)), at = gz.at0;
+    const [mx, my] = gz.pxPerMm, f = fitById(gz.fit), raw = ((gz.px - gz.gx) * mx + (gz.py - gz.gy) * my) / (mx * mx + my * my), at = gz.at0;
     gzChanged();
-    f.pos = [...gz.pos0]; f.rot = [...gz.rot0]; fitDock = null;
-    f.pos[gz.k] += fangAll(gz.k, t, Math.hypot(mx, my), [fitCenter(f), ...fitPorts(f).map(o => o.p)]);
-    gz.label = `${'XYZ'[gz.k]} ${fmt(f.pos[gz.k] - gz.pos0[gz.k])}`;
+    // Längs einer angeschlossenen Leitung rastet der Abstand selbst auf ganze mm (aus 39,5 wird 39 oder 40), sonst die Verschiebung
+    const h0 = gz.far0?.length ? gz.ends0?.[0]?.have : null, fr = Number.isFinite(h0) ? h0 - Math.floor(h0) : 0;
+    const place = t => {
+      sceneBack(gz.mark); // jedes Mal von der Lage beim Griffbeginn aus, sonst summieren sich kleine Abweichungen der Rohre
+      f.pos = [...gz.pos0]; f.rot = [...gz.rot0]; fitDock = null;
+      if (gz.dir) { f.pos = V.add(gz.pos0, V.mul(gz.dir, t)); gz.label = `${fmt(Math.abs(t))} mm`; } // längs der Rohrachse
+      else {
+        f.pos[gz.k] += fr ? t : fangAll(gz.k, t, Math.hypot(mx, my), [fitCenter(f), ...fitPorts(f).map(o => o.p)]);
+        gz.label = `${'XYZ'[gz.k]} ${fmt(f.pos[gz.k] - gz.pos0[gz.k])}`;
+      }
+      if (f.links?.length) { drv.add(f.id); recompute(true); }
+    };
+    // Fangen längs der Leitung: Fitting-Mitte oder ein Anschluss auf Höhe eines Fangpunkts (Ebene quer zur Achse durch den Punkt)
+    const along = gz.dir || (gz.far0?.length ? [0, 1, 2].map(i => (i === gz.k ? 1 : 0)) : null);
+    let snapT = null;
+    if (along && vis.snap) {
+      gz.own0 ??= (() => { const g0 = { ...f, pos: [...gz.pos0], rot: [...gz.rot0] }; return [fitRef(g0), ...fitPorts(g0).map(o => o.p)]; })();
+      const px = Math.hypot(mx, my) || 1, own = gz.own0;
+      let bd = SNAP_PX / px, best = null;
+      for (const q of gz.pool || []) for (const o of own) {
+        const tq = V.dot(V.sub(q, o), along), dd = Math.abs(tq - raw);
+        if (Math.abs(tq) > 0.01 && dd < bd) { bd = dd; best = { t: tq, q, o }; }
+      }
+      if (best) snapT = best.t;
+      gz.snapAt = best;
+    }
+    quietLinks = true; // Beim Suchen der Grenze kein „Verbindung hält dagegen“
+    const t = snapT ?? (fr ? Math.round(raw - fr) + fr : Math.round(raw));
+    place(t);
+    if (gz.snapAt && snapT != null) { const { q, o } = gz.snapAt; snapLine = { at: q, of: () => V.add(o, V.mul(along, t)) }; }
     // Nahe an einem Rohrende oder Anschluss rastet das Fitting ganz ein, mit Lage und Richtung
     const hit = !f.links?.length && dockNear(f);
     if (hit) { dockFit(f, hit.port, hit.T, hit.u); fitDock.to = hit.to; snapLine = null; gz.label = `Verbinden · Anschluss ${hit.port + 1}`; }
-    if (f.links?.length) { drv.add(f.id); recompute(true); } else draw();
+    if (f.links?.length) {
+      // Ein Rohr darf hinter dem Anschluss nicht kürzer werden als seine gerade Mindestlänge; längs der Leitung bleiben die anderen Enden stehen
+      gz.ends0 ??= endStraights(f);
+      gz.far0 ??= farEnds(f, gz.k, gz.dir);
+      // Kein Rohr darf kippen (Abzweig wandert nur als Ganzes mit), die anderen Enden längs der Leitung bleiben stehen
+      const tilted = () => (f.links || []).some((L, i) => { const e = linkEnd(L.to), u0 = gz.dirs0?.[i]; return e && u0 && V.len(V.sub(e.u, u0)) > 1e-6; });
+      const bad = () => tilted() || gz.far0.some(e => V.len(V.sub(nodePos(e.key), e.pos)) > 0.01) || endStraights(f).some((e, i) => e.have < Math.min(e.need, gz.ends0[i]?.have ?? Infinity) - 1e-4);
+      if (bad()) {
+        snapLine = null;
+        // Genau auf die Grenze: zwischen der letzten guten Lage und dem Ziel eingabeln
+        let lo = gz.okT ?? 0, hi = t;
+        for (let i = 0; i < 24 && Math.abs(hi - lo) > 1e-4; i++) { const m = (lo + hi) / 2; place(m); if (bad()) hi = m; else lo = m; }
+        place(lo);
+        if (bad()) { sceneBack(gz.mark); f.pos = [...(gz.okPos || gz.pos0)]; f.rot = [...gz.rot0]; drv.add(f.id); recompute(true); }
+        else { gz.okPos = [...f.pos]; gz.okT = lo; }
+        gz.label = `${gz.dir ? `${fmt(V.len(V.sub(f.pos, gz.pos0)))} mm` : `${'XYZ'[gz.k]} ${fmt(f.pos[gz.k] - gz.pos0[gz.k])}`} · Mindestlänge`;
+      } else { gz.okPos = [...f.pos]; gz.okT = t; }
+    } else draw();
+    quietLinks = false;
     return;
   }
   if (gz.type === 'cpoff') {
@@ -3764,7 +3952,8 @@ function bundleMove(lx, ly) {
   }
   if (gz.type === 'opiv' || CHAIN_GZ.includes(gz.type)) return;
   if (gz.type === 'frot') {
-    const f = fitById(gz.fit), t = Math.round(normRot(ringAngle(gz.u, gz.v, 0, 359, lx, ly) - gz.t0) / ANGLE_STEP) * ANGLE_STEP, R = rotMat(gz.n, t * Math.PI / 180);
+    const f = fitById(gz.fit), raw = normRot(ringAngle(gz.u, gz.v, 0, 359, lx, ly) - gz.t0), q90 = Math.round(raw / 90) * 90;
+    const t = gz.inline && Math.abs(raw - q90) <= 10 ? q90 : Math.round(raw / ANGLE_STEP) * ANGLE_STEP, R = rotMat(gz.n, t * Math.PI / 180);
     if (t || gz.committed) gzChanged();
     if (gz.follow?.length) { sceneBack(gz.mark); objTurn({ t: 'fit', id: f.id }, R, gz.A); gz.follow.forEach(o => objTurn(o, R, gz.A)); }
     else { f.rot = mulRR(R, gz.rot0); f.pos = V.sub(gz.A, mulR(R, V.sub(gz.A, gz.pos0))); }
@@ -4520,7 +4709,10 @@ cv.addEventListener('pointermove', e => {
       return;
     }
     if ((create?.step === 'ref' || measure) && view) {
-      const m = measure || create, id = hitCand(createCands(!!measure), ...local(e))?.id ?? null;
+      const inb = !measure ? inlineHit(...local(e)) : null, bendFirst = !!(inb?.plan.bend || inb?.plan.why?.startsWith('Bogen'));
+      const m = measure || create, id = bendFirst ? null : hitCand(createCands(!!measure), ...local(e))?.id ?? null;
+      const inl = !measure && !id ? inb : null, ik = inl ? `${inl.s.q.id}:${inl.s.i}:${inl.plan.T ?? 'b'}:${inl.plan.ok}` : null;
+      if (!measure && ik !== create.inlKey) { create.inline = inl; create.inlKey = ik; renderBundleBar(); draw(); }
       if (id !== m.hover) { m.hover = id; renderBundleBar(); draw(); }
       return;
     }
@@ -4573,7 +4765,13 @@ cv.addEventListener('pointerup', e => {
   if (pt && (ptrs.size === 0 || (multi && ptrs.get([...ptrs.keys()][0])?.long)) && view && Math.hypot(e.clientX - pt.x0, e.clientY - pt.y0) < 6) {
     const [lx, ly] = local(e);
     if (create?.step === 'ofs') { const d = hitDim(lx, ly, cofHits()); if (d) createEditDim(d); return; }
-    if (create) { const c = hitCand(createCands(), lx, ly); if (c) createPick(c); return; }
+    if (create) {
+      const hb = create.step === 'ref' && inlineHit(lx, ly), c = hb?.plan.bend || hb?.plan.why?.startsWith('Bogen') ? null : hitCand(createCands(), lx, ly);
+      if (c) { createPick(c); return; }
+      const h = hb;
+      if (h) { if (h.plan.ok) placeInline(h); else toast(h.why); }
+      return;
+    }
     if (measure) {
       const d = hitDim(lx, ly, measHits()), c = !d && hitCand(createCands(true), lx, ly);
       if (d) measureEditDim(d); else if (c) measurePick(c);
@@ -4636,9 +4834,11 @@ function cubePick(x, y) {
   return null;
 }
 function drawCube() {
+  // Gezeichnet in der echten Bildschirmgröße (auf dem Handy kleiner), nicht verkleinert: sonst wird er unscharf
   const dpr = window.devicePixelRatio || 1, W = 2 * CUBE_C, g = cubeCtx, P = q => { const r = project(q); return [CUBE_C + r.x, CUBE_C + r.y]; };
-  if (cube.width !== W * dpr) cube.width = cube.height = W * dpr;
-  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, W);
+  const cssW = cube.clientWidth || W, k = cssW / W, px = Math.round(cssW * dpr);
+  if (cube.width !== px) cube.width = cube.height = px;
+  g.setTransform(dpr * k, 0, 0, dpr * k, 0, 0); g.clearRect(0, 0, W, W);
   const dark = isDark(), S = CUBE_S, ink = css('--text'), corner = (f, u, v) => P(V.add(V.add(V.mul(f.n, S), V.mul(f.a, u * S)), V.mul(f.b, v * S)));
   const quad = q => { g.beginPath(); q.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
   // XYZ an der Ecke vorne links unten, entlang der Kanten; verdeckte Kanten laufen hinter dem Würfel
@@ -5440,6 +5640,78 @@ function planeDims() {
   if (la > 40) dimLine(P3(planePt(pl, -1, -1)), P3(planePt(pl, 1, -1)), `B ${fmt(pl.w)}`, inner(0, -1), 44, { key: `pl${pl.id}w`, plDim: { id: pl.id, f: 'w' } }, { color: col });
   if (lb > 40) dimLine(P3(planePt(pl, 1, -1)), P3(planePt(pl, 1, 1)), `H ${fmt(pl.h)}`, inner(1, 0), 44, { key: `pl${pl.id}h`, plDim: { id: pl.id, f: 'h' } }, { color: col });
 }
+// Abstandsschatten: Jedes Rohr wirft senkrecht einen weichen Schatten auf jede Ebene. Nah = dunkel und scharf, weiter weg stetig
+// heller und weicher, ab SHADOW_MM nichts mehr. Die Rohre werden in kurze Stücke geteilt, damit Helligkeit und Unschärfe fließend
+// mit dem Abstand gehen (keine Stufen). Gezeichnet auf der Hintergrundfläche hinter den Rohren, beschnitten auf die Ebene.
+const SHADOW_MM = 1000, SHADOW_STEP = 50, SHADOW_LEVELS = 40;
+// Punkte eines Fittings für seinen Schatten: Ecken des Modells, höchstens ~300, je Lage einmal berechnet
+const fitShadowCache = new Map();
+function fitShadowPts(f) {
+  const key = `${f.libId}|${f.pos}|${f.rot}`, hit = fitShadowCache.get(f.id);
+  if (hit?.key === key) return hit.pts;
+  const m = fitMeshes.get(f.libId), n = m ? m.pos.length / 3 : 0, step = Math.max(1, Math.ceil(n / 300));
+  const pts = n ? Array.from({ length: Math.ceil(n / step) }, (_, i) => fitPoint(f, [m.pos[i * step * 3], m.pos[i * step * 3 + 1], m.pos[i * step * 3 + 2]])) : fitCorners(f);
+  fitShadowCache.set(f.id, { key, pts });
+  return pts;
+}
+// Konvexe Hülle in 2D (monotone Kette)
+function hull2(P) {
+  const q = [...P].sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  if (q.length < 3) return q;
+  const lo = [], hi = [];
+  for (const p of q) { while (lo.length > 1 && cr(lo.at(-2), lo.at(-1), p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of q.reverse()) { while (hi.length > 1 && cr(hi.at(-2), hi.at(-1), p) <= 0) hi.pop(); hi.push(p); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+function drawPlaneShadows(planes, P3, sc, tw, dark, lines, blobs = []) {
+  const g = bctx, off = 10000, dpr = devicePixelRatio || 1, rgb = dark ? '0,0,0' : '25,35,50', amax = dark ? 0.85 : 0.72;
+  // Kurze Stücke einmal für alle Ebenen
+  const pieces = [];
+  lines.forEach(line => {
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1], b = line[i], n = Math.max(1, Math.ceil(V.len(V.sub(b, a)) / SHADOW_STEP));
+      for (let j = 0; j < n; j++) pieces.push([V.add(a, V.mul(V.sub(b, a), j / n)), V.add(a, V.mul(V.sub(b, a), (j + 1) / n))]);
+    }
+  });
+  planes.forEach(pl => {
+    const k = pl.axis, levels = new Map();
+    pieces.forEach(([a, b]) => {
+      const d = (Math.abs(a[k] - pl.c) + Math.abs(b[k] - pl.c)) / 2;
+      if (d >= SHADOW_MM) return;
+      const pa = [...a], pb = [...b]; pa[k] = pb[k] = pl.c;
+      const lv = Math.round(d / SHADOW_MM * SHADOW_LEVELS); // fein gestuft: 25 mm, von Auge nicht zu sehen
+      if (!levels.has(lv)) levels.set(lv, []);
+      levels.get(lv).push([P3(pa), P3(pb)]);
+    });
+    if (!levels.size && !blobs.length) return;
+    const c = planeCorners(pl).map(q => P3(q));
+    g.save();
+    g.beginPath(); c.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.clip();
+    g.lineWidth = Math.max(tw, 3); g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#000'; g.shadowOffsetX = off * dpr;
+    [...levels.keys()].sort((x, y) => y - x).forEach(lv => { // weit weg zuerst, nah obenauf
+      const t = lv / SHADOW_LEVELS, d = t * SHADOW_MM, a = amax * (1 - t) ** 2;
+      if (a < 0.005) return;
+      g.shadowColor = `rgba(${rgb},${a.toFixed(3)})`;
+      g.shadowBlur = Math.min(80, Math.max(3, tw * 0.8) + d * sc * 0.1) * dpr;
+      g.beginPath(); levels.get(lv).forEach(([[x0, y0], [x1, y1]]) => { g.moveTo(x0 - off, y0); g.lineTo(x1 - off, y1); }); g.stroke();
+    });
+    // Fittings: Umriss senkrecht auf die Ebene, Abstand vom nächsten Teil des Fittings
+    const [ua, ub] = planeAx(pl);
+    blobs.forEach(pts => {
+      const d = Math.min(...pts.map(v => Math.abs(v[k] - pl.c)));
+      if (d >= SHADOW_MM) return;
+      const t = d / SHADOW_MM, a = amax * (1 - t) ** 2;
+      if (a < 0.005) return;
+      const h = hull2(pts.map(v => [v[ua], v[ub]])).map(([x, y]) => { const q = [0, 0, 0]; q[k] = pl.c; q[ua] = x; q[ub] = y; return P3(q); });
+      if (h.length < 3) return;
+      g.shadowColor = `rgba(${rgb},${a.toFixed(3)})`;
+      g.shadowBlur = Math.min(80, 3 + d * sc * 0.1) * dpr;
+      g.fillStyle = '#000';
+      g.beginPath(); h.forEach(([x, y], i) => (i ? g.lineTo(x - off, y) : g.moveTo(x - off, y))); g.closePath(); g.fill();
+    });
+    g.restore();
+  });
+}
 // Fangen beim Ziehen einer Ebene: Lage und Kanten anderer Ebenen auf Achse k, mit Fangpunkten auch Punkte und Ursprung
 function planeSnap(k, val, px, selfId, of) {
   let best = null, bd = 10 / px;
@@ -5848,7 +6120,9 @@ function renderCreateBar(bar) {
   bar.hidden = false;
   const isFit = create.kind === 'fit', isEx = create.kind === 'ex', cancel = `<button class="icbtn" data-co="cancel" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`, list = isFit ? db.fittings : db.pipeTypes;
   const type = list.length > 1 ? `<button data-co="type">${esc(isFit ? fitLib(create.libId).name : typeOf({ typeId: create.typeId }).name)}</button>` : '';
-  if (create.step === 'ref') { bar.innerHTML = `<span class="bprompt">${esc(createCands().find(c => c.id === create.hover)?.name || `${isFit ? 'Fitting' : isEx ? 'Bestandsrohr' : 'Rohr'}: Punkt wählen`)}</span>${type}${cancel}`; return; }
+  const inl = create.step === 'ref' && !create.hover && create.inline;
+  const fk = isFit && fitInline(fitLib(create.libId)) ? fitKind(fitLib(create.libId)).kind : '', inlineAsk = fk === 'straight' || fk === 'tee' ? ' oder auf ein gerades Rohrstück tippen' : fk === 'elbow' ? ' oder auf einen Bogen tippen' : '';
+  if (create.step === 'ref') { bar.innerHTML = `<span class="bprompt">${esc(inl ? (inl.plan.ok ? (inl.plan.bend ? `Statt Bogen ${inl.plan.bend} in ${inl.s.q.name} setzen` : `In ${inl.s.q.name} setzen, Rohr wird getrennt`) : inl.why) : createCands().find(c => c.id === create.hover)?.name || `${isFit ? 'Fitting' : isEx ? 'Bestandsrohr' : 'Rohr'}: Punkt wählen${inlineAsk}`)}</span>${type}${cancel}`; return; }
   bar.innerHTML = `<span>Von ${esc(create.ref.name)}</span>${[0, 1, 2].map(k => `<button data-co="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(create.off[k])}</button>`).join('')}${lastOff ? '<button data-co="last">Wie zuletzt</button>' : ''}<button data-co="ref">Anderer Bezug</button>${type}${cancel}<button class="icbtn on" data-co="ok" title="Übernehmen" aria-label="Übernehmen">${IC('check')}</button>`;
 }
 function placeEx() {
@@ -5952,7 +6226,16 @@ function dimSegs(segs, P3, editable = null) {
   });
 }
 function drawCreate(P3) {
-  if (create.step === 'ref') { drawCands(createCands(), create.hover, 0.7, P3); return; }
+  if (create.step === 'ref') {
+    drawCands(createCands(), create.hover, 0.7, P3);
+    const h = (!create.hover && create.inline) || null;
+    if (h?.plan.ok) { // Schnittstellen und Abstand vom Schenkelanfang
+      const { s, plan } = h, tick = (q, col) => { const [x, y] = P3(q); ctx.save(); ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore(); };
+      tick(plan.A, css('--mark')); tick(plan.B, css('--mark'));
+      if (!plan.bend) dimLine(P3(s.P[s.i]), P3(V.add(s.P[s.i], V.mul(s.dir, plan.T))), fmt(plan.T), P3(V.add(s.P[s.i], [0, 0, -1000])), 26, null, {});
+    } else if (h) { const [x, y] = P3(h.s.dir ? V.add(h.s.P[h.s.i], V.mul(h.s.dir, h.s.len / 2)) : h.s.P[h.s.i + 1]); ctx.save(); ctx.strokeStyle = css('--danger') || '#d33'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke(); ctx.restore(); }
+    return;
+  }
   const { ref, off } = create, T = createPos();
   drawSegs(axisSegs(ref.pos, off), P3);
   ctx.beginPath(); ctx.arc(...P3(ref.pos), 6, 0, 7); ctx.strokeStyle = css('--mark'); ctx.lineWidth = 2; ctx.stroke();
@@ -5983,6 +6266,7 @@ function libAxis(l) {
 }
 // Drehpunkt aus dem Bauteil-Editor, im Raum
 const fitPivot = f => { const p = fitLib(f.libId)?.pivot?.p; return p ? fitPoint(f, p) : null; };
+const fitRef = f => fitPivot(f) || fitCenter(f); // Drehpunkt, sonst Mitte des Modells
 function fitAxis(f) {
   const x = libAxis(fitLib(f.libId));
   return x && { A: fitPoint(f, x.A), n: mulR(f.rot, x.n) };
@@ -6046,6 +6330,164 @@ function dockTarget(ref) {
   const P = points(q), u = w === 'S' ? V.norm(V.sub(P[0], P[1])) : V.norm(V.sub(P.at(-1), P.at(-2)));
   return { T: ref.pos, u, D: typeOf(q).D };
 }
+// ---------- Fitting in die Leitung setzen ----------
+// Art aus den Anschlüssen; Einbau aus dem Bauteil-Editor: lib.mount 'end' | 'inline', ohne = automatisch nach Art
+function fitKind(l) {
+  const P = l?.ports || [];
+  if (P.length === 1) return { kind: 'cap', inline: false };
+  if (P.length === 2) {
+    const c = Math.max(-1, Math.min(1, V.dot(V.norm(P[0].d), V.norm(P[1].d))));
+    return c < -0.999 ? { kind: 'straight', inline: true } : { kind: 'elbow', inline: true, angle: 180 - Math.acos(c) * 180 / Math.PI };
+  }
+  if (P.length === 3 && runPorts(l)) return { kind: 'tee', inline: true };
+  return { kind: 'other', inline: false };
+}
+// Durchgehendes Anschlusspaar (gegenüber) und Abzweig: [a, b, abzweig]
+function runPorts(l) {
+  const P = l?.ports || [];
+  for (let a = 0; a < P.length; a++) for (let b = a + 1; b < P.length; b++) {
+    if (V.dot(V.norm(P[a].d), V.norm(P[b].d)) < -0.999) return [a, b, [0, 1, 2].find(i => i !== a && i !== b && i < P.length) ?? null];
+  }
+  return null;
+}
+const fitInline = l => (l?.mount ? l.mount === 'inline' : fitKind(l).inline);
+// Gerade Mindestlänge hinter einem Anschluss (Einstecktiefe und Mutter), Vorschlag aus dem Ø
+const portIns = o => o.ins ?? Math.max(8, Math.round(o.D * 2));
+// Fitting am Rohrende w: nötige Gerade hinter dem Anschluss bis zum Bogen = gerade min., mindestens die Mindest-Gerade der Zange
+function endFit(q, w) {
+  const key = `${w}:${q.id}`, f = fitsAll().find(o => (o.links || []).some(L => L.to === key));
+  if (!f) return null;
+  const L = f.links.find(x => x.to === key), l = fitLib(f.libId), ins = l?.ports[L.port] ? portIns(l.ports[L.port]) : 0;
+  return { f, l, ins, need: ins }; // am Fitting zählt nur „gerade min.“, nicht die Zange
+}
+// Warnungen: Bogen zu nah an einem Fitting am Rohrende
+function fitGapWarns(q) {
+  if (!q || q.unrouted || q.stub || q.empty) return [];
+  const P = points(q), n = P.length - 1, L = q === proj() ? layout : buildLayout(q);
+  if (n < 2) return [];
+  return [['S', 0, 0], ['E', n - 1, L.bends.length - 1]].flatMap(([w, j, b]) => {
+    const e = endFit(q, w), bd = L.bends[b];
+    if (!e || !bd) return [];
+    const have = V.len(V.sub(P[j + 1], P[j])) - bd.T;
+    return have < e.ins - 0.5 ? [`Bogen ${b + 1} zu nah an ${e.l?.name || 'Fitting'}: ${fmt(have)} mm gerade, mindestens ${fmt(e.ins)} mm (gerade min.).`] : [];
+  });
+}
+// Gerade Stücke der Rohre: je Schenkel zwischen den Bogenenden. Gesperrte Rohre und Rohre mit Parallelrohren nicht
+function pipeStraights() {
+  const out = [];
+  scenePipes().filter(q => !q.hidden && !q.unrouted && !q.stub && !q.empty && !q.locked && !q.bundle?.length).forEach(q => {
+    const P = points(q), L = q === proj() ? layout : buildLayout(q), T = i => (i > 0 && i < P.length - 1 ? L.bends[i - 1]?.T || 0 : 0);
+    for (let i = 0; i < P.length - 1; i++) {
+      const len = V.len(V.sub(P[i + 1], P[i]));
+      if (len < 1) continue;
+      const dir = V.norm(V.sub(P[i + 1], P[i]));
+      out.push({ q, i, P, dir, len, a0: T(i), b0: len - T(i + 1), bendA: i > 0, bendB: i < P.length - 2 });
+    }
+  });
+  return out;
+}
+// Lage des Fittings auf Schenkel s, t = Abstand vom Schenkelanfang zur Mitte des Fittings. Anschluss 1 zeigt zum Rohranfang.
+// Die Stelle rückt in den erlaubten Bereich: Auf beiden Seiten bleibt die gerade Mindestlänge (Anschluss, bei einem Bogen auch die Zange)
+function inlinePlan(libId, s, t) {
+  const l = fitLib(libId), [ia, ib, ic] = runPorts(l) || [0, 1, null];
+  let rot = rotFromTo(l.ports[ia].d, V.mul(s.dir, -1));
+  if (ic != null) { // T-Stück: Abzweig nach oben, sonst in die nächste Achse quer zum Rohr
+    const want = [[0, 0, 1], [0, 1, 0], [1, 0, 0], [0, 0, -1]].find(v => Math.abs(V.dot(v, s.dir)) < 0.01) || V.norm(V.cross(s.dir, [0, 0, 1]));
+    rot = rotPair(l.ports[ia].d, l.ports[ic].d, V.mul(s.dir, -1), want);
+  }
+  const f = { id: '_inl', libId, pos: [0, 0, 0], rot };
+  const pp = fitPorts(f), gap = Math.abs(V.dot(V.sub(pp[ib].p, pp[ia].p), s.dir));
+  const needA = portIns(l.ports[ia]), needB = portIns(l.ports[ib]); // am Fitting zählt nur „gerade min.“
+  const lo = s.a0 + needA + gap / 2, hi = s.b0 - needB - gap / 2;
+  if (lo > hi + 0.01) return { ok: false, why: `Gerade zu kurz für ${l.name}: ${fmt(needA + gap + needB)} mm nötig, ${fmt(Math.max(0, s.b0 - s.a0))} mm da.` };
+  const tt = Math.round(Math.max(lo, Math.min(hi, t)));
+  const T = Math.max(lo, Math.min(hi, tt)), X = V.add(s.P[s.i], V.mul(s.dir, T));
+  const A = V.sub(X, V.mul(s.dir, gap / 2)), B = V.add(X, V.mul(s.dir, gap / 2));
+  f.pos = V.sub(A, pp[ia].p);
+  return { ok: true, f, A, B, T, gap, iA: s.i, iB: s.i, pa: ia, pb: ib };
+}
+// Drehung, die das Paar (a1, a2) auf (b1, b2) legt (gleicher Winkel zwischen den Paaren vorausgesetzt)
+function rotPair(a1, a2, b1, b2) {
+  const frame = (x, y) => { const e1 = V.norm(x), e3 = V.norm(V.cross(x, y)), e2 = V.cross(e3, e1); return [e1, e2, e3]; };
+  const S = frame(a1, a2), T = frame(b1, b2);
+  return [0, 1, 2].flatMap(rr => [0, 1, 2].map(c => T[0][rr] * S[0][c] + T[1][rr] * S[1][c] + T[2][rr] * S[2][c]));
+}
+// Winkel statt Bogen an Eckpunkt k von Rohr q: Die Anschlussachsen treffen sich im Eckpunkt, die Schenkel laufen gerade bis zu den Anschlüssen.
+// Anschluss 1 zeigt zum Rohranfang. Auf beiden Seiten bleibt die gerade Mindestlänge (Anschluss, bei einem weiteren Bogen auch die Zange).
+function elbowPlan(libId, q, k, P, L) {
+  const l = fitLib(libId), b = L.bends[k - 1], fk = fitKind(l), V0 = P[k];
+  if (Math.abs(b.angle - fk.angle) > 0.5) return { ok: false, why: `Bogen ${k}: ${fmt(b.angle)}°, ${l.name}: ${fmt(fk.angle)}°. Passt nicht.` };
+  const u = V.norm(V.sub(V0, P[k - 1])), w = V.norm(V.sub(P[k + 1], V0)), d0 = l.ports[0].d, d1 = l.ports[1].d;
+  const R = rotPair(d0, d1, V.mul(u, -1), w);
+  // Schnittpunkt der Anschlussachsen im Modell
+  const p0 = l.ports[0].p, p1 = l.ports[1].p, n0 = V.norm(d0), n1 = V.norm(d1), c = V.dot(n0, n1), r0 = V.sub(p0, p1);
+  const den = 1 - c * c, s0 = (c * V.dot(n1, r0) - V.dot(n0, r0)) / den, C = V.add(p0, V.mul(n0, s0));
+  const f = { id: '_inl', libId, rot: R, pos: V.sub(V0, mulR(R, C)) };
+  const pp = fitPorts(f), A = pp[0].p, B = pp[1].p, a = V.len(V.sub(V0, A)), bb = V.len(V.sub(B, V0));
+  const T = j => (j > 0 && j < P.length - 1 ? L.bends[j - 1]?.T || 0 : 0);
+  const needA = portIns(l.ports[0]), needB = portIns(l.ports[1]); // am Fitting zählt nur „gerade min.“
+  const haveA = V.len(V.sub(V0, P[k - 1])) - a - T(k - 1), haveB = V.len(V.sub(P[k + 1], V0)) - bb - T(k + 1);
+  if (haveA < needA - 0.01) return { ok: false, why: `Schenkel ${k} zu kurz für ${l.name}: ${fmt(needA - haveA)} mm fehlen.` };
+  if (haveB < needB - 0.01) return { ok: false, why: `Schenkel ${k + 1} zu kurz für ${l.name}: ${fmt(needB - haveB)} mm fehlen.` };
+  return { ok: true, f, A, B, iA: k - 1, iB: k, bend: k, pa: 0, pb: 1 };
+}
+// Treffer auf einem geraden Stück unter dem Finger, wenn das gewählte Fitting in die Leitung darf (vorerst: gerader Verbinder)
+function inlineHit(x, y) {
+  const l = create?.kind === 'fit' && fitLib(create.libId), kind = l && fitKind(l).kind;
+  if (!l || !fitInline(l) || !['straight', 'elbow', 'tee'].includes(kind)) return null;
+  let best = null, bd = hitTol(14);
+  if (kind === 'elbow') { // Bogen unter dem Finger: Eckpunkt oder Bogenstück
+    scenePipes().filter(q => !q.hidden && !q.unrouted && !q.stub && !q.empty && !q.locked && !q.bundle?.length).forEach(q => {
+      const P = points(q), L = q === proj() ? layout : buildLayout(q);
+      for (let k = 1; k < P.length - 1; k++) {
+        const b = L.bends[k - 1];
+        if (!b) continue;
+        const u = V.norm(V.sub(P[k], P[k - 1])), w = V.norm(V.sub(P[k + 1], P[k]));
+        const [vx, vy] = view.P3(P[k]), ends = [view.P3(V.sub(P[k], V.mul(u, b.T))), view.P3(V.add(P[k], V.mul(w, b.T)))];
+        const d = Math.min(Math.hypot(vx - x, vy - y), ...ends.map(([ex, ey]) => segDist(x, y, ex, ey, vx, vy)));
+        if (d < bd) { bd = d; best = { s: { q, i: k - 1, P }, plan: elbowPlan(l.id, q, k, P, L) }; }
+      }
+    });
+    if (best && !best.plan.ok) best.why = best.plan.why;
+    return best;
+  }
+  pipeStraights().forEach(s => {
+    const [ax, ay] = view.P3(s.P[s.i]), [bx, by] = view.P3(s.P[s.i + 1]), dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    if (L2 < 1) return;
+    const u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2)), d = Math.hypot(ax + u * dx - x, ay + u * dy - y);
+    if (d >= bd) return;
+    const t = u * s.len;
+    if (t < s.a0 - 1 || t > s.b0 + 1) return; // im Bogen: nicht hier
+    bd = d; best = { s, plan: inlinePlan(create.libId, s, t) };
+  });
+  if (best && !best.plan.ok) best.why = best.plan.why;
+  return best;
+}
+// Einsetzen: Das Rohr wird an der Stelle getrennt. Der Teil davor behält das Rohr, der Teil danach wird ein neues Rohr.
+function placeInline(h) {
+  const { s, plan } = h, q = s.q, l = fitLib(create.libId), { iA, iB } = plan, dl = (v, o = {}) => ({ ...o, x: v[0], y: v[1], z: v[2] });
+  commit();
+  if (q.mode !== 'deltas') { q.deltas = toDeltas(q.legs, q.frame); q.mode = 'deltas'; }
+  const P = points(q), names = new Set(scenePipes().map(x => x.name));
+  let n = 2;
+  while (names.has(`${q.name} · ${n}`)) n++;
+  const B = { ...structuredClone(q), id: uid(), name: `${q.name} · ${n}`, done: {}, bundle: [], bundleTx: [], clamps: [], refs: null, startFixed: false, hidden: false };
+  B.origin = [...plan.B];
+  B.deltas = [dl(V.sub(P[iB + 1], plan.B), q.deltas[iB]), ...structuredClone(q.deltas.slice(iB + 1))];
+  q.deltas = [...q.deltas.slice(0, iA), dl(V.sub(plan.A, P[iA]), q.deltas[iA])];
+  q.endFixed = false; q.done = {};
+  // Was am Ende des Rohrs hing, hängt jetzt am Ende des neuen Teils
+  fitsAll().forEach(f => (f.links || []).forEach(L => { if (L.to === `E:${q.id}`) L.to = `E:${B.id}`; }));
+  db.projects.splice(db.projects.indexOf(q) + 1, 0, B);
+  const f = { ...plan.f, id: uid(), links: [{ port: plan.pa, to: `E:${q.id}` }, { port: plan.pb, to: `S:${B.id}` }] };
+  scene().fittings.push(f);
+  create = null; lastFit = l.id;
+  selectFit(f.id);
+  refit(); recompute(); renderBundleBar(); renderBrowser();
+  toast(`${l.name} ${plan.bend ? `statt Bogen ${plan.bend} in ${q.name}` : `in ${q.name}`} gesetzt, der Teil dahinter heißt ${B.name}.`);
+  const D = typeOf(q).D;
+  if (l.ports.some(o => Math.abs(o.D - D) > 1)) toast(`Anschluss Ø ${fmt(l.ports[0].D)} mm, Rohr Ø ${fmt(D)} mm.`);
+}
 function placeFit() {
   const { ref, off, libId } = create, f = { id: uid(), libId, pos: createPos(), rot: [1, 0, 0, 0, 1, 0, 0, 0, 1] }, l = fitLib(libId);
   const dock = !off.some(Boolean) && l.ports.length ? dockTarget(ref) : null;
@@ -6058,6 +6500,94 @@ function placeFit() {
   if (!dock) placeEdit({ t: 'fit', id: f.id }, ref.pos);
   if (dock && Math.abs(l.ports[0].D - dock.D) > 1) toast(`Anschluss Ø ${fmt(l.ports[0].D)} mm, Rohr Ø ${fmt(dock.D)} mm.`);
   refit(); recompute(); renderBundleBar();
+}
+// Andere Enden der verbundenen Rohre, wenn das Fitting längs ihrer Achse k gezogen wird (sonst keine)
+function farEnds(f, k, dir = null) {
+  return (f.links || []).filter(L => L.to[0] === 'S' || L.to[0] === 'E').flatMap(L => {
+    const e = linkEnd(L.to);
+    if (!e || (dir ? Math.abs(V.dot(e.u, dir)) : Math.abs(e.u[k])) < 0.999) return [];
+    const key = `${L.to[0] === 'S' ? 'E' : 'S'}:${L.to.slice(2)}`;
+    return [{ key, pos: [...nodePos(key)] }];
+  });
+}
+// Gerade Länge der verbundenen Rohre hinter jedem Anschluss und was sie mindestens braucht
+function endStraights(f) {
+  const l = fitLib(f.libId);
+  return (f.links || []).filter(L => L.to[0] === 'S' || L.to[0] === 'E').map(L => {
+    const q = pipeById(L.to.slice(2)), o = l?.ports[L.port];
+    if (!q || !o || q.stub || q.unrouted) return { have: Infinity, need: 0 };
+    const P = points(q), Ly = q === proj() ? layout : buildLayout(q), atS = L.to[0] === 'S', n = P.length - 1;
+    const b = atS ? Ly.bends[0] : Ly.bends.at(-1), leg = atS ? V.len(V.sub(P[1], P[0])) : V.len(V.sub(P[n], P[n - 1]));
+    return { have: leg - (n > 1 ? b?.T || 0 : 0), need: portIns(o) };
+  });
+}
+// Fitting in der Leitung: genau zwei verbundene Enden zweier Rohre gleichen Typs, nichts gesperrt, keine Parallelrohre
+function joinOf(f) {
+  if ((f.links || []).length !== 2) return null;
+  const ends = f.links.map(L => ({ w: L.to[0], q: L.to[0] === 'S' || L.to[0] === 'E' ? pipeById(L.to.slice(2)) : null }));
+  if (ends.some(e => !e.q || e.q.locked || e.q.bundle?.length || e.q.unrouted) || ends[0].q === ends[1].q || ends[0].q.typeId !== ends[1].q.typeId) return null;
+  return ends;
+}
+// Beide Rohre wieder zu einem: gerade weiter oder mit Eckpunkt im Schnitt der Schenkelachsen (der Bogen kommt zurück)
+function joinPoints(f) {
+  const j = joinOf(f);
+  if (!j) return null;
+  const [a, b] = j, PA = a.w === 'S' ? [...points(a.q)].reverse() : points(a.q), PB = b.w === 'E' ? [...points(b.q)].reverse() : points(b.q);
+  const A0 = PA.at(-2), A1 = PA.at(-1), B0 = PB[0], B1 = PB[1], ua = V.norm(V.sub(A1, A0)), ub = V.norm(V.sub(B1, B0)), cr = V.len(V.cross(ua, ub));
+  let mid;
+  if (cr < 1e-4) {
+    const off = V.sub(B0, A1), side = V.len(V.sub(off, V.mul(ua, V.dot(off, ua))));
+    if (V.dot(ua, ub) < 0 || side > 0.5) return null;
+    mid = [];
+  } else {
+    // nächste Punkte der beiden Achsen; sie müssen sich treffen
+    const w0 = V.sub(A1, B0), bb = V.dot(ua, ub), d = V.dot(ua, w0), e = V.dot(ub, w0), den = 1 - bb * bb;
+    const sa = (bb * e - d) / den, sb = (e - bb * d) / den, Pa = V.add(A1, V.mul(ua, sa)), Pb = V.add(B0, V.mul(ub, sb));
+    if (V.len(V.sub(Pa, Pb)) > 0.5 || sa < -0.01 || sb > 0.01) return null;
+    mid = [Pa];
+  }
+  return { a, b, pts: [...PA.slice(0, -1), ...mid, ...PB.slice(1)] };
+}
+function mergeJoin(f) {
+  const m = joinPoints(f);
+  if (!m) return false;
+  const { a, b, pts } = m, A = a.q, B = b.q;
+  const aFar = a.w === 'E' ? 'S' : 'E', bFar = b.w === 'S' ? 'E' : 'S'; // freie Enden: Anfang und Ende des neuen Rohrs
+  const startFixed = aFar === 'S' ? A.startFixed : A.endFixed, endFixed = bFar === 'E' ? B.endFixed : B.startFixed;
+  A.origin = [...pts[0]]; A.deltas = pts.slice(1).map((q, i) => { const v = V.sub(q, pts[i]); return { x: v[0], y: v[1], z: v[2] }; });
+  A.mode = 'deltas'; A.done = {}; A.startFixed = startFixed; A.endFixed = endFixed;
+  // Verbindungen an den freien Enden mitnehmen
+  fitsAll().filter(o => o !== f).forEach(o => (o.links || []).forEach(L => {
+    if (L.to === `${aFar}:${A.id}`) L.to = `S:${A.id}`;
+    else if (L.to === `${bFar}:${B.id}`) L.to = `E:${A.id}`;
+  }));
+  db.projects = db.projects.filter(q => q !== B);
+  if (db.currentId === B.id) db.currentId = A.id;
+  return true;
+}
+// Wahl aus zwei Antworten; ✕ bricht ab. Liefert 'a', 'b' oder false
+function choose(msg, a, b) {
+  const extra = document.createElement('button');
+  extra.textContent = b; $('#askYes').before(extra);
+  const res = ask(msg, a);
+  extra.onclick = () => { $('#askDlg').hidden = true; extra.remove(); done2('b'); };
+  let done2;
+  return new Promise(r => { done2 = r; res.then(v => { extra.remove(); r(v ? 'a' : false); }); });
+}
+async function delFitAsk(id) {
+  const f = fitById(id), m = f && joinPoints(f);
+  if (!m) { delFit(id); return; }
+  const v = await choose(`${fitLib(f.libId)?.name || 'Fitting'} löschen. ${m.a.q.name} und ${m.b.q.name} wieder zu einem Rohr verbinden?`, 'Verbinden', 'Nur löschen');
+  if (!v) return;
+  if (v === 'b') { delFit(id); return; }
+  commit();
+  const name = m.a.q.name;
+  mergeJoin(f);
+  scene().fittings = fitsOf().filter(o => o.id !== id);
+  if (selFit === id) { selFit = null; fitDock = null; }
+  fitCache.delete(id);
+  refit(); recompute(); renderBundleBar(); renderBrowser(); fullRender();
+  toast(`Wieder ein Rohr: ${name}.`);
 }
 function delFit(id) {
   commit();
@@ -6119,7 +6649,7 @@ function renderFitBar(bar) {
 function fitAct(a) {
   const f = fitById(selFit), d = f && fitD(f);
   if (!f) return;
-  if (a === 'del') { delFit(f.id); return; }
+  if (a === 'del') { delFitAsk(f.id); return; }
   if (a === 'copy') { startCopy([{ t: 'fit', id: f.id }]); return; }
   if (a === 'strand') { const s = strandOf({ t: 'fit', id: f.id }); startMulti(); objs = s; renderBundleBar(); draw(); return; }
   commit();
@@ -6136,6 +6666,18 @@ function fitAct(a) {
   if (a === 'port') { const n = (d.port + 1) % fitLib(f.libId).ports.length; dockFit(f, n, d.T, d.u); f.links[0].port = n; fitDock = null; }
   recompute(); save(); renderBundleBar(); draw();
 }
+// Fitting in der Leitung: zwei oder mehr verbundene Rohrenden auf einer Achse. Dann dreht es nur sich selbst um diese Achse (Abzweig ausrichten)
+function inlineAxis(f) {
+  const Ls = f.links || [], E = Ls.map(L => linkEnd(L.to));
+  if (Ls.length < 2 || E.some(e => !e)) return null;
+  // Zwei Verbindungen auf einer Achse, gegenüber: die durchgehende Leitung. Weitere Verbindungen sind Abzweige (T-Stück)
+  for (let a = 0; a < E.length; a++) for (let b = a + 1; b < E.length; b++) {
+    const u = E[a].u;
+    if (V.dot(E[b].u, u) > -0.9999 || V.len(V.cross(V.sub(E[b].T, E[a].T), u)) > 0.05) continue;
+    return { T: E[a].T, u, inline: true, run: [a, b], branches: Ls.filter((L, i) => i !== a && i !== b) };
+  }
+  return null;
+}
 function drawFit(P3) {
   const f = fitById(selFit), d = fitD(f), ax = !d && fitAxis(f), c = d ? d.T : ax ? ax.A : fitPivot(f) || fitCenter(f), fixed = objFixed({ t: 'fit', id: f.id });
   fitPorts(f).forEach(o => {
@@ -6146,7 +6688,9 @@ function drawFit(P3) {
   });
   // Verbunden dreht es um eines seiner Rohre; je Rohr ein Ring, wenn alles andere Verbundene mitschwenken kann.
   // Hängt es an einem Gesperrten, bleibt nur der Ring um dieses: Drehen darum bewegt es nicht, Verschieben schon
-  const spins = f.locked ? [] : (f.links || []).map((L, i) => { const e = linkEnd(L.to); return e && f.links.every((M, j) => j === i || canFollow(M.to, f)) ? { i, e } : null; }).filter(Boolean);
+  const runAx = inlineAxis(f);
+  // In der Leitung: ein Ring um die durchgehende Achse; Abzweigrohre schwenken starr mit, wenn sie frei sind, sonst kein Ring
+  const spins = f.locked ? [] : runAx ? (runAx.branches.every(L => canFollow(L.to, f)) ? [{ i: null, e: runAx, follow: runAx.branches }] : []) : (f.links || []).map((L, i) => { const e = linkEnd(L.to); return e && f.links.every((M, j) => j === i || canFollow(M.to, f)) ? { i, e } : null; }).filter(Boolean);
   if (f.locked || (fixed && !spins.length)) return;
   // Der Griff beginnt außerhalb des Fittings. Gemessen im Raum, nicht im Bild: sonst wüchse und schrumpfte der Griff samt Kugel beim Drehen
   const m = d ? d.T : fitPivot(f) || fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => V.len(V.sub(q, m)))) * view.sc, gap = Math.max(18, r + 10);
@@ -6154,8 +6698,22 @@ function drawFit(P3) {
   // Angedockt dreht es um das Rohr, sonst um die festgelegte Achse oder frei um alle drei. Zwei Rohre halten es fest. Ringe zuerst, die Pfeile liegen obenauf
   const ring = u => { const side = V.norm(V.cross(u, Math.abs(u[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0])); return [side, V.cross(u, side), u]; };
   if (!f.links?.length) rotHandles(c, ax ? [ring(ax.n)] : SPIN_AX, gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, ...g }), 'frot');
-  else spins.forEach((sp, j) => rotHandles(sp.e.T, [ring(sp.e.u)], gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, link: sp.i, ...g }), 'frot', j));
-  if (!fixed) axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
+  else spins.forEach((sp, j) => rotHandles(sp.e.T, [ring(sp.e.u)], gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, link: sp.i, follow: sp.follow, ...g }), 'frot', j));
+  // In der Leitung: nur ein Pfeilpaar längs der Rohrachse (seitlich würde es die Rohre verbiegen; dafür gibt es „Ganzer Strang“)
+  if (!fixed && runAx) dirArrows(m, runAx.u, gap, g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); });
+  else if (!fixed) axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
+}
+// Pfeilpaar in beliebiger Richtung u: Achsfarbe, wenn u auf X, Y oder Z liegt, sonst Akzent
+function dirArrows(A, u, gap, push) {
+  const [x, y] = view.P3(A), [px, py] = view.P3(V.add(A, V.mul(u, 100))), mx = (px - x) / 100, my = (py - y) / 100, l = Math.hypot(mx, my);
+  if (l < 1e-6) return;
+  const k = u.findIndex(v => Math.abs(v) > 0.999), col = k >= 0 ? rgbCss(AX_RGB[k]) : css('--accent'), ux = mx / l, uy = my / l;
+  const fade = s => (gz ? (gz.type === 'fmove' && gz.s === s ? 1 : 1 - grabE) : relE * handA);
+  for (const s of [1, -1]) {
+    const seg = [x + s * ux * gap, y + s * uy * gap, x + s * ux * (gap + 38), y + s * uy * (gap + 38)], f = fade(s);
+    if (f > 0.02) { ctx.save(); ctx.globalAlpha = f; arrow(...seg, col, 4); ctx.restore(); }
+    push({ k: -1, dir: u, s, seg, pxPerMm: [mx, my] });
+  }
 }
 // Drehgriffe: kurze Bögen in Achsfarbe zwischen den Pfeilen. Angefasst wächst der Bogen zum Ring, losgelassen schrumpft er zurück
 // Radius der Drehkugel vom Griffbeginn aus: außerhalb der Verschiebepfeile (die enden bei etwa 44 px)
@@ -6800,8 +7358,18 @@ function setLinkEnd(to, T) {
   if (w === 'X') { const x = exById(id); x.pos = V.add(x.pos, V.sub(T, exEnds(x)[+i])); return true; }
   // Das Rohr soll gerade im Anschluss bleiben: Kippte es, wandert es als Ganzes mit, solange sein anderes Ende frei ist
   const q = pipeById(id), u0 = linkEnd(to).u, o0 = q.origin, d0 = structuredClone(q.deltas), other = `${w === 'S' ? 'E' : 'S'}:${id}`;
+  // Bewegt sich das Ende genau längs seines Endschenkels, ändert sich nur dieser Schenkel – nicht ein entfernter derselben Richtung
+  const disp = V.sub(T, linkEnd(to).T), dl = V.len(disp);
+  if (dl > 1e-9 && V.len(V.cross(V.mul(disp, 1 / dl), u0)) < 1e-6 && q.deltas.length && !q.unrouted) {
+    const j = w === 'S' ? 0 : q.deltas.length - 1, v = deltaVec(q.deltas[j]), nv = w === 'S' ? V.sub(v, disp) : V.add(v, disp);
+    if (V.dot(nv, v) > 0 && V.len(nv) >= 1) {
+      if (w === 'S') q.origin = [...T];
+      q.deltas[j] = { ...q.deltas[j], x: nv[0], y: nv[1], z: nv[2] };
+      return true;
+    }
+  }
   const ok = setPoint(q, w, T);
-  if (ok && V.len(V.sub(linkEnd(to).u, u0)) < 0.02) return true;
+  if (ok && V.len(V.sub(linkEnd(to).u, u0)) < 1e-6) return true; // auch kleinste Kippung nicht: sie summierte sich sonst Schritt für Schritt
   if (linkFixed(other) || fitsAll().some(f => (f.links || []).some(L => L.to === other))) return ok;
   q.origin = o0; q.deltas = d0;
   q.origin = V.add(q.origin, V.sub(T, linkEnd(to).T));
@@ -6815,7 +7383,7 @@ const fitD = f => {
   const L = f.links?.[0], e = L && linkEnd(L.to);
   return e ? { id: f.id, port: L.port, T: e.T, u: e.u, link: true } : fitDock?.id === f.id ? fitDock : null;
 };
-let linkGood = null, linkToast = 0;
+let linkGood = null, linkToast = 0, quietLinks = false;
 function syncLinks() {
   const fits = fitsAll().filter(f => f.links?.length);
   if (!fits.length) { linkGood = null; drv.clear(); return true; }
@@ -6849,7 +7417,7 @@ function syncLinks() {
   drv.clear();
   if (ok) { linkGood = { id: proj().sceneId, m: sceneMark() }; return true; }
   if (linkGood?.id === proj().sceneId) sceneBack(linkGood.m);
-  if (Date.now() - linkToast > 2500) { linkToast = Date.now(); toast('So nicht möglich: Eine Verbindung hält dagegen.'); }
+  if (!quietLinks && Date.now() - linkToast > 2500) { linkToast = Date.now(); toast('So nicht möglich: Eine Verbindung hält dagegen.'); }
   return false;
 }
 function strandOf(o) {
@@ -7208,7 +7776,7 @@ function treeAct(a, k) {
   if (a === 'ren') { renderBrowser(); treeRename(k); }
   else if (k === 'scene') { if (a === 'dup') dupScene(); else delScene().then(renderBrowser); }
   else if (t === 'pl') delPlane(id);
-  else if (t === 'fi') delFit(id);
+  else if (t === 'fi') delFitAsk(id);
   else if (t === 'p') delPipe(pipeById(id));
   else if (a === 'del') delBundle(pipeById(id), +i);
   else { goPipe(id); bundleToPipes(proj(), [+i]); }

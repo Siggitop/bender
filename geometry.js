@@ -94,14 +94,14 @@ export function anglesFromPoints(pts) {
 // o: { R, zugA, zugE, minStraight, pickMark(bend) -> { name, k, side } }
 // k = Abstand Bleistiftstrich -> Biegeanfang für die gewählte Zangenmarke (aus Kalibrierung)
 export function computeLayout(rawPts, o) {
-  const errors = [], warnings = [];
+  const errors = [], warnings = [], hints = [];
   const verts = cleanPoints(rawPts);
   // fitLast = Rohr-Ø: Passt der letzte Bogen beim Ziehen nicht mehr um den Rohrquerschnitt, zeigt sich der Schenkel gar nicht, statt das Rohr zu verdrehen
   if (o.fitLast && verts.length > 2) {
     const a = V.sub(verts.at(-2), verts.at(-3)), b = V.sub(verts.at(-1), verts.at(-2)), th = Math.acos(Math.max(-1, Math.min(1, V.dot(V.norm(a), V.norm(b)))));
     if (V.len(b) / Math.tan(Math.min(th, rad(179.5)) / 2) < o.fitLast * 0.75) verts.pop();
   }
-  if (verts.length < 2) return { verts, pts: verts, legs: [], bends: [], straights: [], total: 0, samples: [], errors: ['Mindestens ein Schenkel mit Länge nötig.'], warnings };
+  if (verts.length < 2) return { verts, pts: verts, legs: [], bends: [], straights: [], total: 0, samples: [], errors: ['Mindestens ein Schenkel mit Länge nötig.'], warnings, hints };
   const R = o.R;
   if (!(R > 0)) errors.push('Biegeradius der Zange fehlt.');
 
@@ -147,7 +147,12 @@ export function computeLayout(rawPts, o) {
   straights.forEach((g, j) => {
     const name = j === 0 ? 'Anfang bis Biegung 1' : j === straights.length - 1 ? `Biegung ${j} bis Ende` : `Biegung ${j} bis ${j + 1}`;
     if (g < -0.05) errors.push(`${name}: Bögen überschneiden sich (gerade Strecke ${g.toFixed(1)} mm). Schenkel länger machen.`);
-    else if (bends.length && g < min) warnings.push(`${name}: nur ${g.toFixed(1)} mm gerade – Zange braucht mind. ${min} mm.`);
+    else if (bends.length && g < min) {
+      const end = j === 0 || j === straights.length - 1;
+      // Schlussschenkel: Das Rohr endet dort, man dreht es in der Zange um und biegt von der anderen Seite – nur ein Hinweis
+      if (!end) warnings.push(`${name}: nur ${g.toFixed(1)} mm gerade – Zange braucht mind. ${min} mm.`);
+      else if (!(j === 0 && o.fitEnds?.S) && !(j === straights.length - 1 && o.fitEnds?.E)) hints.push(`${name}: nur ${g.toFixed(1)} mm gerade (Schlussschenkel). Zum Biegen das Rohr in der Zange umdrehen und von der anderen Seite biegen.`);
+    }
   });
   bends.forEach((b, j) => {
     if (b.mark < 0 || b.mark > total) errors.push(`Markierung ${j + 1} liegt außerhalb des Rohrs (${b.mark.toFixed(1)} mm).`);
@@ -169,7 +174,7 @@ export function computeLayout(rawPts, o) {
   });
   samples.push({ p: pts.at(-1), s: total, b: -1 });
 
-  return { verts, pts, legs, bends, straights, total, samples, errors, warnings };
+  return { verts, pts, legs, bends, straights, total, samples, errors, warnings, hints };
 }
 
 // Punkt auf der Mittellinie bei abgewickelter Länge s

@@ -115,6 +115,7 @@ input[type="range"] { width: 100%; padding: 0; border: 0; background: none; acce
 .msg.err { background: var(--err-soft); color: var(--err); }
 .msg.warn { background: var(--warn-soft); color: var(--warn); }
 .msg.ok { background: var(--accent-soft); color: var(--ok); }
+.msg.hint { background: var(--accent-soft); color: var(--text); } /* Hinweis, keine Warnung (z. B. Schlussschenkel) */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { font-size: 13px; background: var(--accent-soft); color: var(--accent); padding: 3px 8px; border-radius: 99px; }
 
@@ -424,18 +425,18 @@ body:not(.lab) .labonly { display: none !important; }
 #bundleBar button.lockbtn.open { color: var(--muted); }
 
 /* ViewCube oben rechts */
-.cubebox { position: absolute; top: 2px; right: 2px; width: 140px; height: 140px; z-index: 2; pointer-events: none; }
-#cube { position: absolute; inset: 0; width: 140px; height: 140px; display: block; touch-action: none; cursor: grab; pointer-events: auto; }
+.cubebox { --cs: 140px; position: absolute; top: 2px; right: 2px; width: var(--cs); height: var(--cs); z-index: 2; pointer-events: none; }
+#cube { position: absolute; inset: 0; width: var(--cs); height: var(--cs); display: block; touch-action: none; cursor: grab; pointer-events: auto; }
 .cb { position: absolute; width: 28px; height: 28px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); font-size: 12px; line-height: 1; pointer-events: auto; }
 .cb svg { width: 18px; height: 18px; }
 .cb:hover { color: var(--accent); }
 .cb-home { top: 2px; left: 2px; }
 .cb-rl { top: 2px; right: 30px; }
 .cb-rr { top: 2px; right: 2px; }
-.cb-tu { top: 8px; left: 56px; }
-.cb-td { bottom: 8px; left: 56px; }
-.cb-tl { left: 8px; top: 56px; }
-.cb-tr { right: 8px; top: 56px; }
+.cb-tu { top: 8px; left: calc(var(--cs) / 2 - 14px); }
+.cb-td { bottom: 8px; left: calc(var(--cs) / 2 - 14px); }
+.cb-tl { left: 8px; top: calc(var(--cs) / 2 - 14px); }
+.cb-tr { right: 8px; top: calc(var(--cs) / 2 - 14px); }
 
 /* Navigationsleiste unten in der Mitte, wie in Fusion */
 .navbar { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, .1); }
@@ -632,7 +633,7 @@ body[data-tab="tools"] .floatbar { display: none; }
 .ped-info table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .ped-info td { padding: 2px 0; }
 .ped-info td:last-child { text-align: right; font-weight: 600; }
-.ped-grid { display: flex; gap: 8px; }
+.ped-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .ped-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .ped-acts button { font-size: 13px; padding: 4px 10px; }
 .ped-acts button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -667,9 +668,9 @@ body[data-tab="tools"] .floatbar { display: none; }
 #bundleBar button.pchip { display: inline-flex; align-items: center; gap: 2px; padding: 0 8px; font-size: 13px; font-weight: 700; }
 #bundleBar button.pchip .ic { width: 16px; height: 16px; }
 
-.fitgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; padding: 4px; width: min(420px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; }
+.fitgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; padding: 4px; width: min(500px, calc(100vw - 32px)); max-height: 66vh; overflow: auto; }
 .fittile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 10px; font-size: 13px; font-weight: 600; }
-.fittile .fitprev { height: 96px; }
+.fittile .fitprev { height: 140px; }
 .fittile.on { border-color: var(--accent); background: var(--accent-soft); }
 
 /* Symbolknöpfe überall gleich: ✕ Abbrechen, ✓ Fertig, Papierkorb Löschen, Stift Umbenennen */
@@ -781,9 +782,10 @@ body[data-tab="tools"] .floatbar { display: flex; }
   .guidebar .gtxt { display: none; }
 }
 
-/* Handy: kleinerer Ansichtswürfel */
+/* Handy: kleinerer Ansichtswürfel, in echter Größe gezeichnet (scharf); das Häuschen auf Höhe der Knöpfe oben links */
 @media (max-width: 600px) {
-  .cubebox { transform: scale(.78); transform-origin: top right; }
+  .cubebox { --cs: 110px; }
+  .cb-home { top: 20px; }
 }
 
 /* Rechner: Reiter als schmale Leiste links wie im Querformat, die 3D-Fläche nutzt die volle Höhe */
@@ -798,3 +800,8 @@ body[data-tab="tools"] .floatbar { display: flex; }
   .viewwrap { height: calc(100dvh - env(safe-area-inset-top)); }
   #miniPrev { top: 64px; }
 }
+
+/* Einstellungen: Schalter als Zeile, Text links, Schalter rechts */
+.spad .swrow { margin-top: 10px; }
+#tab-tools .spad .swrow .sswitch { padding: 2px 0; min-height: var(--h-btn); font-size: var(--fs-m); }
+.spad .shint { display: block; margin-top: 6px; font-size: var(--fs-s); color: var(--muted); }

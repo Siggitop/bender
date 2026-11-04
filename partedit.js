@@ -85,8 +85,20 @@ export function openPartEditor(lib, mesh, env) {
   const cam = { yaw: VIEWS.iso[0], pitch: VIEWS.iso[1], sc: 1, panX: 0, panY: 0, view: 'iso' };
   let W = 1, H = 1, xray = false, listOpen = innerWidth > 700, hover = null, cmd = null, sel = null, meas = [], viewMenu = false;
   const undo = [], redo = [];
-  const snap = () => JSON.stringify({ ports: lib.ports, axis: lib.axis ?? null, pivot: lib.pivot ?? null, aux: lib.aux });
-  const apply = s => { const o = JSON.parse(s); lib.ports = o.ports; lib.aux = o.aux; for (const k of ['axis', 'pivot']) { if (o[k] == null) delete lib[k]; else lib[k] = o[k]; } };
+  const snap = () => JSON.stringify({ ports: lib.ports, axis: lib.axis ?? null, pivot: lib.pivot ?? null, aux: lib.aux, mount: lib.mount ?? null });
+  const apply = s => { const o = JSON.parse(s); lib.ports = o.ports; lib.aux = o.aux; for (const k of ['axis', 'pivot', 'mount']) { if (o[k] == null) delete lib[k]; else lib[k] = o[k]; } };
+  // Art aus den Anschlüssen: 1 = Endstück, 2 gegenüber = Verbinder, 2 im Winkel = Winkel, 3 = T-Stück. Einbau: nur ans Ende oder auch in die Leitung
+  const kindOf = () => {
+    const P = lib.ports;
+    if (P.length === 1) return { name: 'Endstück', inline: false };
+    if (P.length === 2) {
+      const c = Math.max(-1, Math.min(1, dot(P[0].d, P[1].d) / (len(P[0].d) * len(P[1].d) || 1)));
+      return c < -0.999 ? { name: 'Gerader Verbinder', inline: true } : { name: `Winkel ${Math.round(180 - Math.acos(c) * 180 / Math.PI)}°`, inline: true };
+    }
+    if (P.length === 3) return { name: 'T-Stück', inline: true };
+    return { name: P.length ? `${P.length} Anschlüsse` : 'ohne Anschluss', inline: false };
+  };
+  const portIns = o => o.ins ?? Math.max(8, Math.round(o.D * 2));
   const change = fn => { undo.push(snap()); redo.length = 0; fn(); resolve(); env.changed(); renderUi(); draw(); };
 
   // ---------- Kamera ----------
@@ -475,6 +487,7 @@ export function openPartEditor(lib, mesh, env) {
       <h4>Punkte</h4>${lib.aux.pts.map((q, i) => row('apt', i, q.id === piv ? `${q.name} · Drehpunkt` : q.name, q.src)).join('') || '<p class="ped-empty">Keine.</p>'}
       <label class="ped-f ped-rot"><span>Drehpunkt</span><select data-pv2>${[['', lib.aux.pts.length ? 'keiner' : 'erst einen Punkt anlegen'], ...lib.aux.pts.map(q => [q.id, q.name])].map(([v, t]) => `<option value="${v}"${v === piv ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
       <h4>Anschlüsse</h4>${lib.ports.map((o, i) => row('port', i, portName(i), portSub(o))).join('') || '<p class="ped-empty">Noch keiner.</p>'}
+      <label class="ped-f ped-rot"><span>Einbau</span><select data-mount>${(k => [['auto', `Automatisch: ${k.name}, ${k.inline ? 'auch in die Leitung' : 'nur ans Rohrende'}`], ['end', 'Nur ans Rohrende'], ['inline', 'Ans Rohrende und in die Leitung']])(kindOf()).map(([v, t]) => `<option value="${v}"${v === (lib.mount || 'auto') ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
       <div class="ped-add"><button data-pe="port">+ Anschluss</button></div>`;
     renderCmd(); renderInfo();
   }
@@ -502,7 +515,7 @@ export function openPartEditor(lib, mesh, env) {
     if (sel?.kind === 'port' && lib.ports[sel.i]) {
       const o = lib.ports[sel.i], ax = axisById(o.axis);
       h = o.axis
-        ? `<h4>${esc(portName(sel.i))}</h4><div class="ped-grid">${fld('pdist', o.dist, 'vom Drehpunkt')}${fld('pD', o.D, 'Ø')}</div><small>Auf ${esc(ax?.name || 'gelöschter Achse')}${pivotP() ? '' : ' · kein Drehpunkt'}</small>
+        ? `<h4>${esc(portName(sel.i))}</h4><div class="ped-grid">${fld('pdist', o.dist, 'vom Drehpunkt')}${fld('pD', o.D, 'Ø')}${fld('pins', portIns(o), 'gerade min.')}</div><small>Gerade min.: so lang muss das Rohr hinter dem Anschluss gerade sein (Einstecktiefe und Mutter).</small><small>Auf ${esc(ax?.name || 'gelöschter Achse')}${pivotP() ? '' : ' · kein Drehpunkt'}</small>
           <div class="ped-acts">${ib('pflip', 'flip', 'Andere Seite')}<button data-pe="paxis">Achse neu</button>${ib('pdel', 'trash', 'Löschen', ' danger')}</div>`
         : `<h4>${esc(portName(sel.i))}</h4><div class="ped-grid">${fld('pD', o.D, 'Ø')}</div><small>Ältere Festlegung über Öffnung und Tiefe. Neu auf einer Achse festlegen:</small>
           <div class="ped-acts"><button data-pe="paxis">Auf Achse legen</button>${ib('pdel', 'trash', 'Löschen', ' danger')}</div>`;
@@ -754,16 +767,17 @@ export function openPartEditor(lib, mesh, env) {
   root.addEventListener('change', e => {
     const el = e.target;
     if (el.matches('[data-pv2]')) { setPivot(el.value); return; }
+    if (el.matches('[data-mount]')) { change(() => { if (el.value === 'auto') delete lib.mount; else lib.mount = el.value; }); return; }
     const k = el.dataset.pf;
     if (!k) return;
     const v = num(el.value);
     if (!Number.isFinite(v)) { renderUi(); return; }
     if (cmd?.t === 'port' && (k === 'D' || k === 'dist')) { if (v < 0 || (k === 'D' && v === 0)) { renderUi(); return; } cmd[k] = v; renderUi(); draw(); return; }
     if (cmd?.t === 'point') { if (k === 'adist') cmd.dist = v; else cmd.off['xyz'.indexOf(k[1])] = v; renderUi(); draw(); return; }
-    if (sel?.kind === 'port' && (k === 'pD' || k === 'pdist')) {
+    if (sel?.kind === 'port' && (k === 'pD' || k === 'pdist' || k === 'pins')) {
       const o = lib.ports[sel.i];
       if (v < 0 || (k === 'pD' && v === 0)) { renderUi(); return; }
-      change(() => { if (k === 'pD') o.D = v; else o.dist = v; });
+      change(() => { if (k === 'pD') o.D = v; else if (k === 'pins') o.ins = v; else o.dist = v; });
     }
   });
   root.addEventListener('keydown', e => {
