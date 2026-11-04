@@ -140,54 +140,12 @@ function arcSpan(c) {
   return 2 * Math.PI - gap;
 }
 
-// Kreise auf derselben Achse wie (A, n), sortiert nach Lage entlang n
-export function coaxial(geo, A, n, tol = 0.03) {
-  return geo.circles.filter(c => Math.abs(dot(c.n, n)) > 0.999 && len(cross(sub(c.c, A), n)) < tol)
-    .map(c => ({ c, t: dot(sub(c.c, A), n) })).sort((x, y) => x.t - y.t);
-}
-// Wie weit reicht das Material entlang n? (größte und kleinste Lage aller Punkte)
-export function extentAlong(geo, n) {
-  let lo = Infinity, hi = -Infinity;
-  for (const p of geo.P) { const t = dot(p, n); if (t < lo) lo = t; if (t > hi) hi = t; }
-  return [lo, hi];
-}
 // Nach außen zeigt die Seite, auf der weniger Material liegt
 export function outward(geo, A, n) {
   const t0 = dot(A, n);
   let pos = 0, neg = 0;
   for (const p of geo.P) { const t = dot(p, n) - t0; if (t > 0.01) pos++; else if (t < -0.01) neg++; }
   return pos <= neg ? n : mul(n, -1);
-}
-
-// Anschlüsse vorschlagen: Mündung = Kreis an einer Außenfläche, Anschlag = wo die Bohrung enger wird
-export function suggestPorts(geo) {
-  const out = [];
-  for (const c of geo.circles.filter(x => x.closed)) {
-    const d = outward(geo, c.c, c.n), [, hi] = extentAlong(geo, d);
-    if (hi - dot(c.c, d) > 0.05) continue; // nicht an der Außenseite
-    if (out.some(o => len(cross(sub(o.mouth, c.c), o.d)) < 0.05 && dot(o.d, d) > 0.999)) continue;
-    const port = portFrom(geo, c.c, d);
-    if (port) out.push(port);
-  }
-  return out;
-}
-// Anschluss an einer Mündung: Bohrung = kleinster Kreis nahe der Öffnung, Anschlag = erste Stufe nach innen
-export function portFrom(geo, mouth, d) {
-  const along = coaxial(geo, mouth, d).map(o => ({ ...o, t: -o.t })).filter(o => o.t > -0.05).sort((x, y) => x.t - y.t); // t = Tiefe nach innen
-  if (!along.length) return null;
-  const [lo, hi] = extentAlong(geo, d), body = hi - lo;
-  // Bohrung: kleinster Kreis direkt an der Öffnung (Fasen eingeschlossen); Anschlag: erste Stufe danach, an der es enger wird
-  const near = along.filter(o => o.t <= Math.min(3, body * 0.2)), bore = Math.min(...(near.length ? near : along).map(o => o.c.r));
-  const boreAt = along.find(o => Math.abs(o.c.r - bore) < 0.02).t;
-  const stop = along.find(o => o.t > boreAt + 0.05 && o.c.r < bore - 0.05);
-  const depth = stop ? stop.t : body / 2;
-  return { mouth: [...mouth], d: [...d], D: pipeD(bore * 2), depth: Math.round(depth * 100) / 100 };
-}
-// Bohrung mit Spiel → übliches Rohrmaß, sonst auf 0,1 mm
-const PIPE_OD = [3, 4, 5, 6, 8, 10, 12, 14, 15, 16, 18, 20, 22, 25, 28, 30, 32, 35, 38, 42];
-export function pipeD(bore) {
-  const s = PIPE_OD.find(v => bore >= v - 0.05 && bore - v <= 0.35);
-  return s ?? Math.round(bore * 10) / 10;
 }
 
 // Strahl gegen alle Dreiecke (Möller–Trumbore); liefert den nächsten Treffer

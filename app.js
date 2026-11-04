@@ -1,6 +1,5 @@
 import { roomPlanes, planeDist, planeHits, autoClamps, clampInfo, drillCoords, bundleGeometry, pipeGap, parallelPoints, sideDir, straightRuns, cutPlan, triangulate, cleanOutline, signedArea, pointInPoly, wallLetter } from './site.js';
 import { readGlb, saveMesh, dropMesh, loadMeshes } from './fittings.js';
-import { analyzePart, suggestPorts } from './partgeom.js';
 import { openPartEditor } from './partedit.js';
 import { pointsFromDeltas, pointsFromAngles, computeLayout, pointAt, V, rotAbout, selfCollisions } from './geometry.js';
 
@@ -1418,8 +1417,8 @@ function renderTools() {
 const afterToolChange = () => { save(); recompute(); };
 const fitSub = l => `${l.ports.length} ${l.ports.length === 1 ? 'Anschluss' : 'Anschlüsse'} · ${l.ports.map(o => `Ø ${fmt(o.D)}`).join(', ') || 'keine erkannt'}`;
 // Anschlüsse und Achsen legt der Bauteil-Editor an der Geometrie fest; hier nur die Übersicht
-const axisText = l => { const a = l.axis; return !a ? 'frei' : typeof a === 'object' ? (l.aux?.axes.find(x => x.id === a.aux)?.name || 'eigene Achse') : a[0] === 'p' ? (l.ports[+a.slice(1)]?.name || `Anschluss ${+a.slice(1) + 1}`) : `${a.toUpperCase()} durch die Mitte`; };
-const fitBody = l => `<canvas class="fitprev" data-fp="${l.id}"></canvas><ul class="fitports">${l.ports.map((o, i) => `<li><b>${i + 1}</b>Ø ${fmt(o.D, 2)} mm · Tiefe ${fmt(o.depth, 2)} mm</li>`).join('')}<li>Drehachse: ${esc(axisText(l))}</li></ul>
+const pivotText = l => (l.pivot ? l.aux?.pts.find(q => q.id === l.pivot.id)?.name || 'festgelegt' : l.axis ? 'ältere Drehachse' : 'Mitte des Modells');
+const fitBody = l => `<canvas class="fitprev" data-fp="${l.id}"></canvas><ul class="fitports">${l.ports.map((o, i) => `<li><b>${i + 1}</b>Ø ${fmt(o.D, 2)} mm · ${o.axis ? `${fmt(o.dist, 2)} mm vom Drehpunkt` : 'ältere Festlegung'}</li>`).join('') || '<li>Noch keine Anschlüsse.</li>'}<li>Drehpunkt: ${esc(pivotText(l))}</li></ul>
   <button class="primary fitedit" data-s="editFit" data-k="${l.id}">Anschlüsse und Achsen bearbeiten</button>`;
 // Editor öffnen: Modell muss geladen sein; Änderungen gelten sofort
 function editFit(l) {
@@ -1438,16 +1437,15 @@ function editFit(l) {
 async function importFit(file) {
   try {
     const mesh = readGlb(await file.arrayBuffer()), id = uid();
-    const ports = suggestPorts(analyzePart(mesh)).map(o => ({ ...o, p: V.sub(o.mouth, V.mul(o.d, o.depth)), src: { open: 'erkannt', stop: 'Bohrungsstufe' } }));
     await saveMesh(id, mesh);
     fitMeshes.set(id, mesh);
-    const l = { id, name: file.name.replace(/\.glb$/i, ''), ports, mn: mesh.mn, mx: mesh.mx };
+    const l = { id, name: file.name.replace(/\.glb$/i, ''), ports: [], mn: mesh.mn, mx: mesh.mx };
     db.fittings.push(l);
     setUi.open = `fit:${id}`;
     save(); renderTools();
-    // Gleich im Editor prüfen: Vorschläge sind normale Anschlüsse
+    // Keine Automatik: Achsen, Drehpunkt und Anschlüsse legt man im Editor von Hand fest
     editFit(l);
-    toast(ports.length ? `${ports.length} ${ports.length === 1 ? 'Anschluss' : 'Anschlüsse'} erkannt. Bitte prüfen.` : 'Keine Öffnung erkannt: Anschlüsse am Modell festlegen.');
+    toast('Achsen, Drehpunkt und Anschlüsse am Modell festlegen.');
   } catch (err) { toast(err.message || 'Datei lässt sich nicht lesen.'); }
 }
 // Fittings, die mit der App kommen. db.stdFits merkt sich die Namen: Ein gelöschtes Fitting kommt nicht wieder, ein vorhandenes gleichen Namens bleibt
@@ -1462,10 +1460,9 @@ async function addStdFits() {
     if (seen.includes(s.name)) continue;
     if (!db.fittings.some(l => l.name === s.name)) {
       const mesh = readGlb(await (await fetch(s.file)).arrayBuffer()), id = uid();
-      const ports = suggestPorts(analyzePart(mesh)).map(o => ({ ...o, D: s.D, depth: s.depth, p: V.sub(o.mouth, V.mul(o.d, s.depth)) }));
       await saveMesh(id, mesh);
       fitMeshes.set(id, mesh);
-      db.fittings.push({ id, name: s.name, ports, mn: mesh.mn, mx: mesh.mx });
+      db.fittings.push({ id, name: s.name, ports: [], mn: mesh.mn, mx: mesh.mx });
       added = true;
     }
     seen.push(s.name);
@@ -1494,6 +1491,7 @@ function drawFitPreview(c, l) {
     const L = Math.hypot(...l.mx.map((v, k) => v - l.mn[k])) * 0.6, [x0, y0] = P(V.sub(ax.A, V.mul(ax.n, L))), [x1, y1] = P(V.add(ax.A, V.mul(ax.n, L)));
     g.strokeStyle = axisColor(ax.n); g.lineWidth = 2; g.setLineDash([7, 5]); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); g.setLineDash([]);
   }
+  if (l.pivot) { const [x, y] = P(l.pivot.p); g.strokeStyle = css('--mark'); g.lineWidth = 2; g.beginPath(); g.arc(x, y, 7, 0, 7); g.moveTo(x - 11, y); g.lineTo(x + 11, y); g.moveTo(x, y - 11); g.lineTo(x, y + 11); g.stroke(); }
   l.ports.forEach((o, i) => {
     const [x, y] = P(o.p), [ax, ay] = P(V.add(o.p, V.mul(o.d, 10)));
     g.strokeStyle = css('--accent'); g.lineWidth = 2; g.beginPath(); g.moveTo(x, y); g.lineTo(ax, ay); g.stroke();
@@ -4332,7 +4330,7 @@ function selPivot() {
   const pl = selPlane && planeById(selPlane);
   if (pl) { const c = planeCorners(pl); return c.reduce(V.add).map(v => v / c.length); }
   const fi = selFit && fitById(selFit);
-  if (fi) { const d = fitD(fi); return d ? d.T : fitCenter(fi); }
+  if (fi) { const d = fitD(fi); return d ? d.T : fitPivot(fi) || fitCenter(fi); }
   return null;
 }
 // Drehen um die Auswahl: ihr Bildpunkt bleibt stehen
@@ -5755,11 +5753,14 @@ const fitPoint = (f, v) => V.add(f.pos, mulR(f.rot, v));
 const fitPorts = f => (fitLib(f.libId)?.ports || []).map((o, i) => ({ i, p: fitPoint(f, o.p), d: mulR(f.rot, o.d), D: o.D }));
 // Festgelegte Drehachse im Modell: durch einen Anschluss, eine Achse aus dem Editor oder in X, Y, Z durch die Mitte; null heißt frei
 function libAxis(l) {
+  if (l?.pivot) return null; // mit Drehpunkt dreht es frei um X, Y, Z
   if (l?.axis && typeof l.axis === 'object') return { A: l.axis.A, n: l.axis.n }; // eigene Achse aus dem Bauteil-Editor
   const a = l?.axis, o = a?.[0] === 'p' && l.ports[+a.slice(1)], k = 'xyz'.indexOf(a);
   if (o) return { A: o.p, n: o.d };
   return a && k >= 0 ? { A: l.mn.map((v, i) => (v + l.mx[i]) / 2), n: [0, 1, 2].map(i => +(i === k)) } : null;
 }
+// Drehpunkt aus dem Bauteil-Editor, im Raum
+const fitPivot = f => { const p = fitLib(f.libId)?.pivot?.p; return p ? fitPoint(f, p) : null; };
 function fitAxis(f) {
   const x = libAxis(fitLib(f.libId));
   return x && { A: fitPoint(f, x.A), n: mulR(f.rot, x.n) };
@@ -5896,7 +5897,7 @@ function fitAct(a) {
   recompute(); save(); renderBundleBar(); draw();
 }
 function drawFit(P3) {
-  const f = fitById(selFit), d = fitD(f), ax = !d && fitAxis(f), c = d ? d.T : ax ? ax.A : fitCenter(f), fixed = objFixed({ t: 'fit', id: f.id });
+  const f = fitById(selFit), d = fitD(f), ax = !d && fitAxis(f), c = d ? d.T : ax ? ax.A : fitPivot(f) || fitCenter(f), fixed = objFixed({ t: 'fit', id: f.id });
   fitPorts(f).forEach(o => {
     const [x, y] = P3(o.p), [ax, ay] = P3(V.add(o.p, V.mul(o.d, 24 / view.sc)));
     ctx.save(); ctx.strokeStyle = css('--accent'); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ax, ay); ctx.stroke(); ctx.restore();
@@ -5905,7 +5906,7 @@ function drawFit(P3) {
   });
   if (fixed) return;
   // Ein Griff wie in Fusion: Pfeile verschieben, Bögen außen drehen. Die Griffe beginnen außerhalb des Fittings
-  const m = d ? d.T : fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => { const [a, b] = P3(q); return Math.hypot(a - mx, b - my); })), gap = Math.max(18, r + 10);
+  const m = d ? d.T : fitPivot(f) || fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => { const [a, b] = P3(q); return Math.hypot(a - mx, b - my); })), gap = Math.max(18, r + 10);
   if (!gz || gz.type === 'fmove') knob(mx, my, 4, css('--accent'));
   axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
   // Angedockt dreht es um das Rohr, sonst um die festgelegte Achse oder frei um alle drei. Zwei Rohre halten es fest
@@ -6076,7 +6077,8 @@ function renderObjBar(bar) {
   const locked = objs.every(o => objGet(o).locked);
   bar.innerHTML = `<span>${esc(title)}</span>${strand}<button class="icbtn" data-ob="copy" title="Kopieren" aria-label="Kopieren">${IC('copy')}</button><button class="lockbtn${locked ? '' : ' open'}" data-ob="lock" title="Sperren" aria-label="Sperren" aria-pressed="${locked}">${lockIcon(locked)}</button><button data-ob="del" class="danger icbtn" title="Löschen" aria-label="Löschen">${IC('trash')}</button>${end}`;
 }
-const pivotOf = () => objPivot || meanOf(objs.map(objCenter));
+// Ein einzelnes Fitting dreht um seinen Drehpunkt aus dem Bauteil-Editor, sonst die Mitte der Auswahl
+const pivotOf = () => objPivot || (objs.length === 1 && objs[0].t === 'fit' && objGet(objs[0]) && fitPivot(objGet(objs[0]))) || meanOf(objs.map(objCenter));
 function drawObj(P3) {
   const cAcc = css('--accent');
   objs = objs.filter(objGet);

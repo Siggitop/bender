@@ -265,35 +265,28 @@ Schritt 0 und 2 kommen zuerst, weil alles andere darauf aufbaut. Jeder Schritt i
 4. **Tipp wählt Teil, Doppeltipp das ganze Rohr.** *Empfehlung: ja, es bleibt, wie du heute arbeitest.*
 5. **Bestandsstück:** Ø über Rohrtypen, Länge fest 50 mm mit Einstellung. *Empfehlung: ja.*
 
-## 18. Bauteil-Editor: Anschlüsse und Achsen aus der Geometrie
+## 18. Bauteil-Editor: Achsen, Drehpunkt, Anschlüsse von Hand
 
-Bisher wurden Anschlüsse geraten und mit pauschalen Feldern („Tiefe bis Rohranschlag“) nachgestellt. Das ist ungenau und für Schellen oder andere Teile unbrauchbar. Der Editor macht das Modell selbst zur Eingabe.
+Die Modelle (GLB) bilden die Wirklichkeit nicht exakt ab. Einstecktiefen aus der Geometrie wären Scheingenauigkeit. Deshalb gibt es **keine Automatik**: Der Nutzer legt fest, was zählt, und die Geometrie dient nur als Fanghilfe. Vorbild ist Fusion 360 (Konstruktionsachsen und -punkte, Joint Origin, Messen).
 
-**Vorbild:** Fusion 360. Dort heißt das „Joint Origin“ (ein Verbindungspunkt mit Richtung, gefangen an Kreismitten, Kanten und Flächen), dazu Konstruktionsachsen und -punkte und „Messen“ (ein oder zwei Elemente wählen, Werte erscheinen). Übernommen wird genau das, reduziert auf Rohranschlüsse.
+**Geometrie lesen (partgeom.js)** liefert nur Fanghilfen: Kanten mit Knick über 32°, Kreise mit Mitte, Normale und Ø, gerade Kanten, ebene Flächen, dazu Kreismitten, Eckpunkte, Kantenmitten und Flächenmitten als Fangpunkte. Daraus wird nichts vorgeschlagen.
 
-**Geometrie lesen (partgeom.js).** Eine GLB-Datei ist nur ein Dreiecksnetz. Daraus wird einmal beim Öffnen gewonnen:
-- **Kanten:** Dreieckskanten mit Knick über 32°. Facettierte Zylinder bleiben glatt, echte Kanten bleiben Kanten.
-- **Kreise:** Kantenzüge, deren Punkte auf einem Kreis in einer Ebene liegen. Geteilte Ringe werden zusammengelegt. Jeder Kreis hat Mittelpunkt, Normale und Ø.
-- **Gerade Kanten:** mit Endpunkten und Mitte.
-- **Ebene Flächen:** zusammenhängende Dreiecke gleicher Normale, mit Mitte und Normale.
-- **Fangpunkte:** Kreismitten, Eckpunkte, Kantenmitten, Flächenmitten.
+**Ablauf (steht auch oben in der Liste):**
+1. **Achsen anlegen.** Aus einem Kreis (durch die Mitte, nach innen ins Material), aus zwei Punkten (merkt sich beide), aus einer geraden Kante oder der Normale einer Fläche.
+2. **Drehpunkt festlegen.** Ein Punkt wird Drehpunkt. Punkte entstehen als *Fangpunkt* (mit Versatz X/Y/Z oder entlang einer Achse), als *Mitte* (zwischen zwei Punkten oder Mitte einer Achse aus zwei Punkten) oder als *Schnittpunkt* zweier Achsen. Verfehlen sich zwei Achsen, liegt der Punkt in der Mitte dazwischen und die Lücke wird genannt.
+   - Gerader Verbinder: Achse durch beide Kreismitten → Punkt „Mitte“ auf diese Achse → Drehpunkt.
+   - L-Verbinder: je eine Achse aus beiden Kreisen → Punkt „Schnittpunkt“ → Drehpunkt.
+3. **Anschlüsse.** Ein Anschluss ist der Mittelpunkt des Rohrendes. Achse wählen, Abstand vom Drehpunkt tippen (oder einen Punkt anklicken, dann gilt dessen Lage entlang der Achse), ⇄ wählt die Seite, Ø als Feld. Die Richtung zeigt vom Drehpunkt weg.
 
-**Der Editor** öffnet sich ganzseitig aus Einstellungen → Fittings („Bearbeiten“) und direkt nach dem Import. Oben Name, Rückgängig, Fertig. In der Mitte das Modell, drehbar und zoombar wie die 3D-Ansicht. Unten eine Symbolleiste mit den Befehlen, darüber die Befehlsleiste mit Aufforderung und Feldern. Links eine Liste: Anschlüsse, Achsen, Punkte; Antippen wählt, Löschen dort.
+**Bindung:** Ein Anschluss bleibt an seine Achse und den Drehpunkt gebunden. Wechselt der Drehpunkt, wandern die Anschlüsse mit; der Abstand bleibt. Wird die Achse gelöscht, bleibt der Anschluss, wo er ist.
 
-**Immer gilt:** Unter der Maus hebt sich hervor, was der Befehl gerade annimmt, mit kurzer Beschriftung („Kreis Ø 6,00“, „Kreismitte“, „Fläche“). „Durchsicht“ macht das Modell durchscheinend, damit innere Kreise (Bohrungsstufen) erreichbar sind; der Anschlag-Schritt schaltet sie von selbst ein.
+**Im Raum:** Mit Drehpunkt dreht das Fitting frei um X, Y, Z durch diesen Punkt, der Griff sitzt dort, und auch die Kamera dreht um ihn. Angedockt dreht es wie bisher um das Rohr.
 
-**Befehle:**
-1. **Messen:** ein Element zeigt seine Werte (Kreis: Ø und Mitte, Kante: Länge, Fläche: Normale und Inhalt, Punkt: Koordinaten). Zwei Elemente zeigen Abstand mit ΔX, ΔY, ΔZ, bei Achsen und Flächen auch Winkel und Abstand entlang der Achse. Die Messlinie steht im Bild.
-2. **Anschluss:** (a) Öffnung wählen: Kreis an der Mündung oder eine Achse. Richtung nach außen ergibt sich von selbst (die Seite ohne Material), ⇄ kehrt um. Ø kommt aus der Bohrung an der Öffnung und rastet auf übliche Rohrmaße. (b) Anschlag wählen: Kreis, Fläche oder Punkt; der Abstand entlang der Achse ist die Tiefe. Kreise auf derselben Achse werden mit ihrer Tiefe angeboten. Oder die Tiefe tippen. Ein durchsichtiges Rohrstück zeigt das Ergebnis.
-3. **Achse:** aus einem Kreis (durch die Mitte, senkrecht), einer geraden Kante, einer ebenen Fläche (Normale durch die Mitte) oder zwei Punkten.
-4. **Punkt:** ein Fangpunkt, verschoben um X, Y, Z oder um ein Maß entlang einer Achse. Punkte und Achsen dienen als Bezug für Anschlüsse, Messungen und weitere Achsen.
-5. **Drehachse:** jede Achse und jeder Anschluss lässt sich in der Liste als Drehachse festlegen; so dreht das Fitting im Raum.
+**Messen** bleibt: ein Element zeigt seine Werte, zwei zeigen Abstand, ΔX/ΔY/ΔZ, Winkel, Abstand zur Achse.
 
-**Automatik:** Beim Import schlägt der Editor Anschlüsse vor: Kreis an einer Außenfläche = Öffnung, die erste Stufe nach innen, an der die Bohrung enger wird = Anschlag. Bei CLA-6M und CUA-6M ergibt das Ø 6 und 15,3 mm. Vorschläge sind normale Anschlüsse und lassen sich ändern.
+**Daten:** `aux.axes: [{ id, name, A, n, B?, src }]`, `aux.pts: [{ id, name, p, src }]`, `pivot: { id, p }`, Anschluss `{ axis, s, dist, D, p, d }` (p und d werden aus Achse und Drehpunkt berechnet). Ältere Anschlüsse (Öffnung und Tiefe) und ältere Drehachsen wirken weiter, bis man sie neu festlegt. Neu importierte und neu installierte Fittings kommen ohne Anschlüsse.
 
-**Daten:** Ein Anschluss bleibt `{ mouth, d, depth, p, D }`; neu ist `src` (woraus er entstand) und ein Name. Achsen und Punkte liegen in `aux`. Die Drehachse ist entweder wie bisher ein Kürzel („p0“, „x“) oder eine eigene Achse `{ A, n }`. Alte Daten bleiben gültig.
-
-**Später (vorbereitet, nicht gebaut):** Schellen und andere Teile nutzen denselben Editor. Ein Anschluss bekommt dann eine Art: *Ende* (Rohr steckt bis zum Anschlag, wie heute) oder *Durchgang* (Rohr läuft hindurch, Schelle). Dazu Befestigungspunkte für Wand oder Schiene.
+**Später (vorbereitet, nicht gebaut):** Schellen und andere Teile nutzen denselben Editor; ein Anschluss bekäme dann die Art *Ende* oder *Durchgang*, dazu Befestigungspunkte.
 
 ## Quellen
 

@@ -658,3 +658,7 @@ body[data-tab="tools"] .floatbar { display: none; }
 .fitports { margin: 4px 0 0; padding: 0; list-style: none; font-size: 14px; }
 .fitports li { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
 .fitports b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 99px; background: var(--accent); color: #fff; font-size: 12px; }
+.ped-hint { margin: 2px 4px 6px; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.ped-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--bg); }
+.ped-cmd .ped-seg button { border: 0; background: transparent; min-height: 32px; padding: 2px 10px; font-size: 13px; }
+.ped-cmd .ped-seg button.on { background: var(--accent); color: #fff; }
