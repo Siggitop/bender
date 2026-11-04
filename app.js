@@ -11,7 +11,7 @@ const num = s => { const v = parseFloat(String(s ?? '').replace(',', '.')); retu
 const r1 = n => Math.round(n * 10) / 10;
 const uid = () => Math.random().toString(36).slice(2, 9);
 // Liniensymbole im Text, gleiche Bauart wie die Knöpfe
-const IC_PATHS = { copy: 'M9 9h10v12H9zM5 15V3h10', trash: 'M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6', x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', ortho: 'M5 4v15h15M5 14h5v5', paste: 'M8 5H6v16h12V5h-2M9 3h6v4H9z', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3' };
+const IC_PATHS = { copy: 'M9 9h10v12H9zM5 15V3h10', trash: 'M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6', x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', unlink: 'M9 15l-1 1a4 4 0 0 1-5.7-5.7l1-1M15 9l1-1a4 4 0 0 1 5.7 5.7l-1 1M8 3v3M3 8h3M16 21v-3M21 16h-3', ortho: 'M5 4v15h15M5 14h5v5', paste: 'M8 5H6v16h12V5h-2M9 3h6v4H9z', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3' };
 const IC = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${IC_PATHS[n]}"/></svg>`;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const normRot = r => { let x = ((r % 360) + 360) % 360; return x > 180 ? x - 360 : x; };
@@ -1391,7 +1391,7 @@ function setRow(key, title, sub, body) {
       ? `<input class="tedit srename" value="${esc(title)}" autocomplete="off" aria-label="Name">`
       : `<button class="smain" data-s="open" data-k="${key}" aria-expanded="${open}"><span class="stitle">${esc(title)}</span><small>${sub}</small>${CHEV}</button>`}
       <button class="tmore" data-s="menu" data-k="${key}" aria-label="Aktionen">⋮</button></div>
-    ${setUi.menu === key ? `<div class="tacts"><button data-s="ren" data-k="${key}">Umbenennen</button><button data-s="del" data-k="${key}" class="danger">Löschen</button></div>` : ''}
+    ${setUi.menu === key ? `<div class="tacts"><button class="icbtn" data-s="ren" data-k="${key}" title="Umbenennen" aria-label="Umbenennen">${IC('edit')}</button><button class="icbtn danger" data-s="del" data-k="${key}" title="Löschen" aria-label="Löschen">${IC('trash')}</button></div>` : ''}
     ${open ? `<div class="sbody">${body}</div>` : ''}
   </div>`;
 }
@@ -1946,7 +1946,7 @@ function render3d() {
   const opaque = [], add = (arr, out = opaque) => { for (let i = 0; i < arr.length; i++) out.push(arr[i]); };
   const bad = [0.88, 0.2, 0.2]; // nicht verlegbares Parallelrohr
   // Rohr 1 in Rohrfarbe (sonst Stahl), Parallelrohre dezent heller; die anderen Rohre der Szene treten zurück
-  const tone = vis.colors && p.color != null ? PIPE_COLORS[p.color] : steel, par = lighter(tone, dark ? 0.2 : 0.38);
+  const tone = idle ? (vis.colors && p.color != null ? lighter(PIPE_COLORS[p.color], 0.35) : ghostCol) : vis.colors && p.color != null ? PIPE_COLORS[p.color] : steel, par = lighter(tone, dark ? 0.2 : 0.38);
   (p.unrouted ? [] : pipes).forEach((L, k) => add(tubeMesh(L.samples, r, (a, b) => (k && (L.short || L.clash || L.def.bad) ? bad : k === guidePipe && a.b >= 0 && a.b === b.b && a.b === highlight ? orange : k ? par : tone))));
   ghosts.filter(g => !g.unrouted).forEach(g => add(tubeMesh(g.samples, Math.max(g.D / 2, 1 / sc), () => (vis.colors && g.color != null ? lighter(PIPE_COLORS[g.color], 0.35) : ghostCol))));
   fitsOf(p).forEach(fi => add(fitTris(fi, selFit === fi.id || objs.some(o => o.t === 'fit' && o.id === fi.id))));
@@ -2035,7 +2035,7 @@ function render3d() {
   if (vis.origin || originTemp()) drawOrigin(P3);
   drawExOverlay(P3);
   if (p.empty && !scene(p).planes.length && !fitsAll(p).length && !exOf(p).length && !inCmd()) { ctx.fillStyle = cMuted; ctx.font = '13px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Mit + beginnen', W / 2, H * 0.7); ctx.textAlign = 'left'; }
-  if (vis.axis && !p.unrouted) {
+  if (vis.axis && !p.unrouted && !idle) {
     // Achslinie: durchgehend von Rohranfang über alle Schnittpunkte bis zum Rohrende, mit hellem Rand gut sichtbar auf dem Rohr
     const line = L => { ctx.beginPath(); L.verts.forEach((q, i) => { const [x, y] = P3(q); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); };
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -2092,13 +2092,13 @@ function render3d() {
   }
 
   // Strich-Markierungen (des Rohrs aus der Anleitung) und Rohranfänge
-  if (vis.marks) ML.bends.forEach((b, j) => {
+  if (vis.marks && !idle) ML.bends.forEach((b, j) => {
     const [x, y] = P3(pointAt(ML.samples, b.mark));
     ctx.fillStyle = cMark; ctx.beginPath(); ctx.arc(x, y, j === highlight ? 12 : 10, 0, 7); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = '700 12px -apple-system, system-ui, sans-serif'; ctx.fillText(j + 1, x, y + 0.5);
   });
   ctx.fillStyle = cText; ctx.font = '700 13px -apple-system, system-ui, sans-serif';
-  if (!p.empty && scenePipes(p).length < 2 && vis.labels) { const [sx, sy] = P3(S[0].p); ctx.fillText('A', sx - 14, sy - 12); } // Parallelrohre beginnen daneben – ein „A“ genügt
+  if (!p.empty && !idle && scenePipes(p).length < 2 && vis.labels) { const [sx, sy] = P3(S[0].p); ctx.fillText('A', sx - 14, sy - 12); } // Parallelrohre beginnen daneben – ein „A“ genügt
 
   if (camTool === 'room') { gizmo = []; drawRoomOverlay(P3); }
   else if (camTool !== 'clamp' && !printing && !animLayout) {
@@ -2111,7 +2111,7 @@ function render3d() {
   pipeSegs = pipes.flatMap(L => L.verts.slice(1).map((q, k) => [...P3(L.verts[k]), ...P3(q)]));
   // Stufe: Ruhig = nur das Angetippte, Auswahl = dazu kleine Längen, Alle = alles
   const allDims = vis.dimLevel === 'all';
-  if (!p.unrouted) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
+  if (!p.unrouted && !idle) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
   if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
   if (camTool === 'edit' && CONSTRAINTS) drawRefDims(P3, allDims);
   if (camTool === 'edit') drawLocks(P3);
@@ -2957,18 +2957,23 @@ function polyline(pts, color, w) {
 }
 // Schloss am Punkt: Fest ist zu sehen, offen nur am gewählten Punkt. Weit herausgezoomt blenden sie aus, das Gewählte bleibt
 // vis.lockMin: Maßstab in px je mm, einstellbar; um ihn herum läuft die Überblendung
-const lockFade = () => Math.min(1, Math.max(0, (view.sc / vis.lockMin - 0.9) / 0.2));
+const lockFade = () => Math.min(1, Math.max(0, (view.sc / vis.lockMin - 0.9) / 0.6)); // beim Rauszoomen allmählich blasser, unter dem Maßstab weg
 function lockMark(x, y, closed, alpha = 1) {
   if (!alpha) return;
   const col = css(closed ? '--text' : '--muted');
-  ctx.save(); ctx.translate(x, y);
-  ctx.beginPath(); ctx.arc(0, 0, 9, 0, 7); ctx.fillStyle = css('--card'); ctx.globalAlpha = 0.85 * alpha; ctx.fill(); ctx.globalAlpha = alpha;
+  // Dezent: kein Hintergrundkreis, nur eine feine Kontur in Hintergrundfarbe, damit es auf Linien lesbar bleibt; rausgezoomt kleiner und blasser
+  const k = 0.75 + 0.25 * Math.min(1, alpha);
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.globalAlpha = 0.75 * alpha; ctx.lineCap = ctx.lineJoin = 'round';
   // Gleich breit: Geschlossen ist der Körper gefüllt, offen nur umrandet, und der Bügel steht rechts frei
-  ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.beginPath();
-  if (closed) { ctx.moveTo(-2.8, 0); ctx.lineTo(-2.8, -2); ctx.arc(0, -2, 2.8, Math.PI, 0); ctx.lineTo(2.8, 0); }
-  else { ctx.moveTo(-2.8, 0); ctx.lineTo(-2.8, -3); ctx.arc(0, -3, 2.8, Math.PI, 0); ctx.lineTo(2.8, -2.4); }
-  ctx.stroke();
-  if (closed) { ctx.fillStyle = col; ctx.fillRect(-4.2, -0.5, 8.4, 5.5); } else ctx.strokeRect(-3.6, 0, 7.2, 4.5);
+  const shape = () => {
+    ctx.beginPath();
+    if (closed) { ctx.moveTo(-2.8, 0); ctx.lineTo(-2.8, -2); ctx.arc(0, -2, 2.8, Math.PI, 0); ctx.lineTo(2.8, 0); }
+    else { ctx.moveTo(-2.8, 0); ctx.lineTo(-2.8, -3); ctx.arc(0, -3, 2.8, Math.PI, 0); ctx.lineTo(2.8, -2.4); }
+    ctx.stroke();
+    if (closed) { ctx.beginPath(); ctx.rect(-4.2, -0.5, 8.4, 5.5); } else { ctx.beginPath(); ctx.rect(-3.6, 0, 7.2, 4.5); }
+  };
+  ctx.strokeStyle = css('--card'); ctx.lineWidth = 3.6; shape(); ctx.stroke(); if (closed) { ctx.fillStyle = css('--card'); ctx.fill(); }
+  ctx.strokeStyle = col; ctx.lineWidth = 1.4; shape(); if (closed) { ctx.fillStyle = col; ctx.fill(); } else ctx.stroke();
   ctx.restore();
 }
 function drawLocks(P3) {
@@ -3044,7 +3049,7 @@ function drawGizmo() {
   if (objs.length || multi) { drawObj(view.P3); return; }
   if (dockPick) { drawDockPick(view.P3); return; }
   if (selFit && fitById(selFit)) { drawFit(view.P3); return; }
-  if (proj().empty) return; // Der Platzhalter eines leeren Projekts hat keine Griffe
+  if (proj().empty || idle) return; // Der Platzhalter eines leeren Projekts hat keine Griffe, ein abgewähltes Rohr auch nicht
   if (proj().stub) { drawStub(); return; }
   const pts = points(proj()), n = pts.length - 1, sc = view.sc, P3 = view.P3, cAcc = css('--accent');
   if (n < 1) return;
@@ -3197,11 +3202,13 @@ function drawStartHandle() {
   if (verts.length < 2) return;
   const A = verts[0], d0 = V.norm(V.sub(verts[1], A)), [ax, ay] = P3(A), mmPx = v => { const [x, y] = P3(V.add(A, V.mul(v, 100))); return [(x - ax) / 100, (y - ay) / 100]; };
   if (bundleSel >= 0 && layout.bundle[bundleSel]) { ctx.save(); ctx.globalAlpha = 0.3; polyline(layout.bundle[bundleSel].verts.map(q => P3(q)), cAcc, 16); ctx.restore(); }
-  // Startpunkt: Kugel aus drei Ringen dreht das ganze Rohr um X, Y und Z
-  const spinning = gz?.type === 'spin';
-  if (selPoint?.pid === p.id && selPoint.w === 'S' && !startOpen && !pointMove && (!p.endFixed || p.deltas.length === 1) && (!gz || spinning)) {
+  // Startpunkt: Kugel aus drei Ringen dreht das ganze Rohr um X, Y und Z. Steckt der Anfang in einem Fitting, gibt dessen Anschluss die Richtung
+  // vor: Dann bleibt nur die Drehung um die eigene Achse des ersten Schenkels, und die nur, wenn danach Biegungen kommen
+  const spinning = gz?.type === 'spin', inFit = fitsAll().some(f => (f.links || []).some(L => L.to === `S:${p.id}`));
+  const side = V.norm(V.cross(d0, Math.abs(d0[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0])), spinAx = inFit ? (p.deltas.length > 1 ? [[side, V.cross(d0, side), d0]] : []) : SPIN_AX;
+  if (selPoint?.pid === p.id && selPoint.w === 'S' && !startOpen && !pointMove && (!p.endFixed || p.deltas.length === 1) && (!gz || spinning) && spinAx.length) {
     if (!gz) ballShade(ax, ay);
-    SPIN_AX.forEach(([u, v, n], k) => {
+    spinAx.forEach(([u, v, n], k) => {
       if (spinning && gz.k !== k) return;
       const poly = ballRing(A, u, v, 60 / view.sc, axisColor(n), !spinning);
       if (poly && !gz) gizmo.push({ type: 'spin', k, u, v, n, poly });
@@ -3313,7 +3320,11 @@ function gzStart(g, e) {
       if (vis.origin) gz.pool.push([0, 0, 0]);
       if (g.type === 'orot') gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly);
     }
-    if (g.type === 'frot') { const f = fitById(g.fit); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.A = g.A; gz.r = g.r || 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly); }
+    if (g.type === 'frot') {
+      const f = fitById(g.fit); gz.pos0 = [...f.pos]; gz.rot0 = [...f.rot]; gz.A = g.A; gz.r = g.r || 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly);
+      // Um ein Rohr gedreht schwenkt alles andere Verbundene starr mit
+      gz.mark = sceneMark(); gz.follow = g.link == null ? [] : (f.links || []).filter((L, i) => i !== g.link).map(L => linkObj(L.to));
+    }
     if (g.type === 'cmove') { gz.A0 = pts[g.i]; gz.dOrig = structuredClone(p.deltas); gz.t = 0; }
     if (g.type === 'spin') { gz.A = pts[0]; gz.r = 60 / view.sc; gz.t0 = ringAngle(g.u, g.v, 0, 359, lx, ly); }
     if (g.type === 'bnew') {
@@ -3717,8 +3728,8 @@ function bundleMove(lx, ly) {
   if (gz.type === 'frot') {
     const f = fitById(gz.fit), t = Math.round(normRot(ringAngle(gz.u, gz.v, 0, 359, lx, ly) - gz.t0) / ANGLE_STEP) * ANGLE_STEP, R = rotMat(gz.n, t * Math.PI / 180);
     if (t || gz.committed) gzChanged();
-    f.rot = mulRR(R, gz.rot0);
-    f.pos = V.sub(gz.A, mulR(R, V.sub(gz.A, gz.pos0)));
+    if (gz.follow?.length) { sceneBack(gz.mark); objTurn({ t: 'fit', id: f.id }, R, gz.A); gz.follow.forEach(o => objTurn(o, R, gz.A)); }
+    else { f.rot = mulRR(R, gz.rot0); f.pos = V.sub(gz.A, mulR(R, V.sub(gz.A, gz.pos0))); }
     gz.label = `Drehung ${t > 0 ? '+' : ''}${t}°`;
     if (f.links?.length) recompute(true); else draw();
     return;
@@ -3854,6 +3865,8 @@ function bundleEnd(g) {
     if (!g.moved && g.type === 'fmove') fitDock = g.dock0;
     const f = fitById(g.fit);
     if (f && fitDock?.to && fitDock.id === f.id) { addLink(f, fitDock.port, fitDock.to); fitDock = null; toast(`Verbunden mit ${linkName(f.links.at(-1).to)}.`); }
+    // Schon verbunden und verschoben: Ein offener Anschluss, der jetzt an einem Rohrende liegt, verbindet sich auch
+    else if (f?.links?.length && g.type === 'fmove' && g.moved) { const h = dockNear(f, true); if (h) { addLink(f, h.port, h.to); toast(`Anschluss ${h.port + 1} verbunden mit ${linkName(h.to)}.`); } }
     recompute(); save(); renderBundleBar(); draw();
     return;
   }
@@ -4134,8 +4147,8 @@ function renderRoomBar() {
   if (bar.hidden) return;
   bar.innerHTML = roomDraw
     ? `<span>${roomDraw.pts.length < 3 ? 'Ecken auf dem Boden antippen' : 'Ersten Punkt antippen oder „Schließen“'}</span>
-       <button data-rb="cancel">Abbrechen</button><button data-rb="undo"${roomDraw.pts.length ? '' : ' disabled'}>${IC('undo')} Punkt</button><button data-rb="close" class="primary"${roomDraw.pts.length >= 3 ? '' : ' disabled'}>Schließen</button>`
-    : `<span>Wand ziehen · Maß antippen</span><button data-rb="new">${IC('edit')} Neu zeichnen</button><button data-rb="done" class="primary">Fertig</button>`;
+       <button class="icbtn" data-rb="cancel" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button><button data-rb="undo"${roomDraw.pts.length ? '' : ' disabled'}>${IC('undo')} Punkt</button><button data-rb="close" class="primary"${roomDraw.pts.length >= 3 ? '' : ' disabled'}>Schließen</button>`
+    : `<span>Wand ziehen · Maß antippen</span><button data-rb="new">${IC('edit')} Neu zeichnen</button><button class="icbtn primary" data-rb="done" title="Fertig" aria-label="Fertig">${IC('check')}</button>`;
 }
 $('#roomBar').addEventListener('click', e => {
   const k = e.target.closest('button')?.dataset.rb;
@@ -4548,7 +4561,7 @@ cv.addEventListener('pointerup', e => {
         if (leg >= 0) rows.push([`Schenkel ${leg + 1}`, () => selectLeg(leg)]);
         ['S', 'E'].forEach(w => { const [ax, ay] = view.P3(nodePos(`${w}:${pid}`)); if (Math.hypot(ax - lx, ay - ly) < 22) rows.push([w === 'S' ? 'Anfang' : 'Ende', () => selectPoint(pid, w)]); });
         chooser(lx, ly, rows);
-      } else if (fi) selectFit(fi); else if (ex) selectObj({ t: 'ex', id: ex }); else if (b >= 0) selectBundle(b); else if (g) { db.currentId = g; highlight = -1; fullRender(); } else if (plane) selectPlane(plane); else selectLeg(leg);
+      } else if (fi) selectFit(fi); else if (ex) selectObj({ t: 'ex', id: ex }); else if (b >= 0) selectBundle(b); else if (g) { idle = false; db.currentId = g; highlight = -1; fullRender(); } else if (plane) selectPlane(plane); else { selectLeg(leg); if (leg < 0) { idle = true; draw(); } }
     }
   } else if (camTool === 'room' && roomDraw && pt && e.pointerType !== 'mouse') roomHover(...local(e));
 });
@@ -5087,7 +5100,9 @@ function applyRoute(p, next) {
 }
 
 // Auswahl
-function clearSel() { objs = []; multi = false; objPivot = null; pivotPick = false; selPoint = null; selPlane = null; selFit = null; fitDock = null; pointMove = false; ofs = null; }
+// idle: Tipp ins Leere hat alles abgewählt, auch das aktive Rohr ist dann nicht hervorgehoben
+let idle = false;
+function clearSel() { idle = false; objs = []; multi = false; objPivot = null; pivotPick = false; selPoint = null; selPlane = null; selFit = null; fitDock = null; pointMove = false; ofs = null; }
 function selectPoint(pid, w) {
   if (pid !== db.currentId) dropStub();
   if (pid !== db.currentId) { db.currentId = pid; highlight = -1; fullRender(); }
@@ -5141,18 +5156,18 @@ function setNodeCoord(key, k, v) {
 function renderSceneBar(bar) {
   const p = proj(), sc = scene(p), xyz = key => [0, 1, 2].map(k => `<button data-pk="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(nodePos(key)[k])}</button>`).join('');
   if (pick?.to) {
-    bar.innerHTML = `<span>${nodeName(pick.key)} an ${nodeName(pick.to)}, Achse:</span>${[0, 1, 2].map(k => `<button data-pa="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(Math.abs(nodeVal(pick.key, k) - nodeVal(pick.to, k)))}</button>`).join('')}<button data-pc="1">Abbrechen</button>`;
+    bar.innerHTML = `<span>${nodeName(pick.key)} an ${nodeName(pick.to)}, Achse:</span>${[0, 1, 2].map(k => `<button data-pa="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(Math.abs(nodeVal(pick.key, k) - nodeVal(pick.to, k)))}</button>`).join('')}<button class="icbtn" data-pc="1" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`;
   } else if (pick) {
     const srcPl = pick.key[0] === 'R' ? planeById(pick.key.slice(2)) : null;
     const opts = sc.planes.filter(pl => `R:${pl.id}` !== pick.key && (!srcPl || pl.axis === srcPl.axis));
-    bar.innerHTML = `<span>${nodeName(pick.key)}: Bezug wählen</span>${opts.map(pl => `<button data-pr="${pl.id}" class="ax-${'xyz'[pl.axis]}-b">R${planeNo(pl)}</button>`).join('')}<button data-pc="1">Abbrechen</button>`;
+    bar.innerHTML = `<span>${nodeName(pick.key)}: Bezug wählen</span>${opts.map(pl => `<button data-pr="${pl.id}" class="ax-${'xyz'[pl.axis]}-b">R${planeNo(pl)}</button>`).join('')}<button class="icbtn" data-pc="1" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`;
   } else if (selPlane && planeById(selPlane)) {
     const pl = planeById(selPlane), key = `R:${pl.id}`;
-    if (pl.locked) bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span><span>${[0, 1, 2].map(k => `${'XYZ'[k]} ${fmt(pl[planeKey(pl, k)])}`).join(' · ')} · B ${fmt(pl.w)} · H ${fmt(pl.h)}</span><button data-bb="pldel" class="danger">Löschen</button>`;
-    else bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span>${[0, 1, 2].map(k => `<button data-plk="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(pl[planeKey(pl, k)])}</button>`).join('')}<button data-plk="w">B ${fmt(pl.w)}</button><button data-plk="h">H ${fmt(pl.h)}</button>${CONSTRAINTS ? `<button data-pm="${key}">Maß</button>` : ''}<button data-bb="pldel" class="danger">Löschen</button>`;
+    if (pl.locked) bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span><span>${[0, 1, 2].map(k => `${'XYZ'[k]} ${fmt(pl[planeKey(pl, k)])}`).join(' · ')} · B ${fmt(pl.w)} · H ${fmt(pl.h)}</span><button class="icbtn danger" data-bb="pldel" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
+    else bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span>${[0, 1, 2].map(k => `<button data-plk="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(pl[planeKey(pl, k)])}</button>`).join('')}<button data-plk="w">B ${fmt(pl.w)}</button><button data-plk="h">H ${fmt(pl.h)}</button>${CONSTRAINTS ? `<button data-pm="${key}">Maß</button>` : ''}<button class="icbtn danger" data-bb="pldel" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
   } else if (selPoint && pipeById(selPoint.pid)) {
     const q = pipeById(selPoint.pid), key = `${selPoint.w}:${q.id}`, isS = selPoint.w === 'S', ways = routeOptions(V.sub(endOf(q), points(q)[0])).length;
-    bar.innerHTML = `<span>${nodeName(key)}</span>${!isS && !q.unrouted ? `${extAngChips()}<i class="bsep"></i>` : ''}${pipeLocks(q, selPoint.w)}${isS && startOpen ? '<button data-bb="parend">Fertig</button>' : ''}${fitsOf().length ? '<button data-bb="dock">Andocken</button>' : ''}<button data-bb="move"${pointMove ? ' class="on"' : ''}>Verschieben</button>${pointMove ? xyz(key) + (isS ? `` : '') : ''}${CONSTRAINTS ? `<button data-pm="${key}">Maß</button>` : ''}${ROUTES && ways ? `<button data-bb="route">${q.unrouted ? 'Weg vorschlagen' : 'Anderer Weg'}</button>` : ''}`;
+    bar.innerHTML = `<span>${nodeName(key)}</span>${!isS && !q.unrouted ? `${extAngChips()}<i class="bsep"></i>` : ''}${pipeLocks(q, selPoint.w)}${isS && startOpen ? `<button class="icbtn" data-bb="parend" title="Fertig" aria-label="Fertig">${IC('check')}</button>` : ''}${fitsOf().length ? '<button data-bb="dock">Andocken</button>' : ''}<button data-bb="move"${pointMove ? ' class="on"' : ''}>Verschieben</button>${pointMove ? xyz(key) + (isS ? `` : '') : ''}${CONSTRAINTS ? `<button data-pm="${key}">Maß</button>` : ''}${ROUTES && ways ? `<button data-bb="route">${q.unrouted ? 'Weg vorschlagen' : 'Anderer Weg'}</button>` : ''}`;
   } else return false;
   bar.hidden = false;
   return true;
@@ -5197,9 +5212,10 @@ $('#bundleBar').addEventListener('click', e => {
     else if (ds.co === 'ref') { create.step = 'ref'; create.ref = null; renderBundleBar(); draw(); }
     else if (ds.co === 'type') {
       const pop = $('#typePop');
-      const fit = create.kind === 'fit', cur = fit ? create.libId : create.typeId;
-      pop.innerHTML = `<div class="mlabel">${fit ? 'Fitting' : 'Rohrtyp'}</div>${(fit ? db.fittings : db.pipeTypes).map(t => `<button class="mi${t.id === cur ? ' on' : ''}" data-ty="${t.id}"><span class="mname">${esc(t.name)}</span>${t.id === cur ? CHECK : ''}</button>`).join('')}`;
-      pop.hidden = !pop.hidden;
+      if (!pop.hidden) { pop.hidden = true; return; }
+      if (create.kind === 'fit') { openFitPick(); return; }
+      pop.innerHTML = `<div class="mlabel">Rohrtyp</div>${db.pipeTypes.map(t => `<button class="mi${t.id === create.typeId ? ' on' : ''}" data-ty="${t.id}"><span class="mname">${esc(t.name)}</span>${t.id === create.typeId ? CHECK : ''}</button>`).join('')}`;
+      pop.hidden = false;
     } else if (ds.co === 'last') { create.off = [...lastOff]; renderBundleBar(); draw(); }
     else { const k = +ds.co; askNum(create.off[k], v => { create.off[k] = v; return true; }, true); }
     return;
@@ -5245,11 +5261,20 @@ $('#typePop').addEventListener('click', e => {
   $('#typePop').hidden = true;
   renderBundleBar();
 });
+// Fitting wählen: Raster mit kleinen Bildern der Modelle, nummerierte Anschlüsse wie in den Einstellungen
+function openFitPick() {
+  const pop = $('#typePop');
+  pop.innerHTML = `<div class="mlabel">Fitting</div><div class="fitgrid">${db.fittings.map(t => `<button class="fittile${t.id === create.libId ? ' on' : ''}" data-ty="${t.id}"><canvas class="fitprev" data-fp="${t.id}"></canvas><span>${esc(t.name)}</span></button>`).join('')}</div>`;
+  pop.hidden = false;
+  $$('#typePop .fitprev').forEach(c => drawFitPreview(c, fitLib(c.dataset.fp)));
+}
 $('#addFit').addEventListener('click', () => {
   if (!db.fittings.length) { toast('Erst unter Einstellungen → Fittings eine GLB-Datei importieren.'); return; }
   startCmd();
   create = { kind: 'fit', step: 'ref', ref: null, off: [0, 0, 0], hover: null, libId: db.fittings.some(f => f.id === lastFit) ? lastFit : db.fittings[0].id };
   renderBundleBar(); draw();
+  // Mehrere Fittings: gleich die Bilder zeigen (nach dem Klick, sonst schlösse ihn das Antippen außerhalb sofort wieder)
+  if (db.fittings.length > 1) setTimeout(openFitPick);
 });
 $('#addEx').addEventListener('click', () => {
   startCmd();
@@ -5494,17 +5519,17 @@ function renderBar() {
   $('#measBtn').classList.toggle('on', !!measure);
   if (create) { renderCreateBar(bar); return; }
   if (measure) { renderMeasureBar(bar); return; }
-  if (dockPick) { bar.hidden = false; bar.innerHTML = '<span class="bprompt">Anschluss wählen</span><button data-bb="dockno">Abbrechen</button>'; return; }
+  if (dockPick) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">Anschluss wählen</span><button class="icbtn" data-bb="dockno" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
   if (copyC) { renderCopyBar(bar); return; }
   if (objs.length || multi) { renderObjBar(bar); return; }
   if (selFit && fitById(selFit)) { renderFitBar(bar); return; }
-  if (parPick) { bar.hidden = false; bar.innerHTML = '<span class="bprompt">Parallelrohr: Rohr wählen</span><button data-bb="parno">Abbrechen</button>'; return; }
-  if (p.stub) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">${esc(p.name)}: Richtung und Länge ziehen</span><button data-bb="stubdrop">Abbrechen</button>`; return; }
+  if (parPick) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">Parallelrohr: Rohr wählen</span><button class="icbtn" data-bb="parno" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
+  if (p.stub) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">${esc(p.name)}: Richtung und Länge ziehen</span><button class="icbtn" data-bb="stubdrop" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
   $('#offLegView').classList.toggle('on', !!ofs);
   if (ofs) {
     const f = ofsFrame(), names = Math.abs(f.u[2]) > 0.999 ? ['X-Richtung', 'Y-Richtung'] : ['Waagerecht', 'Senkrecht'];
     ofs.cur = f.cur; bar.hidden = false;
-    bar.innerHTML = `<span>Versatz</span>${[15, 30, 45, 60, 75, 90].map(a => `<button data-ofa="${a}"${a === ofs.ang ? ' class="on"' : ''}>${a}°</button>`).join('')}${names.map((t, k) => `<button data-ofn="${k}"${k === f.cur ? ' class="on"' : ''}>${t}</button>`).join('')}<button data-bb="ofsx">Fertig</button>`;
+    bar.innerHTML = `<span>Versatz</span>${[15, 30, 45, 60, 75, 90].map(a => `<button data-ofa="${a}"${a === ofs.ang ? ' class="on"' : ''}>${a}°</button>`).join('')}${names.map((t, k) => `<button data-ofn="${k}"${k === f.cur ? ' class="on"' : ''}>${t}</button>`).join('')}<button class="icbtn" data-bb="ofsx" title="Fertig" aria-label="Fertig">${IC('check')}</button>`;
     return;
   }
   if (renderSceneBar(bar)) return;
@@ -5518,7 +5543,7 @@ function renderBar() {
   }
   const modes = `<button data-cmode="0"${vis.cornerMove ? '' : ' class="on"'}>Drehen</button><button data-cmode="1"${vis.cornerMove ? ' class="on"' : ''}>Verschieben</button>`;
   if (corner && !nm) bar.innerHTML = `<span>Eckpunkt</span>${modes}`;
-  else if (bundleSel >= 0) bar.innerHTML = `<span>Rohr ${bundleSel + 2} · ${fmt(bundleGapOf(p, bundleSel))} mm zum Nachbarn</span><button data-bb="own">Aus Bündel lösen</button>${p.bundle.length > 1 ? '<button data-bb="ownall">Bündel auflösen</button>' : ''}<button data-bb="guide">In Anleitung zeigen</button><button data-bb="del" class="danger">Löschen</button>`;
+  else if (bundleSel >= 0) bar.innerHTML = `<span>Rohr ${bundleSel + 2} · ${fmt(bundleGapOf(p, bundleSel))} mm zum Nachbarn</span><button data-bb="own">Aus Bündel lösen</button>${p.bundle.length > 1 ? '<button data-bb="ownall">Bündel auflösen</button>' : ''}<button data-bb="guide">In Anleitung zeigen</button><button class="icbtn danger" data-bb="del" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
   else if (nm) {
     const cur = p.bundleTx.find(t => t.bend === selCorner - 1)?.rot ?? 0;
     bar.innerHTML = `<span>Eckpunkt</span>${modes}<i class="bsep"></i><span>Bündel danach:</span>${[[0, nm[0]], [1, nm[1]], [-1, nm[-1]]].map(([r, t]) => `<button data-tx="${r}"${r === cur ? ' class="on"' : txProblem(p, selCorner - 1, r) ? ' class="off"' : ''}>${t}</button>`).join('')}`;
@@ -5624,10 +5649,10 @@ function createPick(c) {
 }
 function renderCreateBar(bar) {
   bar.hidden = false;
-  const isFit = create.kind === 'fit', isEx = create.kind === 'ex', cancel = '<button data-co="cancel">Abbrechen</button>', list = isFit ? db.fittings : db.pipeTypes;
+  const isFit = create.kind === 'fit', isEx = create.kind === 'ex', cancel = `<button class="icbtn" data-co="cancel" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`, list = isFit ? db.fittings : db.pipeTypes;
   const type = list.length > 1 ? `<button data-co="type">${esc(isFit ? fitLib(create.libId).name : typeOf({ typeId: create.typeId }).name)}</button>` : '';
   if (create.step === 'ref') { bar.innerHTML = `<span class="bprompt">${esc(createCands().find(c => c.id === create.hover)?.name || `${isFit ? 'Fitting' : isEx ? 'Bestandsrohr' : 'Rohr'}: Punkt wählen`)}</span>${type}${cancel}`; return; }
-  bar.innerHTML = `<span>Von ${esc(create.ref.name)}</span>${[0, 1, 2].map(k => `<button data-co="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(create.off[k])}</button>`).join('')}${lastOff ? '<button data-co="last">Wie zuletzt</button>' : ''}<button data-co="ref">Anderer Bezug</button>${type}${cancel}<button data-co="ok" class="on">OK</button>`;
+  bar.innerHTML = `<span>Von ${esc(create.ref.name)}</span>${[0, 1, 2].map(k => `<button data-co="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(create.off[k])}</button>`).join('')}${lastOff ? '<button data-co="last">Wie zuletzt</button>' : ''}<button data-co="ref">Anderer Bezug</button>${type}${cancel}<button class="icbtn on" data-co="ok" title="Übernehmen" aria-label="Übernehmen">${IC('check')}</button>`;
 }
 function placeEx() {
   const { typeId, ref } = create, x = { id: uid(), name: `Bestand ${exOf().length + 1}`, typeId, pos: createPos(), dir: [1, 0, 0], len: db.exLen };
@@ -5851,14 +5876,22 @@ function dockTargets() {
   exOf().filter(x => !x.hidden).forEach(x => [0, 1].forEach(i => out.push({ ...linkEnd(`X:${x.id}:${i}`), to: `X:${x.id}:${i}` })));
   return out;
 }
-function dockNear(f) {
+// freeOnly: nur noch offene Anschlüsse und Rohrenden, die nicht schon an diesem Fitting hängen
+function dockNear(f, freeOnly = false) {
   let best = null, bd = hitTol(14);
-  const targets = dockTargets();
-  for (const o of fitPorts(f)) {
+  const used = new Set((f.links || []).map(L => L.to)), targets = dockTargets().filter(t => !freeOnly || !used.has(t.to));
+  for (const o of fitPorts(f).filter(o => !freeOnly || !(f.links || []).some(L => L.port === o.i))) {
     const [x, y] = view.P3(o.p);
     for (const t of targets) { const [a, b] = view.P3(t.T), d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = { ...t, port: o.i }; } }
   }
   return best;
+}
+// Rohrende, das an einem offenen Anschluss liegt (im Bild nah oder im Raum unter 1 mm)
+function portTarget(f, i) {
+  const o = fitPorts(f)[i], used = new Set((f.links || []).map(L => L.to)), [x, y] = view.P3(o.p);
+  let best = null, bd = Infinity;
+  for (const t of dockTargets().filter(t => !used.has(t.to))) { const [a, b] = view.P3(t.T), d = Math.min(Math.hypot(a - x, b - y), V.len(V.sub(t.T, o.p)) < 1 ? 0 : Infinity); if (d < bd) { bd = d; best = t; } }
+  return bd < hitTol(14) ? best : null;
 }
 const dockCands = () => fitsOf().flatMap(f => fitPorts(f).map(o => ({ id: `${f.id}:${o.i}`, pos: o.p, fit: f.id, port: o.i, D: o.D })));
 function dockChoose(c) {
@@ -5882,7 +5915,9 @@ const linkName = to => { const [w, id] = to.split(':'); return w === 'X' ? exByI
 function renderFitBar(bar) {
   const f = fitById(selFit), l = fitLib(f.libId), d = fitD(f), n = f.links?.length || 0, fixed = objFixed({ t: 'fit', id: f.id });
   bar.hidden = false;
-  bar.innerHTML = `<span>${esc(l?.name || 'Fitting')}${n ? ` · verbunden mit ${esc(f.links.map(L => linkName(L.to)).join(', '))}` : ''}${fixed ? ' · fest' : ''}</span>${d?.link && n === 1 && l.ports.length > 1 ? `<button data-fi="port">Anschluss ${d.port + 1}</button>` : ''}${n ? '<button data-fi="free">Lösen</button>' : ''}${n ? '<button data-fi="strand">Ganzer Strang</button>' : ''}${n ? '<i class="bsep"></i>' : ''}<button class="icbtn" data-fi="copy" title="Kopieren" aria-label="Kopieren">${IC('copy')}</button><button class="lockbtn${f.locked ? '' : ' open'}" data-fi="lock" title="Sperren" aria-label="Sperren" aria-pressed="${!!f.locked}">${lockIcon(f.locked)}</button><button data-fi="del" class="danger icbtn" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
+  // Je Anschluss ein Knopf: verbunden (Kette) löst ein Tipp, offen (gebrochene Kette) verbindet mit dem Rohrende, das dort liegt
+  const chips = (l?.ports || []).map((_, i) => { const L = f.links?.find(x => x.port === i), t = L ? `Anschluss ${i + 1}: verbunden mit ${linkName(L.to)} – lösen` : `Anschluss ${i + 1}: offen – verbinden`; return `<button class="icbtn pchip${L ? ' on' : ''}" data-fi="p${i}" title="${esc(t)}" aria-label="${esc(t)}">${i + 1}${IC(L ? 'link' : 'unlink')}</button>`; }).join('');
+  bar.innerHTML = `<span>${esc(l?.name || 'Fitting')}${fixed ? ' · fest' : ''}</span>${chips}${d?.link && n === 1 && l.ports.length > 1 ? `<button class="icbtn" data-fi="port" title="Anderen Anschluss ans Rohr" aria-label="Anderen Anschluss ans Rohr">${IC('swap')}</button>` : ''}${n ? '<button data-fi="strand">Ganzer Strang</button>' : ''}<i class="bsep"></i><button class="icbtn" data-fi="copy" title="Kopieren" aria-label="Kopieren">${IC('copy')}</button><button class="lockbtn${f.locked ? '' : ' open'}" data-fi="lock" title="Sperren" aria-label="Sperren" aria-pressed="${!!f.locked}">${lockIcon(f.locked)}</button><button data-fi="del" class="danger icbtn" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
 }
 function fitAct(a) {
   const f = fitById(selFit), d = f && fitD(f);
@@ -5892,7 +5927,15 @@ function fitAct(a) {
   if (a === 'strand') { const s = strandOf({ t: 'fit', id: f.id }); startMulti(); objs = s; renderBundleBar(); draw(); return; }
   commit();
   if (a === 'lock') { f.locked = !f.locked; if (f.locked) selFit = null; }
-  if (a === 'free') { f.links = []; fitDock = null; toast('Verbindung gelöst.'); }
+  if (a[0] === 'p' && a !== 'port') {
+    const i = +a.slice(1), L = f.links?.find(x => x.port === i);
+    if (L) { f.links = f.links.filter(x => x !== L); fitDock = null; toast(`Anschluss ${i + 1} gelöst.`); }
+    else {
+      const t = portTarget(f, i);
+      if (!t) { toast(`Kein Rohrende an Anschluss ${i + 1}. Rohrende heranziehen oder das Fitting verschieben.`); return; }
+      addLink(f, i, t.to); toast(`Anschluss ${i + 1} verbunden mit ${linkName(t.to)}.`);
+    }
+  }
   if (a === 'port') { const n = (d.port + 1) % fitLib(f.libId).ports.length; dockFit(f, n, d.T, d.u); f.links[0].port = n; fitDock = null; }
   recompute(); save(); renderBundleBar(); draw();
 }
@@ -5904,21 +5947,24 @@ function drawFit(P3) {
     knob(ax, ay, 8, css('--accent'));
     ctx.save(); ctx.fillStyle = '#fff'; ctx.font = '700 10px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.i + 1, ax, ay + 0.5); ctx.restore();
   });
-  if (fixed) return;
-  // Ein Griff wie in Fusion: Pfeile verschieben, Bögen außen drehen. Die Griffe beginnen außerhalb des Fittings
+  // Verbunden dreht es um eines seiner Rohre; je Rohr ein Ring, wenn alles andere Verbundene mitschwenken kann.
+  // Hängt es an einem Gesperrten, bleibt nur der Ring um dieses: Drehen darum bewegt es nicht, Verschieben schon
+  const spins = f.locked ? [] : (f.links || []).map((L, i) => { const e = linkEnd(L.to); return e && f.links.every((M, j) => j === i || canFollow(M.to, f)) ? { i, e } : null; }).filter(Boolean);
+  if (f.locked || (fixed && !spins.length)) return;
   // Der Griff beginnt außerhalb des Fittings. Gemessen im Raum, nicht im Bild: sonst wüchse und schrumpfte der Griff samt Kugel beim Drehen
   const m = d ? d.T : fitPivot(f) || fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => V.len(V.sub(q, m)))) * view.sc, gap = Math.max(18, r + 10);
-  if (!gz || gz.type === 'fmove') knob(mx, my, 4, css('--accent'));
+  if (!fixed && (!gz || gz.type === 'fmove')) knob(mx, my, 4, css('--accent'));
   // Angedockt dreht es um das Rohr, sonst um die festgelegte Achse oder frei um alle drei. Zwei Rohre halten es fest. Ringe zuerst, die Pfeile liegen obenauf
-  const u = d?.u || ax?.n, side = u && V.norm(V.cross(u, Math.abs(u[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
-  if (!(f.links?.length > 1)) rotHandles(c, u ? [[side, V.cross(u, side), u]] : SPIN_AX, gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, ...g }), 'frot');
-  axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
+  const ring = u => { const side = V.norm(V.cross(u, Math.abs(u[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0])); return [side, V.cross(u, side), u]; };
+  if (!f.links?.length) rotHandles(c, ax ? [ring(ax.n)] : SPIN_AX, gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, ...g }), 'frot');
+  else spins.forEach((sp, j) => rotHandles(sp.e.T, [ring(sp.e.u)], gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, link: sp.i, ...g }), 'frot', j));
+  if (!fixed) axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
 }
 // Drehgriffe: kurze Bögen in Achsfarbe zwischen den Pfeilen. Angefasst wächst der Bogen zum Ring, losgelassen schrumpft er zurück
 // Radius der Drehkugel vom Griffbeginn aus: außerhalb der Verschiebepfeile (die enden bei etwa 44 px)
 const ROT_GAP = 62;
 const SHOW_HALO = true; // Hof der Drehkugel
-function rotHandles(A, axes, px, make, type) {
+function rotHandles(A, axes, px, make, type, k0 = 0) {
   // Die Kugel, auf der die Drehringe liegen: ein dezenter Hof, nach außen etwas dichter, mit feinem Rand
   const haloA = (gz ? (gz.type === type ? 1 : 1 - grabE) : relE) * handA;
   if (SHOW_HALO && haloA > 0.02 && axes.length > 1) {
@@ -5927,7 +5973,8 @@ function rotHandles(A, axes, px, make, type) {
     ctx.save(); ctx.globalAlpha = haloA; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, px, 0, 7); ctx.fill();
     ctx.strokeStyle = `rgba(${c},0.09)`; ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
   }
-  axes.forEach(([a, b, n], k) => {
+  axes.forEach(([a, b, n], i) => {
+    const k = k0 + i;
     const mine = gz?.type === type && gz.k === k, rel = !gz && gzRel?.type === type && gzRel.k === k, col = axisColor(n);
     const r = mine ? gz.r : px / view.sc;
     if (mine && grabE >= 1) { ballRing(A, a, b, r, col, false); return; }
@@ -5973,7 +6020,8 @@ function objPts(o) {
 function objCenter(o) {
   const q = objPts(o);
   if (o.t !== 'pipe') return q[0];
-  return [0, 1, 2].map(k => (Math.min(...q.map(c => c[k])) + Math.max(...q.map(c => c[k]))) / 2);
+  // Schwerpunkt der Rohrpunkte: dreht starr mit, beim Drehen darum bleibt er stehen (die Mitte des Umrisskastens wanderte)
+  return meanOf(q);
 }
 const objAnchor = o => { const q = objPts(o); return q[(o.a ?? (o.at === 'E' ? q.length - 1 : 0)) % q.length]; };
 const meanOf = q => q.reduce(V.add).map(v => v / q.length);
@@ -6078,7 +6126,7 @@ function renderObjBar(bar) {
   objs = objs.filter(objGet);
   const n = objs.length, end = '';
   bar.hidden = false;
-  if (pivotPick) { bar.innerHTML = '<span class="bprompt">Drehpunkt: Punkt tippen</span><button data-ob="pivno">Abbrechen</button>'; return; }
+  if (pivotPick) { bar.innerHTML = `<span class="bprompt">Drehpunkt: Punkt tippen</span><button class="icbtn" data-ob="pivno" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
   if (!n) { bar.innerHTML = `<span class="bprompt">Objekte antippen</span>${end}`; return; }
   const ref = objs.at(-1), fixed = objs.filter(objFixed).length, one = n === 1 && ref;
   const title = (n > 1 ? `${n} Objekte · Bezug: ${objName(ref)}` : objName(ref)) + (fixed ? (n > 1 ? ` · ${fixed} fest, ${fixed > 1 ? 'bleiben' : 'bleibt'} stehen` : ' · gesperrt') : '');
@@ -6205,14 +6253,29 @@ function pasteAt(T) {
     const n = { ...structuredClone(q), id: uid(), name: `Rohr ${scenePipes().length + 1}`, origin: V.add(q.origin, d), startFixed: false, endFixed: false, locked: false, hidden: false, done: {}, refs: null };
     ids[q.id] = n.id; addPipe(n, sid); made.push({ t: 'pipe', id: n.id });
   });
-  const reTo = to => to.replace(/^([SE]):(.+)$/, (m, w, id) => (ids[id] ? `${w}:${ids[id]}` : ''));
+  // Neue Kennungen der Bestandsstücke vorab, damit Verbindungen der kopierten Fittings auf die Kopien zeigen.
+  // Verbindungen zu nicht Mitkopiertem entfallen, auch zu Bestandsrohren: Sonst zöge die Verbindung die Kopie auf das Original zurück
+  ex.forEach(x => { ids[x.id] = uid(); });
+  const reTo = to => { const [w, id, end] = to.split(':'); return ids[id] ? (w === 'X' ? `X:${ids[id]}:${end}` : `${w}:${ids[id]}`) : ''; };
   fits.forEach(f => {
     const n = { ...structuredClone(f), id: uid(), pos: V.add(f.pos, d), locked: false, hidden: false };
     n.links = (f.links || []).map(L => ({ ...L, to: reTo(L.to) })).filter(L => L.to);
     (sc.fittings ||= []).push(n); made.push({ t: 'fit', id: n.id });
   });
-  ex.forEach(x => { const n = { ...structuredClone(x), id: uid(), name: `Bestand ${exOf().length + 1}`, pos: V.add(x.pos, d), locked: false, hidden: false }; exOf().push(n); made.push({ t: 'ex', id: n.id }); });
+  ex.forEach(x => { const n = { ...structuredClone(x), id: ids[x.id], name: `Bestand ${exOf().length + 1}`, pos: V.add(x.pos, d), locked: false, hidden: false }; exOf().push(n); made.push({ t: 'ex', id: n.id }); });
   planes.forEach(pl => { const n = { ...structuredClone(pl), id: uid(), locked: false, hidden: false, ref: null }; [0, 1, 2].forEach(k => { n[planeKey(n, k)] += d[k]; }); sc.planes.push(n); made.push({ t: 'plane', id: n.id }); });
+  // Eingefügte Fittings docken an, wo ein freier Anschluss genau auf einem freien Rohrende sitzt und in dessen Richtung zeigt
+  let docked = 0;
+  made.filter(o => o.t === 'fit').forEach(o => {
+    const f = fitById(o.id);
+    fitPorts(f).forEach(port => {
+      if ((f.links || []).some(L => L.port === port.i)) return;
+      const taken = new Set(fitsAll().flatMap(x => (x.links || []).map(L => L.to)));
+      const t = dockTargets().find(t => !taken.has(t.to) && V.len(V.sub(t.T, port.p)) < 0.5 && V.dot(port.d, t.u) < -0.98);
+      if (t) { addLink(f, port.i, t.to); docked++; }
+    });
+  });
+  if (docked) toast(docked === 1 ? 'Kopie angedockt.' : `Kopie an ${docked} Rohrenden angedockt.`);
   // Der Befehl bleibt offen: Jeder weitere Tipp oder „Einfügen“ setzt die nächste Kopie, „Fertig“ beendet
   copyC.last = made; copyC.made = [...(copyC.made || []), ...made];
   refit(); recompute(); save(); renderBundleBar(); draw();
@@ -6246,12 +6309,11 @@ function placeEdit(o, base) {
   copyC = { step: 'edit', place: true, base, off: V.sub(objGet(o).pos, base).map(v => r1(v)), last: [o], made: [o], items: { pipes: [], fits: [], ex: [], planes: [] }, pts: [], list: [] };
   renderBundleBar(); draw();
 }
-function copyDone(keep = true) {
-  const made = keep ? copyC?.made : null;
+function copyDone() {
   copyC = null;
   selFit = null;
-  // Die Kopien bleiben gewählt, der Modus „Auswählen“ aber nicht: Der nächste Tipp wählt wieder ein einzelnes Objekt
-  objs = made ? made.filter(objGet) : []; multi = false;
+  // Danach ist nichts gewählt, auch die Kopien nicht; der Modus „Auswählen“ endet
+  objs = []; multi = false;
   recompute(); renderBundleBar(); draw();
 }
 function drawCopy(P3) {
@@ -6282,7 +6344,7 @@ function copyTap(x, y) {
   if (copyC.step === 'ref') {
     let best = null, bd = hitTol(22);
     copyC.pts.forEach(q => { const [a, b] = view.P3(q), d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = q; } });
-    if (best) setBase(best);
+    if (best) setBase(best); else if (!hitObj(x, y)) copyEnd(); // Tipp ins Leere beendet
     return;
   }
   const d = hitDim(x, y, copyHits());
@@ -6294,10 +6356,13 @@ function copyTap(x, y) {
   if (copyC.ortho) {
     if (onCopyTarget(x, y)) copyPut(); // Tipp auf den Zielpunkt am Gimbal setzt die Kopie dort ab
     else if (c) { copyC.off = V.sub(c.pos, copyC.from || copyC.base); renderBundleBar(); draw(); }
+    else if (!hitObj(x, y)) copyEnd();
     return;
   }
-  if (c) pasteAt(c.pos);
+  if (c) pasteAt(c.pos); else if (!hitObj(x, y)) copyEnd();
 }
+// Tipp ins Leere: mit Kopien wie ✓, ohne wie ✕
+const copyEnd = () => { if (copyC.made?.length) copyDone(); else { copyC = null; renderBundleBar(); draw(); } };
 // Orthogonal: Zielpunkt der Kopie am Gimbal
 const copyTarget = () => V.add(copyC.from || copyC.base, copyC.off);
 const onCopyTarget = (x, y) => { const [a, b] = view.P3(copyTarget()); return Math.hypot(a - x, b - y) < hitTol(14); };
@@ -6525,6 +6590,13 @@ function linkFixed(to) {
   const q = pipeById(id);
   return !!q && !!(q.locked || (w === 'S' ? q.startFixed : q.endFixed));
 }
+// Verbundenes als Objekt; kann es beim Drehen des Fittings mitschwenken? (frei, nicht gesperrt, an keinem anderen Fitting)
+const linkObj = to => { const [w, id] = to.split(':'); return w === 'X' ? { t: 'ex', id } : { t: 'pipe', id }; };
+function canFollow(to, f) {
+  const [w, id] = to.split(':'), v = w === 'X' ? exById(id) : pipeById(id);
+  if (!v || v.locked || (w !== 'X' && (v.startFixed || v.endFixed))) return false;
+  return !fitsAll().some(o => o !== f && (o.links || []).some(L => L.to.split(':')[1] === id));
+}
 const linkAlive = to => { const [w, id] = to.split(':'); return !!(w === 'X' ? exById(id) : pipeById(id)); };
 function setLinkEnd(to, T) {
   const [w, id, i] = to.split(':');
@@ -6704,7 +6776,7 @@ function measureEditDim(d) {
   inp.addEventListener('blur', () => finish(true));
 }
 function renderMeasureBar(bar) {
-  const { a, b, hover } = measure, m = measureResult(), end = '<button data-me="end">Fertig</button>';
+  const { a, b, hover } = measure, m = measureResult(), end = `<button class="icbtn" data-me="end" title="Fertig" aria-label="Fertig">${IC('check')}</button>`;
   bar.hidden = false;
   if (!m) { bar.innerHTML = `<span class="bprompt">${esc(createCands(true).find(c => c.id === hover)?.name || (a ? `Von ${a.name}: Punkt 2 wählen` : 'Messen: Punkt 1 wählen'))}</span>${end}`; return; }
   const vals = m.axes.map(k => `<span class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(m.d[k])}</span>`).join('');
@@ -6853,7 +6925,7 @@ function renderBrowser() {
   };
   const planes = sc.planes.map((pl, i) => row(1, { eye: `pl:${pl.id}`, off: pl.hidden, lock: { id: pl.id, on: !!pl.locked }, go: `pl:${pl.id}`, t: `R${i + 1}`, m: `${'XYZ'[pl.axis]}-Ebene`, on: selPlane === pl.id, acts: { k: `pl:${pl.id}`, b: [['del', 'Löschen', 'danger']] } })).join('');
   box.innerHTML = `<div class="thead"><b>${esc(sc.name)}</b><button class="tmore" data-tm="scene" aria-label="Aktionen">⋮</button><button id="brClose" aria-label="Projektmanager schließen">${IC('x')}</button></div>
-    ${treeMenu === 'scene' ? `<div class="tacts"><button data-ta="ren" data-k="scene">Umbenennen</button><button data-ta="dup" data-k="scene">Duplizieren</button><button data-ta="del" data-k="scene" class="danger">Löschen</button></div>` : ''}
+    ${treeMenu === 'scene' ? `<div class="tacts"><button class="icbtn" data-ta="ren" data-k="scene" title="Umbenennen" aria-label="Umbenennen">${IC('edit')}</button><button data-ta="dup" data-k="scene">Duplizieren</button><button class="icbtn danger" data-ta="del" data-k="scene" title="Löschen" aria-label="Löschen">${IC('trash')}</button></div>` : ''}
     ${row(0, { eye: 'or', off: !vis.origin, t: 'Ursprung' })}
     ${row(0, { tg: 'pipes', open: open('pipes', true), t: 'Rohre', m: pipes.length })}${open('pipes', true) ? pipes.map(pipeRows).join('') : ''}
     ${row(0, { tg: 'planes', open: open('planes', true), t: 'Ebenen', m: sc.planes.length })}${open('planes', true) ? planes : ''}

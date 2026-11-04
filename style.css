@@ -145,7 +145,8 @@ table.det th:first-child, table.det td:first-child { text-align: left; }
 .scroll-x { overflow-x: auto; }
 
 /* 3D */
-.viewwrap { position: relative; height: calc(100dvh - var(--tabh) - 24px - env(safe-area-inset-top)); min-height: 320px; background: linear-gradient(var(--canvas-top), var(--canvas-end)); border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; margin: 12px 16px; }
+/* Die 3D-Fläche ist randlos: alles Bedienbare schwebt darüber, ein Rahmen würde nur Platz kosten */
+.viewwrap { position: relative; height: calc(100dvh - var(--tabh) - env(safe-area-inset-top)); min-height: 320px; background: linear-gradient(var(--canvas-top), var(--canvas-end)); overflow: hidden; margin: 0; }
 #cv, #cvBg, #cvGL { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #cv { touch-action: none; cursor: grab; }
 .alt { font-size: 13px; color: var(--muted); }
@@ -175,9 +176,9 @@ table.det th:first-child, table.det td:first-child { text-align: left; }
 
 /* Zweispaltig nur mit genug Höhe; Handys quer (auch über 900 px breit) nutzen Reiter + volle 3D-Fläche */
 @media (min-width: 900px) and (min-height: 521px) {
-  .layout { display: grid; grid-template-columns: minmax(380px, 520px) 1fr; }
+  .layout { display: grid; grid-template-columns: minmax(380px, 520px) 1fr; max-width: none; } /* 3D bis an den rechten Rand */
   #tab-view { display: block; }
-  .viewwrap { position: sticky; top: 12px; height: calc(100dvh - var(--tabh) - 24px); }
+  .viewwrap { position: sticky; top: 0; height: calc(100dvh - var(--tabh) - env(safe-area-inset-top)); border-left: 1px solid var(--line); }
   .only-mobile { display: none !important; }
 }
 @media (max-width: 420px) {
@@ -197,7 +198,7 @@ button { touch-action: pan-x pan-y; }
   main { padding: 10px 12px; }
   main:has(> .tab.active) { padding-top: 64px; }
   /* Ansichtsbuttons als eine Leiste über die volle Breite – alle sieben passen ohne Wischen */
-  .viewwrap { margin: 8px; height: calc(100dvh - var(--tabh) - 16px - env(safe-area-inset-top)); }
+  .viewwrap { height: calc(100dvh - var(--tabh) - env(safe-area-inset-top)); }
   .legend { display: none; }
 }
 
@@ -211,7 +212,7 @@ button { touch-action: pan-x pan-y; }
     border-top: 0; border-right: 1px solid var(--line); padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   .tabbar button { flex: none; min-height: 62px; }
-  .viewwrap { margin: 6px 8px; height: calc(100dvh - 12px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: 0; }
+  .viewwrap { height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); min-height: 0; }
   .legend { display: none; }
   /* Maße-Feld rechts statt unten, damit das Rohr sichtbar bleibt */
   .legpanel { left: auto; right: 8px; top: 46px; bottom: 8px; width: min(340px, 48%); margin: 0; overflow-y: auto; }
@@ -404,6 +405,7 @@ body:not(.lab) .labonly { display: none !important; }
 @media (min-width: 900px) and (min-height: 521px) {
   body[data-tab="view"] .layout { grid-template-columns: 1fr; max-width: none; }
   body[data-tab="view"] main { display: none; }
+  body[data-tab="view"] .viewwrap { border-left: 0; }
 }
 
 /* Leiste für Punkte, Ebenen, Rohre: Sie bricht um, nichts liegt außerhalb des Bildschirms */
@@ -662,3 +664,15 @@ body[data-tab="tools"] .floatbar { display: none; }
 .ped-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--bg); }
 .ped-cmd .ped-seg button { border: 0; background: transparent; min-height: 32px; padding: 2px 10px; font-size: 13px; }
 .ped-cmd .ped-seg button.on { background: var(--accent); color: #fff; }
+#bundleBar button.pchip { display: inline-flex; align-items: center; gap: 2px; padding: 0 8px; font-size: 13px; font-weight: 700; }
+#bundleBar button.pchip .ic { width: 16px; height: 16px; }
+
+.fitgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; padding: 4px; width: min(420px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; }
+.fittile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.fittile .fitprev { height: 96px; }
+.fittile.on { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Symbolknöpfe überall gleich: ✕ Abbrechen, ✓ Fertig, Papierkorb Löschen, Stift Umbenennen */
+button.icbtn { display: inline-grid; place-items: center; min-width: 40px; padding: 0 8px; }
+button.icbtn .ic { width: 19px; height: 19px; }
+.tacts button.icbtn { min-width: 36px; }

@@ -133,14 +133,14 @@
         <button class="mi" data-ax="2"><span class="mdot" style="background:var(--ax-z)"></span>Z-Achse</button>
       </div>
       <div class="legpanel" id="legPanel" hidden>
-        <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" aria-label="Fertig">Fertig</button></div>
+        <div class="lp-head"><b id="lpTitle">Schenkel</b><button id="lpClose" class="icbtn" title="Fertig" aria-label="Fertig"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></button></div>
         <div class="row2">
           <label>Achsmaß (mm)<input id="lpLen" inputmode="decimal"></label>
           <label>Richtung in Ansicht<select id="lpDir"></select></label>
         </div>
         <p class="hint" id="lpNote"></p>
         <label id="lpBundleL" class="lpbundle" hidden>Bündel auf diesem Schenkel<select id="lpBundle"></select></label>
-        <div class="btnrow"><button id="lpIns">+ Danach einfügen</button><button id="lpOff">Versatz</button><button id="lpDel" class="danger">Löschen</button></div>
+        <div class="btnrow"><button id="lpIns">+ Danach einfügen</button><button id="lpOff">Versatz</button><button id="lpDel" class="danger icbtn" title="Löschen" aria-label="Löschen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg></button></div>
       </div>
     </div>
   </aside>
@@ -157,13 +157,13 @@
 <div class="modal" id="askDlg" hidden>
   <div class="askbox" role="alertdialog" aria-modal="true" aria-labelledby="askMsg">
     <p id="askMsg"></p>
-    <div class="askrow"><button id="askNo">Abbrechen</button><button id="askYes"></button></div>
+    <div class="askrow"><button id="askNo" class="icbtn" title="Abbrechen" aria-label="Abbrechen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button><button id="askYes"></button></div>
   </div>
 </div>
 
 <div class="modal" id="offDlg" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="offTitle">
-    <div class="lp-head"><b id="offTitle">Versatz</b><button id="offCancel">Abbrechen</button></div>
+    <div class="lp-head"><b id="offTitle">Versatz</b><button id="offCancel" class="icbtn" title="Abbrechen" aria-label="Abbrechen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div class="sheet-body"><div>
     <div class="lbl">Biegewinkel</div>
     <div class="seg" id="offAng">
@@ -187,7 +187,7 @@
 
 <div class="modal" id="newDlg" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="newTitle">
-    <div class="lp-head"><b id="newTitle">Neues Rohr</b><button id="newCancel">Abbrechen</button></div>
+    <div class="lp-head"><b id="newTitle">Neues Rohr</b><button id="newCancel" class="icbtn" title="Abbrechen" aria-label="Abbrechen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div id="newBody"></div>
     <button id="newOk" class="primary" style="width:100%;margin-top:12px">Rohr anlegen</button>
   </div>
