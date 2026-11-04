@@ -5906,36 +5906,45 @@ function drawFit(P3) {
   });
   if (fixed) return;
   // Ein Griff wie in Fusion: Pfeile verschieben, Bögen außen drehen. Die Griffe beginnen außerhalb des Fittings
-  const m = d ? d.T : fitPivot(f) || fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => { const [a, b] = P3(q); return Math.hypot(a - mx, b - my); })), gap = Math.max(18, r + 10);
+  // Der Griff beginnt außerhalb des Fittings. Gemessen im Raum, nicht im Bild: sonst wüchse und schrumpfte der Griff samt Kugel beim Drehen
+  const m = d ? d.T : fitPivot(f) || fitCenter(f), [mx, my] = P3(m), r = Math.max(...fitCorners(f).map(q => V.len(V.sub(q, m)))) * view.sc, gap = Math.max(18, r + 10);
   if (!gz || gz.type === 'fmove') knob(mx, my, 4, css('--accent'));
-  axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
-  // Angedockt dreht es um das Rohr, sonst um die festgelegte Achse oder frei um alle drei. Zwei Rohre halten es fest
-  if (f.links?.length > 1) return;
+  // Angedockt dreht es um das Rohr, sonst um die festgelegte Achse oder frei um alle drei. Zwei Rohre halten es fest. Ringe zuerst, die Pfeile liegen obenauf
   const u = d?.u || ax?.n, side = u && V.norm(V.cross(u, Math.abs(u[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
-  rotHandles(c, u ? [[side, V.cross(u, side), u]] : SPIN_AX, gap + 52, g => ({ type: 'frot', fit: f.id, ...g }), 'frot');
+  if (!(f.links?.length > 1)) rotHandles(c, u ? [[side, V.cross(u, side), u]] : SPIN_AX, gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, ...g }), 'frot');
+  axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
 }
 // Drehgriffe: kurze Bögen in Achsfarbe zwischen den Pfeilen. Angefasst wächst der Bogen zum Ring, losgelassen schrumpft er zurück
+// Radius der Drehkugel vom Griffbeginn aus: außerhalb der Verschiebepfeile (die enden bei etwa 44 px)
+const ROT_GAP = 62;
+const SHOW_HALO = true; // Hof der Drehkugel
 function rotHandles(A, axes, px, make, type) {
+  // Die Kugel, auf der die Drehringe liegen: ein dezenter Hof, nach außen etwas dichter, mit feinem Rand
+  const haloA = (gz ? (gz.type === type ? 1 : 1 - grabE) : relE) * handA;
+  if (SHOW_HALO && haloA > 0.02 && axes.length > 1) {
+    const [cx, cy] = view.P3(A), c = hex(css('--text')).join(','), g = ctx.createRadialGradient(cx, cy, px * 0.6, cx, cy, px);
+    g.addColorStop(0, `rgba(${c},0)`); g.addColorStop(1, `rgba(${c},0.04)`);
+    ctx.save(); ctx.globalAlpha = haloA; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, px, 0, 7); ctx.fill();
+    ctx.strokeStyle = `rgba(${c},0.09)`; ctx.lineWidth = 1; ctx.stroke(); ctx.restore();
+  }
   axes.forEach(([a, b, n], k) => {
-    const mine = gz?.type === type && gz.k === k, rel = !gz && gzRel?.type === type && gzRel.k === k, r = mine ? gz.r : px / view.sc, col = axisColor(n);
+    const mine = gz?.type === type && gz.k === k, rel = !gz && gzRel?.type === type && gzRel.k === k, col = axisColor(n);
+    const r = mine ? gz.r : px / view.sc;
     if (mine && grabE >= 1) { ballRing(A, a, b, r, col, false); return; }
     // Ein Ring, den man von der Kante sieht, dreht um eine Achse quer zur Ansicht: in 2D-Ansichten weglassen
     if (!mine && !rel && isOrtho() && Math.abs(V.dot(n, viewDir())) < 0.01) return;
     const at = t => V.add(A, V.add(V.mul(a, r * Math.cos(t * Math.PI / 180)), V.mul(b, r * Math.sin(t * Math.PI / 180))));
-    const front = [45, 135, 225, 315].reduce((m, t) => (project(at(t)).z < project(at(m)).z ? t : m), 45); // die Seite zum Betrachter
-    const mid = mine ? gz.mid ?? front : rel ? gzRel.mid ?? front : front, span = mine ? 30 + 150 * grabE : rel ? 180 - 150 * relE : 30;
+    // Wie in Unity und Maya: jeder Drehgriff ist die vordere Hälfte seines Rings auf der Kugel. Er dreht sich starr mit der Ansicht, seine Enden
+    // berühren den Kugelrand. Von vorne gesehen (Blick entlang der Achse) ist der ganze Ring vorne und wird als ganzer Kreis gezeigt
+    const w = V.mul(viewDir(), -1), wa = V.dot(w, a), wb = V.dot(w, b), h = Math.hypot(wa, wb);
+    // je frontaler, desto weiter schließt sich der Halbring zum Kreis, ohne Sprung
+    const front = Math.atan2(wb, wa) * 180 / Math.PI, half = 90 + 90 * Math.max(0, Math.min(1, (0.3 - h) / 0.25));
+    const mid = mine ? gz.mid ?? front : rel ? gzRel.mid ?? front : front, span = mine ? half + (180 - half) * grabE : rel ? 180 - (180 - half) * relE : half;
     const alpha = mine || rel ? 1 : (gz ? 1 - grabE : relE) * handA;
     const arc = [];
-    for (let t = mid - span; t <= mid + span + 0.01; t += 5) arc.push(view.P3(at(t)));
+    for (let t = mid - span; t <= mid + span + 0.01; t += 4) arc.push(view.P3(at(t)));
     if (!mine && !rel && isOrtho() && arc.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - arc[i][0], q[1] - arc[i][1]), 0) < 18) return; // Ring von der Kante gesehen
-    if (alpha > 0.02) {
-      // Gebogener Doppelpfeil: schmaler als die Verschiebepfeile, mit Spitzen an beiden Enden
-      const head = (from, to) => { const l = Math.hypot(to[0] - from[0], to[1] - from[1]) || 1, ux = (to[0] - from[0]) / l, uy = (to[1] - from[1]) / l; ctx.beginPath(); ctx.moveTo(to[0] + ux * 6, to[1] + uy * 6); ctx.lineTo(to[0] - ux * 5 - uy * 6, to[1] - uy * 5 + ux * 6); ctx.lineTo(to[0] - ux * 5 + uy * 6, to[1] - uy * 5 - ux * 6); ctx.closePath(); ctx.fillStyle = col; ctx.fill(); };
-      ctx.save(); ctx.globalAlpha = alpha;
-      polyline(arc, col, 3);
-      if (span < 60) { head(arc[1], arc[0]); head(arc.at(-2), arc.at(-1)); }
-      ctx.restore();
-    }
+    if (alpha > 0.02) { ctx.save(); ctx.globalAlpha = alpha; polyline(arc, col, 2.5); ctx.restore(); }
     if (!gz) gizmo.push(make({ k, u: a, v: b, n, A, r, mid, poly: arc }));
   });
 }
@@ -6102,9 +6111,10 @@ function drawObjGrip(P3) {
   const cAcc = css('--accent');
   if (copyC || !objs.length || objs.every(objFixed)) return;
   const c = pivotOf(), [cx, cy] = P3(c), small = objs.length === 1 && objs[0].t === 'ex';
-  const gap = small ? Math.max(18, exEnds(objGet(objs[0])).reduce((m, q) => { const [a, b] = P3(q); return Math.max(m, Math.hypot(a - cx, b - cy)); }, 0) + 10) : 18;
+  // Beim Bestandsrohr beginnt der Griff hinter den Enden, gemessen im Raum: so bleibt die Kugel beim Drehen gleich groß
+  const gap = small ? Math.max(18, exEnds(objGet(objs[0])).reduce((m, q) => Math.max(m, V.len(V.sub(q, c))), 0) * view.sc + 10) : 18;
+  rotHandles(c, SPIN_AX, gap + ROT_GAP, g => ({ type: 'orot', ...g }), 'orot'); // Ringe zuerst, die Pfeile liegen obenauf
   axisArrows(c, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'omove', ...g }); }, null, gap, 'omove');
-  rotHandles(c, SPIN_AX, gap + 52, g => ({ type: 'orot', ...g }), 'orot');
   if (gz && gz.type !== 'opiv') return;
   knob(cx, cy, small ? 4 : 7, cAcc);
   if (!gz) gizmo.push({ type: 'opiv', at: [cx, cy], r: 9 });
