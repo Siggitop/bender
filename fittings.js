@@ -64,36 +64,6 @@ export function readGlb(buf) {
   return { pos: new Float32Array(pos.map(v => v * scale)), nor: new Float32Array(nor), col: new Float32Array(col), idx: new Uint32Array(idx), mn: mn.map(v => v * scale), mx: mx.map(v => v * scale) };
 }
 
-// Mündungen finden: Ein Ende ist eine ebene Stirnfläche mit einem Bohrungsring. Tiefe = wie weit diese Bohrung in das Fitting reicht
-export function detectPorts(mesh) {
-  const { pos, mn, mx } = mesh, n = pos.length / 3, ports = [];
-  for (let k = 0; k < 3; k++) for (const s of [1, -1]) {
-    const e = s > 0 ? mx[k] : mn[k], u = (k + 1) % 3, w = (k + 2) % 3, face = [];
-    for (let i = 0; i < n; i++) if (Math.abs(pos[i * 3 + k] - e) < 0.05) face.push(i);
-    if (face.length < 24) continue;
-    const pu = face.map(i => pos[i * 3 + u]), pw = face.map(i => pos[i * 3 + w]);
-    const cu = (Math.min(...pu) + Math.max(...pu)) / 2, cw = (Math.min(...pw) + Math.max(...pw)) / 2;
-    const rs = face.map((_, i) => Math.hypot(pu[i] - cu, pw[i] - cw)), r0 = Math.min(...rs);
-    if (r0 < 0.5) continue;
-    const ring = face.map((_, i) => i).filter(i => rs[i] - r0 < 0.06), q = new Set(ring.map(i => (pu[i] > cu ? 1 : 0) + (pw[i] > cw ? 2 : 0)));
-    if (ring.length < 12 || q.size < 4) continue;
-    // Eine Stirnfläche hat nur Bohrung und Außenkreis. Sechskantflächen haben Punkte über die ganze Breite
-    const rMax = Math.max(...rs);
-    if (rs.filter(r => r - r0 < 0.1 || rMax - r < 0.5).length < rs.length * 0.9) continue;
-    // Bohrung verfolgen: Punkte gleichen Radius bis zur tiefsten Stelle
-    let depth = 0;
-    for (let i = 0; i < n; i++) {
-      if (Math.abs(Math.hypot(pos[i * 3 + u] - cu, pos[i * 3 + w] - cw) - r0) < 0.06) depth = Math.max(depth, (e - pos[i * 3 + k]) * s);
-    }
-    // Durchgehende Bohrung (gerade Verschraubung): Der Anschlag sitzt in der Mitte
-    if (depth > (mx[k] - mn[k]) * 0.9) depth = (mx[k] - mn[k]) / 2;
-    const mouth = [0, 0, 0], d = [0, 0, 0];
-    mouth[k] = e; mouth[u] = cu; mouth[w] = cw; d[k] = s;
-    ports.push({ mouth, d, D: Math.round(r0 * 20) / 10, depth: Math.round(depth * 10) / 10 });
-  }
-  return ports;
-}
-
 // Modelle liegen in IndexedDB: localStorage wäre dafür zu klein
 const open = () => new Promise((res, rej) => {
   const r = indexedDB.open('biege-fittings', 1);

@@ -265,6 +265,36 @@ Schritt 0 und 2 kommen zuerst, weil alles andere darauf aufbaut. Jeder Schritt i
 4. **Tipp wählt Teil, Doppeltipp das ganze Rohr.** *Empfehlung: ja, es bleibt, wie du heute arbeitest.*
 5. **Bestandsstück:** Ø über Rohrtypen, Länge fest 50 mm mit Einstellung. *Empfehlung: ja.*
 
+## 18. Bauteil-Editor: Anschlüsse und Achsen aus der Geometrie
+
+Bisher wurden Anschlüsse geraten und mit pauschalen Feldern („Tiefe bis Rohranschlag“) nachgestellt. Das ist ungenau und für Schellen oder andere Teile unbrauchbar. Der Editor macht das Modell selbst zur Eingabe.
+
+**Vorbild:** Fusion 360. Dort heißt das „Joint Origin“ (ein Verbindungspunkt mit Richtung, gefangen an Kreismitten, Kanten und Flächen), dazu Konstruktionsachsen und -punkte und „Messen“ (ein oder zwei Elemente wählen, Werte erscheinen). Übernommen wird genau das, reduziert auf Rohranschlüsse.
+
+**Geometrie lesen (partgeom.js).** Eine GLB-Datei ist nur ein Dreiecksnetz. Daraus wird einmal beim Öffnen gewonnen:
+- **Kanten:** Dreieckskanten mit Knick über 32°. Facettierte Zylinder bleiben glatt, echte Kanten bleiben Kanten.
+- **Kreise:** Kantenzüge, deren Punkte auf einem Kreis in einer Ebene liegen. Geteilte Ringe werden zusammengelegt. Jeder Kreis hat Mittelpunkt, Normale und Ø.
+- **Gerade Kanten:** mit Endpunkten und Mitte.
+- **Ebene Flächen:** zusammenhängende Dreiecke gleicher Normale, mit Mitte und Normale.
+- **Fangpunkte:** Kreismitten, Eckpunkte, Kantenmitten, Flächenmitten.
+
+**Der Editor** öffnet sich ganzseitig aus Einstellungen → Fittings („Bearbeiten“) und direkt nach dem Import. Oben Name, Rückgängig, Fertig. In der Mitte das Modell, drehbar und zoombar wie die 3D-Ansicht. Unten eine Symbolleiste mit den Befehlen, darüber die Befehlsleiste mit Aufforderung und Feldern. Links eine Liste: Anschlüsse, Achsen, Punkte; Antippen wählt, Löschen dort.
+
+**Immer gilt:** Unter der Maus hebt sich hervor, was der Befehl gerade annimmt, mit kurzer Beschriftung („Kreis Ø 6,00“, „Kreismitte“, „Fläche“). „Durchsicht“ macht das Modell durchscheinend, damit innere Kreise (Bohrungsstufen) erreichbar sind; der Anschlag-Schritt schaltet sie von selbst ein.
+
+**Befehle:**
+1. **Messen:** ein Element zeigt seine Werte (Kreis: Ø und Mitte, Kante: Länge, Fläche: Normale und Inhalt, Punkt: Koordinaten). Zwei Elemente zeigen Abstand mit ΔX, ΔY, ΔZ, bei Achsen und Flächen auch Winkel und Abstand entlang der Achse. Die Messlinie steht im Bild.
+2. **Anschluss:** (a) Öffnung wählen: Kreis an der Mündung oder eine Achse. Richtung nach außen ergibt sich von selbst (die Seite ohne Material), ⇄ kehrt um. Ø kommt aus der Bohrung an der Öffnung und rastet auf übliche Rohrmaße. (b) Anschlag wählen: Kreis, Fläche oder Punkt; der Abstand entlang der Achse ist die Tiefe. Kreise auf derselben Achse werden mit ihrer Tiefe angeboten. Oder die Tiefe tippen. Ein durchsichtiges Rohrstück zeigt das Ergebnis.
+3. **Achse:** aus einem Kreis (durch die Mitte, senkrecht), einer geraden Kante, einer ebenen Fläche (Normale durch die Mitte) oder zwei Punkten.
+4. **Punkt:** ein Fangpunkt, verschoben um X, Y, Z oder um ein Maß entlang einer Achse. Punkte und Achsen dienen als Bezug für Anschlüsse, Messungen und weitere Achsen.
+5. **Drehachse:** jede Achse und jeder Anschluss lässt sich in der Liste als Drehachse festlegen; so dreht das Fitting im Raum.
+
+**Automatik:** Beim Import schlägt der Editor Anschlüsse vor: Kreis an einer Außenfläche = Öffnung, die erste Stufe nach innen, an der die Bohrung enger wird = Anschlag. Bei CLA-6M und CUA-6M ergibt das Ø 6 und 15,3 mm. Vorschläge sind normale Anschlüsse und lassen sich ändern.
+
+**Daten:** Ein Anschluss bleibt `{ mouth, d, depth, p, D }`; neu ist `src` (woraus er entstand) und ein Name. Achsen und Punkte liegen in `aux`. Die Drehachse ist entweder wie bisher ein Kürzel („p0“, „x“) oder eine eigene Achse `{ A, n }`. Alte Daten bleiben gültig.
+
+**Später (vorbereitet, nicht gebaut):** Schellen und andere Teile nutzen denselben Editor. Ein Anschluss bekommt dann eine Art: *Ende* (Rohr steckt bis zum Anschlag, wie heute) oder *Durchgang* (Rohr läuft hindurch, Schelle). Dazu Befestigungspunkte für Wand oder Schiene.
+
 ## Quellen
 
 - [Fusion: Auswahl im Fenster, Freihand, Malen](https://help.autodesk.com/view/fusion360/ENU/?guid=SLD-SELECTION)
@@ -281,6 +311,8 @@ Schritt 0 und 2 kommen zuerst, weil alles andere darauf aufbaut. Jeder Schritt i
 - [Shapr3D-Forum: Viele Objekte wählen](https://discourse.shapr3d.com/t/mass-selecting-elements-bodies-objects/3769)
 - [Shapr3D-Forum: Gruppen bewegen](https://discourse.shapr3d.com/t/select-multiple-objects-and-group-move-a-complete-group/1652)
 - [Shapr3D-Forum: Bereichsauswahl mit dem Stift](https://discourse.shapr3d.com/t/ipad-4-6-area-selection-tool-for-apple-pencil/13357)
+- [Fusion 360: Joint Origin](https://help.autodesk.com/view/fusion360/ENU/?guid=ASM-JOINT-ORIGIN)
+- [Fusion 360: Measure](https://help.autodesk.com/view/fusion360/ENU/?guid=ASM-MEASURE)
 - [Shapr3D-Forum: Doppeltipp abschalten](https://discourse.shapr3d.com/t/is-there-a-way-to-disable-double-tap-to-select-all/25102)
 - [Shapr3D-Forum: Genauere Auswahl, Liste bei Überlappung](https://discourse.shapr3d.com/t/5-830-more-precise-selections/37197)
 - [Shapr3D-Forum: Ausrichten in Gruppen](https://discourse.shapr3d.com/t/aligning-grouped-objects/26065)

@@ -1,5 +1,7 @@
 import { roomPlanes, planeDist, planeHits, autoClamps, clampInfo, drillCoords, bundleGeometry, pipeGap, parallelPoints, sideDir, straightRuns, cutPlan, triangulate, cleanOutline, signedArea, pointInPoly, wallLetter } from './site.js';
-import { readGlb, detectPorts, saveMesh, dropMesh, loadMeshes } from './fittings.js';
+import { readGlb, saveMesh, dropMesh, loadMeshes } from './fittings.js';
+import { analyzePart, suggestPorts } from './partgeom.js';
+import { openPartEditor } from './partedit.js';
 import { pointsFromDeltas, pointsFromAngles, computeLayout, pointAt, V, rotAbout, selfCollisions } from './geometry.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -1415,20 +1417,37 @@ function renderTools() {
 }
 const afterToolChange = () => { save(); recompute(); };
 const fitSub = l => `${l.ports.length} ${l.ports.length === 1 ? 'Anschluss' : 'Anschlüsse'} · ${l.ports.map(o => `Ø ${fmt(o.D)}`).join(', ') || 'keine erkannt'}`;
-const fitBody = l => `<canvas class="fitprev" data-fp="${l.id}"></canvas><label class="sfield"><span>Drehachse</span><select data-sa="${l.id}">${[['', 'Frei'], ...l.ports.map((_, i) => [`p${i}`, `Anschluss ${i + 1}`]), ['x', 'X'], ['y', 'Y'], ['z', 'Z']].map(([v, t]) => `<option value="${v}"${v === (l.axis || '') ? ' selected' : ''}>${t}</option>`).join('')}</select></label>${l.ports.map((o, i) => `<div class="sport"><b>${i + 1}</b>
-  <label class="sfield"><span>Rohrdurchmesser</span><span class="sinp"><input data-sp="${l.id}:${i}:D" inputmode="decimal" value="${fmt(o.D)}"><i>mm</i></span></label>
-  <label class="sfield"><span>Tiefe bis Rohranschlag</span><span class="sinp"><input data-sp="${l.id}:${i}:depth" inputmode="decimal" value="${fmt(o.depth)}"><i>mm</i></span></label></div>`).join('')}`;
+// Anschlüsse und Achsen legt der Bauteil-Editor an der Geometrie fest; hier nur die Übersicht
+const axisText = l => { const a = l.axis; return !a ? 'frei' : typeof a === 'object' ? (l.aux?.axes.find(x => x.id === a.aux)?.name || 'eigene Achse') : a[0] === 'p' ? (l.ports[+a.slice(1)]?.name || `Anschluss ${+a.slice(1) + 1}`) : `${a.toUpperCase()} durch die Mitte`; };
+const fitBody = l => `<canvas class="fitprev" data-fp="${l.id}"></canvas><ul class="fitports">${l.ports.map((o, i) => `<li><b>${i + 1}</b>Ø ${fmt(o.D, 2)} mm · Tiefe ${fmt(o.depth, 2)} mm</li>`).join('')}<li>Drehachse: ${esc(axisText(l))}</li></ul>
+  <button class="primary fitedit" data-s="editFit" data-k="${l.id}">Anschlüsse und Achsen bearbeiten</button>`;
+// Editor öffnen: Modell muss geladen sein; Änderungen gelten sofort
+function editFit(l) {
+  const m = fitMeshes.get(l.id);
+  if (!m) { toast('Modell wird noch geladen.'); return; }
+  const ed = openPartEditor(l, m, {
+    changed: () => { save(); },
+    toast,
+    // Verbindungen an einem gelöschten Anschluss lösen, spätere rücken nach
+    portRemoved: i => db.scenes.forEach(sc => (sc.fittings || []).filter(f => f.libId === l.id).forEach(f => { f.links = (f.links || []).filter(L => L.port !== i).map(L => (L.port > i ? { ...L, port: L.port - 1 } : L)); })),
+    onClose: () => { renderTools(); recompute(); draw(); },
+  });
+  if (window.biegeDebug) window.biegeDebug.ped = ed;
+}
 // Fitting importieren: Modell in den Browser-Speicher, Anschlüsse als Vorschlag
 async function importFit(file) {
   try {
     const mesh = readGlb(await file.arrayBuffer()), id = uid();
-    const ports = detectPorts(mesh).map(o => ({ ...o, p: V.sub(o.mouth, V.mul(o.d, o.depth)) }));
+    const ports = suggestPorts(analyzePart(mesh)).map(o => ({ ...o, p: V.sub(o.mouth, V.mul(o.d, o.depth)), src: { open: 'erkannt', stop: 'Bohrungsstufe' } }));
     await saveMesh(id, mesh);
     fitMeshes.set(id, mesh);
-    db.fittings.push({ id, name: file.name.replace(/\.glb$/i, ''), ports, mn: mesh.mn, mx: mesh.mx });
+    const l = { id, name: file.name.replace(/\.glb$/i, ''), ports, mn: mesh.mn, mx: mesh.mx };
+    db.fittings.push(l);
     setUi.open = `fit:${id}`;
     save(); renderTools();
-    toast(ports.length ? `${ports.length} ${ports.length === 1 ? 'Anschluss' : 'Anschlüsse'} erkannt. Bitte die Tiefe prüfen.` : 'Keine Anschlüsse erkannt.');
+    // Gleich im Editor prüfen: Vorschläge sind normale Anschlüsse
+    editFit(l);
+    toast(ports.length ? `${ports.length} ${ports.length === 1 ? 'Anschluss' : 'Anschlüsse'} erkannt. Bitte prüfen.` : 'Keine Öffnung erkannt: Anschlüsse am Modell festlegen.');
   } catch (err) { toast(err.message || 'Datei lässt sich nicht lesen.'); }
 }
 // Fittings, die mit der App kommen. db.stdFits merkt sich die Namen: Ein gelöschtes Fitting kommt nicht wieder, ein vorhandenes gleichen Namens bleibt
@@ -1443,7 +1462,7 @@ async function addStdFits() {
     if (seen.includes(s.name)) continue;
     if (!db.fittings.some(l => l.name === s.name)) {
       const mesh = readGlb(await (await fetch(s.file)).arrayBuffer()), id = uid();
-      const ports = detectPorts(mesh).map(o => ({ ...o, D: s.D, depth: s.depth, p: V.sub(o.mouth, V.mul(o.d, s.depth)) }));
+      const ports = suggestPorts(analyzePart(mesh)).map(o => ({ ...o, D: s.D, depth: s.depth, p: V.sub(o.mouth, V.mul(o.d, s.depth)) }));
       await saveMesh(id, mesh);
       fitMeshes.set(id, mesh);
       db.fittings.push({ id, name: s.name, ports, mn: mesh.mn, mx: mesh.mx });
@@ -1507,21 +1526,7 @@ async function delSetItem(key) {
 $('#tab-tools').addEventListener('input', e => {
   const el = e.target;
   if (el.id === 'exLen') { const v = num(el.value); if (v > 0) { db.exLen = v; save(); } return; }
-  if (el.dataset.sa) {
-    const l = fitLib(el.dataset.sa);
-    if (el.value) l.axis = el.value; else delete l.axis;
-    save(); drawFitPreview($(`.fitprev[data-fp="${l.id}"]`), l);
-    return;
-  }
   if (el.id === 'lockMin') { vis.lockMin = +el.value; saveVis(); $('#lockVal').textContent = lockText(); draw(); return; }
-  if (el.dataset.sp) {
-    const [id, i, f] = el.dataset.sp.split(':'), l = fitLib(id), o = l.ports[+i], v = num(el.value);
-    if (!(v >= 0)) return;
-    o[f] = v;
-    if (f === 'depth') o.p = V.sub(o.mouth, V.mul(o.d, v));
-    save(); drawFitPreview($(`.fitprev[data-fp="${id}"]`), l);
-    return;
-  }
   if (!el.dataset.sv) return;
   const [t, id, f] = el.dataset.sv.split(':'), x = setItem(`${t}:${id}`), v = num(el.value);
   if (!(v > 0)) return;
@@ -1546,6 +1551,7 @@ $('#tab-tools').addEventListener('click', e => {
   else if (a === 'ren') { setUi.ren = k; setUi.menu = null; }
   else if (a === 'del') { delSetItem(k); return; }
   else if (a === 'addFit') { $('#fitFile').click(); return; }
+  else if (a === 'editFit') { editFit(fitLib(k)); return; }
   else if (a === 'addType') {
     const t = { id: uid(), name: 'Neuer Rohrtyp', D: db.pipeTypes.at(-1).D, toolId: db.pipeTypes.at(-1).toolId };
     db.pipeTypes.push(t); setUi.open = setUi.ren = `type:${t.id}`; save();
@@ -5747,8 +5753,9 @@ const fitById = id => fitsAll().find(f => f.id === id);
 const mulR = (R, v) => [0, 1, 2].map(r => R[r * 3] * v[0] + R[r * 3 + 1] * v[1] + R[r * 3 + 2] * v[2]);
 const fitPoint = (f, v) => V.add(f.pos, mulR(f.rot, v));
 const fitPorts = f => (fitLib(f.libId)?.ports || []).map((o, i) => ({ i, p: fitPoint(f, o.p), d: mulR(f.rot, o.d), D: o.D }));
-// Festgelegte Drehachse im Modell: durch einen Anschluss oder in X, Y, Z durch die Mitte; null heißt frei
+// Festgelegte Drehachse im Modell: durch einen Anschluss, eine Achse aus dem Editor oder in X, Y, Z durch die Mitte; null heißt frei
 function libAxis(l) {
+  if (l?.axis && typeof l.axis === 'object') return { A: l.axis.A, n: l.axis.n }; // eigene Achse aus dem Bauteil-Editor
   const a = l?.axis, o = a?.[0] === 'p' && l.ports[+a.slice(1)], k = 'xyz'.indexOf(a);
   if (o) return { A: o.p, n: o.d };
   return a && k >= 0 ? { A: l.mn.map((v, i) => (v + l.mx[i]) / 2), n: [0, 1, 2].map(i => +(i === k)) } : null;

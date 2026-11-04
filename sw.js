@@ -1,7 +1,7 @@
 // Offline-Cache: erst Netz (damit Updates ankommen), sonst Cache.
 importScripts('version.js'); // setzt self.APP_VERSION
 const CACHE = 'biege-v' + self.APP_VERSION;
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'geometry.js', 'site.js', 'fittings.js', 'GLB/CLA-6M.glb', 'GLB/CUA-6M.glb', 'version.js', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'geometry.js', 'site.js', 'fittings.js', 'partgeom.js', 'partedit.js', 'GLB/CLA-6M.glb', 'GLB/CUA-6M.glb', 'version.js', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
