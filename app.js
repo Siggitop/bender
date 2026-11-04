@@ -265,6 +265,27 @@ document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, 
 $('#menuBtn').addEventListener('click', () => { $('#menuPop').hidden = !$('#menuPop').hidden; });
 // Offene Menüs: Ein Klick außerhalb schließt sie und wirkt sonst nicht. Daneben steht, was das Menü nicht schließt
 const MENUS = [['#menuPop', '#menuBtn'], ['#visPop', '#visBtn'], ['#addPop', '#addBtn'], ['#planePop', '#addPlane'], ['#typePop', '[data-co="type"]'], ['#browser', '#treeBtn, #undoBtn, #redoBtn'], ['#pickPop', '#pickPop']];
+// Menüs der unteren Leisten öffnen über ihrem Knopf statt in der Mitte
+[['#visPop', '#visBtn'], ['#addPop', '#addBtn'], ['#planePop', '#addPlane'], ['#typePop', '[data-co="type"]']].forEach(([m, b]) => new MutationObserver(() => {
+  const pop = $(m), btn = $(b), box = pop.offsetParent;
+  if (pop.hidden || !btn || !box) return;
+  const pr = box.getBoundingClientRect(), br = btn.getBoundingClientRect(), w = pop.offsetWidth;
+  pop.style.left = `${Math.max(8 + w / 2, Math.min(pr.width - 8 - w / 2, br.left + br.width / 2 - pr.left))}px`;
+}).observe($(m), { attributes: true, attributeFilter: ['hidden'] }));
+// Der Projektmanager öffnet wie das Menü oben links: gleicher Abstand unter den Knöpfen, gleiche linke Kante
+function placeBrowser() {
+  const br = $('#browser'), vw = $('#viewwrap');
+  if (br.hidden || !vw) return;
+  const ms = getComputedStyle($('#menuPop')), r = vw.getBoundingClientRect();
+  const top = parseFloat(ms.top), left = parseFloat(ms.left);
+  if (!(left >= r.left && left < r.right && top > r.top)) { br.style.top = br.style.left = br.style.maxHeight = ''; return; }
+  br.style.top = `${top - r.top}px`;
+  br.style.left = `${left - r.left}px`;
+  br.style.maxHeight = `${r.height - (top - r.top) - 72}px`;
+}
+new MutationObserver(placeBrowser).observe($('#browser'), { attributes: true, attributeFilter: ['hidden'] });
+new MutationObserver(() => requestAnimationFrame(placeBrowser)).observe(document.body, { attributes: true, attributeFilter: ['data-tab'] });
+addEventListener('resize', placeBrowser);
 let eatClick = false;
 document.addEventListener('pointerdown', e => {
   const t = e.target;
@@ -1290,9 +1311,9 @@ function renderGuide() {
   const doneKey = j => (guidePipe ? `${guidePipe}:${j}` : j);
   const pipesHere = scenePipes(p).filter(q => !q.unrouted || q === p);
   let h = `${pipesHere.length > 1 ? `<label class="noprint" style="margin-bottom:10px">Rohr<select id="gPipe">${pipesHere.map(q => `<option value="${q.id}"${q.id === p.id ? ' selected' : ''}>${esc(q.name)}</option>`).join('')}</select></label>` : ''}<div class="guidebar noprint">
-      <button id="gPrint">${IC('print')} Drucken / PDF</button>
-      ${'wakeLock' in navigator ? `<button id="gWake"${wakeLock ? ' class="on"' : ''}>${IC('sun')} Bildschirm ${wakeLock ? 'bleibt an' : 'anlassen'}</button>` : ''}
-      <button id="gBig"${document.body.classList.contains('bigtext') ? ' class="on"' : ''}>A+ Große Schrift</button>
+      <button id="gPrint" title="Drucken / PDF" aria-label="Drucken / PDF">${IC('print')}<span class="gtxt">Drucken / PDF</span></button>
+      ${'wakeLock' in navigator ? `<button id="gWake"${wakeLock ? ' class="on"' : ''} title="Bildschirm anlassen" aria-label="Bildschirm anlassen">${IC('sun')}<span class="gtxt">Bildschirm ${wakeLock ? 'bleibt an' : 'anlassen'}</span></button>` : ''}
+      <button id="gBig"${document.body.classList.contains('bigtext') ? ' class="on"' : ''} title="Große Schrift" aria-label="Große Schrift"><b>A+</b><span class="gtxt">Große Schrift</span></button>
     </div>
     <div id="printHead" class="printonly"></div>
     ${layout.bundle.length ? `<div class="seg noprint" id="guidePipeSel" style="margin-bottom:12px">${[layout, ...layout.bundle].map((x, i) => `<button data-gp="${i}"${i === guidePipe ? ' class="on"' : ''}>${esc(i ? x.name : p.name)}</button>`).join('')}</div>` : ''}
@@ -1495,7 +1516,7 @@ function drawFitPreview(c, l) {
   l.ports.forEach((o, i) => {
     const [x, y] = P(o.p), [ax, ay] = P(V.add(o.p, V.mul(o.d, 10)));
     g.strokeStyle = css('--accent'); g.lineWidth = 2; g.beginPath(); g.moveTo(x, y); g.lineTo(ax, ay); g.stroke();
-    g.beginPath(); g.arc(ax, ay, 9, 0, 7); g.fillStyle = css('--accent'); g.fill();
+    g.beginPath(); g.roundRect(ax - 9, ay - 9, 18, 18, 4); g.fillStyle = css('--accent'); g.fill();
     g.fillStyle = '#fff'; g.font = '700 11px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(i + 1, ax, ay + 0.5);
   });
 }
@@ -1595,7 +1616,7 @@ let extOpen = false, extHover = false;
 // startOpen: Pfeile am Griff des Rohranfangs offen, bundleSel: gewähltes Parallelrohr (Index in p.bundle)
 let startOpen = false, bundleSel = -1;
 const RING_GZ = ['bend', 'rot', 'head'];
-const BUNDLE_GZ = ['oalign', 'oanc', 'oaxis', 'oeq', 'ogap', 'cpoff', 'omove', 'orot', 'opiv', 'fmove', 'frot', 'start', 'bnew', 'bdist', 'brot', 'badd', 'pt', 'plane', 'pmove', 'lmove', 'ofs', 'ofsc', 'spin', 'cmove', 'first', 'cofs'];
+const BUNDLE_GZ = ['oalign', 'oanc', 'oaxis', 'oeq', 'ogap', 'cpoff', 'omove', 'orot', 'opiv', 'fmove', 'frot', 'start', 'bnew', 'bdist', 'brot', 'badd', 'pt', 'plane', 'pmove', 'pedge', 'padd', 'lmove', 'ofs', 'ofsc', 'spin', 'cmove', 'first', 'cofs'];
 // ofs: Versatz-X auf Schenkel i, t mm ab dessen Anfang, ang = Winkel, n = gewählte Ebene (null = automatisch), cur = angezeigte Ebene
 let ofs = null;
 // selPoint: gewählter Punkt { pid, w }, selPlane: gewählte Ebene, pointMove: Verschiebepfeile, pick: Maß wird festgelegt { key, to }
@@ -1757,9 +1778,9 @@ function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
   // Projektion wie project(): Zeilen für Bildschirm-x, Bildschirm-y (nach unten) und Tiefe
   const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const rx = [cy, -sy, 0], ry = [-sy * sp, -cy * sp, -cp], rz = [sy * cp, cy * cp, -sp];
-  const opaque = new Float32Array(scene.opaque), trans = new Float32Array(scene.trans), refPl = new Float32Array(scene.refPl || []), preview = new Float32Array(scene.preview || []);
+  const opaque = new Float32Array(scene.opaque), trans = new Float32Array(scene.trans), refPl = new Float32Array(scene.refPl || []), refFaint = new Float32Array(scene.refFaint || []), preview = new Float32Array(scene.preview || []);
   let z0 = Infinity, z1 = -Infinity;
-  for (const arr of [opaque, trans, refPl, preview]) for (let i = 0; i < arr.length; i += 9) {
+  for (const arr of [opaque, trans, refPl, refFaint, preview]) for (let i = 0; i < arr.length; i += 9) {
     const z = rz[0] * arr[i] + rz[1] * arr[i + 1] + rz[2] * arr[i + 2];
     if (z < z0) z0 = z; if (z > z1) z1 = z;
   }
@@ -1800,6 +1821,12 @@ function renderSceneGL(W, H, dpr, sc, cx, cyy, scene) {
     gl.bufferData(gl.ARRAY_BUFFER, preview, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, preview.length / 9);
     gl.depthMask(true); gl.disable(gl.BLEND);
   }
+  if (refFaint.length) { // Nicht gewählte Ebenen: nur ein Hauch Füllung, damit man sie als Fläche erkennt
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+    gl.uniform1f(glp.uAlpha, 0.045);
+    gl.bufferData(gl.ARRAY_BUFFER, refFaint, gl.DYNAMIC_DRAW); gl.drawArrays(gl.TRIANGLES, 0, refFaint.length / 9);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+  }
   if (refPl.length) { // Referenzebenen: sehr durchscheinend, Rohre bleiben davor und dahinter sichtbar
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     gl.uniform1f(glp.uAlpha, 0.12);
@@ -1829,7 +1856,7 @@ const COLOR_NAMES = ['Blau', 'Rot', 'Grün', 'Orange', 'Violett', 'Türkis', 'Pi
 const PIPE_COLORS = [[0.13, 0.45, 0.85], [0.84, 0.2, 0.2], [0.15, 0.6, 0.33], [0.93, 0.55, 0.1], [0.55, 0.3, 0.8], [0.05, 0.63, 0.68], [0.85, 0.3, 0.6], [0.5, 0.38, 0.25]];
 const rgbCss = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
 const lighter = (c, t) => c.map(v => v + (1 - v) * t);
-const VIS_DEFAULT = { origin: true, snap: false, cornerMove: false, offsets: false, extAng: 90, tree: false, actsOpen: false, colors: true, labels: true, twist: true, lockMin: 0.8, refPlanes: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
+const VIS_DEFAULT = { origin: true, snap: false, cornerMove: false, offsets: false, extAng: 90, tree: false, actsOpen: false, colors: true, labels: true, twist: true, lockMin: 0.8, refPlanes: true, dollhouse: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -1840,6 +1867,7 @@ const viewDir = () => { const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp
 const planeVisible = pl => { const n = [0, 0, 0]; n[pl.axis] = pl.n; return V.dot(n, viewDir()) < 0.05; };
 
 function render3d() {
+  midCache = null;
   const layout = curLayout(); // während einer Animation das Zwischenbild
   if (!layout || !cv.clientWidth) return;
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
@@ -1878,7 +1906,7 @@ function render3d() {
     if (!ortho && vis.grid && room) shownOf(L).forEach(B => B.samples.forEach(s => all.push(project([s.p[0], s.p[1], z]))));
     const xs = all.map(c => c.x), ys = all.map(c => c.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
     // Rand für Gimbal-Pfeile (~70 px) und oben für die Ansichtsbuttons
-    const side = Math.min(90, W * 0.12), top = Math.min(120, H * 0.18), bottom = Math.min(80, H * 0.12);
+    const side = Math.min(90, W * 0.12), top = Math.min(100, H * 0.14), bottom = Math.min(130, H * 0.18);
     return { sc: Math.min((W - 2 * side) / Math.max(x1 - x0, 1), (H - top - bottom) / Math.max(y1 - y0, 1)), mx: (x0 + x1) / 2, my: (y0 + y1) / 2, dy: (top - bottom) / 2, W, H };
   };
   if (fit && !ortho && !cam.held && (fit.W !== W || fit.H !== H)) fit = null; // Fenstergröße geändert
@@ -1941,8 +1969,8 @@ function render3d() {
 
   // 3D-Szene: Rohre, Nachbarrohre im Raum, Schellen-Hülsen, Raumflächen
   const r = Math.max(f.D / 2, 1 / sc); // maßstäblich, nur unter 2 px bleibt das Rohr sichtbar
-  const steel = dark ? [0.56, 0.6, 0.66] : [0.66, 0.7, 0.75], orange = [0.91, 0.36, 0.06];
-  const ghostCol = dark ? [0.42, 0.46, 0.52] : [0.76, 0.79, 0.83], clampCol = dark ? [0.85, 0.86, 0.9] : [0.2, 0.22, 0.26];
+  const steel = dark ? [0.68, 0.72, 0.78] : [0.66, 0.7, 0.75], orange = [0.91, 0.36, 0.06];
+  const ghostCol = dark ? [0.5, 0.54, 0.6] : [0.76, 0.79, 0.83], clampCol = dark ? [0.85, 0.86, 0.9] : [0.2, 0.22, 0.26];
   const opaque = [], add = (arr, out = opaque) => { for (let i = 0; i < arr.length; i++) out.push(arr[i]); };
   const bad = [0.88, 0.2, 0.2]; // nicht verlegbares Parallelrohr
   // Rohr 1 in Rohrfarbe (sonst Stahl), Parallelrohre dezent heller; die anderen Rohre der Szene treten zurück
@@ -1988,12 +2016,13 @@ function render3d() {
       add(quadMesh([pt(e[u][0], e[2][0]), pt(e[u][1], e[2][0]), pt(e[u][1], e[2][1]), pt(e[u][0], e[2][1])], n, wallCol), trans);
     }
   });
-  const refPl = [];
-  if (vis.refPlanes) scene(p).planes.filter(pl => !pl.hidden).forEach(pl => { // gefüllt nur, wenn gewählt oder gerade Ziel eines Maßes
-    if (selPlane !== pl.id && !pick) return;
-    const n = [0, 0, 0]; n[pl.axis] = 1; add(quadMesh(planeCorners(pl), n, AX_RGB[pl.axis]), refPl);
+  const refPl = [], refFaint = [];
+  if (vis.refPlanes) scene(p).planes.filter(pl => !pl.hidden).forEach(pl => { // gewählt oder Ziel eines Maßes: deutlich, sonst ein Hauch
+    const n = [0, 0, 0], strong = selPlane === pl.id || !!pick; n[pl.axis] = 1;
+    if (!strong && planeFront(pl) > 0.5) return; // Puppenhaus: vordere Ebene nur als Umriss
+    add(quadMesh(planeCorners(pl), n, AX_RGB[pl.axis]), strong ? refPl : refFaint);
   });
-  if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans, refPl, preview })) {
+  if (!renderSceneGL(W, H, dpr, sc, cx, cyy, { opaque, trans, refPl, refFaint, preview })) {
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = tw; ctx.strokeStyle = css('--tube');
     pipes.forEach(L => { ctx.beginPath(); L.samples.forEach((s, i) => { const [x, y] = P3(s.p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); });
   }
@@ -2114,6 +2143,7 @@ function render3d() {
   if (!p.unrouted && !idle) [...new Set([layout, ML])].forEach(L => drawDims(L, P3, tw, L === layout));
   if (camTool === 'edit' && (allDims || bundleSel >= 0 || (selPoint?.pid === p.id && selPoint.w === 'S'))) drawBundleDims(layout, P3);
   if (camTool === 'edit' && CONSTRAINTS) drawRefDims(P3, allDims);
+  if (camTool === 'edit' && !idle) planeDims();
   if (camTool === 'edit') drawLocks(P3);
   drawChain(P3);
   if (copyC && (copyC.step === 'edit' || (copyC.step === 'dest' && copyC.ortho))) dimSegs(axisSegs(copyC.from || copyC.base, copyC.off), P3, 'ccof');
@@ -2554,6 +2584,7 @@ function editDim(d) {
   if (d.ofsPart != null) { editOfsPart(d); return; }
   if (d.offV != null) { editOffset(d); return; }
   if (d.robj) { editRef(d); return; }
+  if (d.plDim) { editPlaneDim(d); return; }
   const p = proj();
   if (layout.verts.length !== p.deltas.length + 1 && p.mode === 'deltas') { selectLeg(d.i, true); return; }
   ensureDeltas();
@@ -2987,6 +3018,11 @@ function drawLocks(P3) {
     });
   });
 }
+// Anschlussnummer: abgerundetes Quadrat, damit sie sich von den runden Biegemarken unterscheidet
+function portMark(x, y, color, s = 8) {
+  ctx.beginPath(); ctx.roundRect(x - s, y - s, 2 * s, 2 * s, 4); ctx.fillStyle = color; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+}
 function knob(x, y, r, color) {
   ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = color; ctx.fill();
   ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
@@ -3036,6 +3072,7 @@ function drawGizmo() {
   // Leiste sitzt direkt über den Knöpfen, auch wenn diese zweizeilig werden
   const bbar = $('#bundleBar');
   if (!bbar.hidden) bbar.style.bottom = `${$('#viewwrap').getBoundingClientRect().bottom - $('.viewacts').getBoundingClientRect().top + 6}px`;
+  syncBarTitle();
   if (create) { drawCreate(view.P3); return; }
   if (measure) { drawMeasure(view.P3); return; }
   if (boxSel) drawBox(view.P3);
@@ -3075,7 +3112,7 @@ function drawGizmo() {
   }
 
   if (!gz || BUNDLE_GZ.includes(gz.type)) drawStartHandle();
-  if (!gz || gz.type === 'pmove') drawSceneHandles();
+  if (!gz || gz.type === 'pmove' || gz.type === 'pedge') drawSceneHandles();
 
   // Fortführen: Hilfspfeile (blass, beim Ziehen die gewählte Richtung kräftig) + Griff am Ende
   if (!gz || gz.type === 'ext') {
@@ -3302,6 +3339,7 @@ function gzStart(g, e) {
     gz.bOrig = structuredClone(p.bundle); gz.As = view.P3(layout.verts[0]);
     if (g.type === 'pmove') { gz.sOrig = sceneState(p); gz.dOrig = structuredClone(p.deltas); gz.oOrig = [...p.origin]; gz.v0 = g.key[0] === 'R' ? (pl => pl[planeKey(pl, g.k)])(planeById(g.key.slice(2))) : nodePos(g.key)[g.k]; }
     gz.gx = lx; gz.gy = ly;
+    if (g.type === 'pedge') { const pl = planeById(g.id), [a, b] = planeAx(pl); gz.pl0 = { ...pl }; gz.ma = pxPerMmAx(a); gz.mb = pxPerMmAx(b); }
     if (g.type === 'lmove') { gz.oOrig = [...p.origin]; gz.dOrig = structuredClone(p.deltas); gz.txOrig = structuredClone(p.bundleTx); gz.t = 0; gz.res = null; }
     if (g.type === 'ofs') { gz.oOrig = [...p.origin]; gz.dOrig = structuredClone(p.deltas); gz.txOrig = structuredClone(p.bundleTx); gz.res = null;
       // Kleinster Versatz, für den die Bögen wirklich reichen; darunter ist es nur Vorschau
@@ -3803,12 +3841,17 @@ function bundleMove(lx, ly) {
     recompute(true);
     return;
   }
+  if (gz.type === 'pedge') { planeEdgeMove(); return; }
+  if (gz.type === 'padd') return;
   if (gz.type === 'pmove') {
     gzChanged();
     restoreSceneState(p, gz.sOrig); p.deltas = structuredClone(gz.dOrig); p.origin = [...gz.oOrig];
     const [mx, my] = gz.pxPerMm, dx = gz.px - gz.gx, dy = gz.py - gz.gy, A0 = gz.key[0] === 'R' ? null : gz.nodeA ??= nodePos(gz.key);
     const raw = Math.round(gz.v0 + (dx * mx + dy * my) / (mx * mx + my * my));
-    const v = Math.abs(raw - gz.v0) * Math.hypot(mx, my) < SNAP_PX ? gz.v0 : fang(gz.k, raw, Math.hypot(mx, my), A0 ? [A0] : [], () => (A0 ? nodePos(gz.key) : view.mid));
+    const px = Math.hypot(mx, my), plId = gz.key[0] === 'R' ? gz.key.slice(2) : null;
+    let v = Math.abs(raw - gz.v0) * px < SNAP_PX ? gz.v0 : null;
+    if (v == null && plId) { const pv = planeSnap(gz.k, raw, px, plId, () => planePt(planeById(plId), 0, 0)); if (pv !== raw) v = pv; }
+    if (v == null) v = fang(gz.k, raw, px, A0 ? [A0] : [], () => (A0 ? nodePos(gz.key) : view.mid));
     const ok = setNodeCoord(gz.key, gz.k, v);
     gz.label = ok ? `${'XYZ'[gz.k]} ${fmt(v)}` : 'So nicht möglich – kein Schenkel kann ausgleichen';
     recompute(true);
@@ -3852,6 +3895,8 @@ function bundleEnd(g) {
     else { delete b.bad; commit(null, g.before); }
   }
   if (g.type === 'badd') { if (!g.moved) { addBundlePipe(p); selectPoint(p.id, 'S'); } return; }
+  if (g.type === 'padd') { const pl = planeById(g.id); if (pl && !g.moved) planeAttach(pl, g.sa, g.sb); else draw(); return; }
+  if (g.type === 'pedge') { snapLine = null; if (g.moved) { recompute(); save(); } renderBundleBar(); draw(); return; }
   if (g.type === 'cofs') { renderBundleBar(); draw(); return; }
   if (g.type === 'cpoff') { if (copyC?.step === 'edit') { recompute(); save(); } renderBundleBar(); draw(); return; }
   if (CHAIN_GZ.includes(g.type)) {
@@ -4399,7 +4444,7 @@ function hitPlane(x, y) {
   if (!vis.refPlanes) return null;
   for (const pl of scene().planes.filter(q => !q.hidden && (!q.locked || measure))) {
     const c = planeCorners(pl).map(q => view.P3(q));
-    if (pointInPoly(c, x, y) || c.some((q, i) => segDist(x, y, ...q, ...c[(i + 1) % 4]) < hitTol(10))) return pl.id;
+    if ((planeFront(pl) < 0.5 && pointInPoly(c, x, y)) || c.some((q, i) => segDist(x, y, ...q, ...c[(i + 1) % 4]) < hitTol(10))) return pl.id;
   }
   return null;
 }
@@ -5107,14 +5152,14 @@ function selectPoint(pid, w) {
   if (pid !== db.currentId) dropStub();
   if (pid !== db.currentId) { db.currentId = pid; highlight = -1; fullRender(); }
   sel = -1; selCorner = -1; bundleSel = -1; startOpen = false;
-  selPlane = null; selFit = null; fitDock = null; pointMove = false; selPoint = { pid, w };
+  idle = false; selPlane = null; selFit = null; fitDock = null; pointMove = false; selPoint = { pid, w };
   if (w === 'S' && pipeById(pid).bundle.length) startOpen = true; // bestehendes Bündel: Griffe sofort da
   if (w === 'S') extOpen = false;
   $('#legPanel').hidden = true; $('#offLegView').classList.add('blass');
   renderBundleBar(); draw();
 }
 function selectPlane(id) {
-  sel = -1; selCorner = -1; bundleSel = -1; startOpen = false; selPoint = null; selFit = null; fitDock = null; pointMove = false; selPlane = id;
+  idle = false; sel = -1; selCorner = -1; bundleSel = -1; startOpen = false; selPoint = null; selFit = null; fitDock = null; pointMove = false; selPlane = id;
   $('#legPanel').hidden = true; $('#offLegView').classList.add('blass');
   renderBundleBar(); draw();
 }
@@ -5163,8 +5208,9 @@ function renderSceneBar(bar) {
     bar.innerHTML = `<span>${nodeName(pick.key)}: Bezug wählen</span>${opts.map(pl => `<button data-pr="${pl.id}" class="ax-${'xyz'[pl.axis]}-b">R${planeNo(pl)}</button>`).join('')}<button class="icbtn" data-pc="1" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`;
   } else if (selPlane && planeById(selPlane)) {
     const pl = planeById(selPlane), key = `R:${pl.id}`;
-    if (pl.locked) bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span><span>${[0, 1, 2].map(k => `${'XYZ'[k]} ${fmt(pl[planeKey(pl, k)])}`).join(' · ')} · B ${fmt(pl.w)} · H ${fmt(pl.h)}</span><button class="icbtn danger" data-bb="pldel" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
-    else bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span>${[0, 1, 2].map(k => `<button data-plk="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(pl[planeKey(pl, k)])}</button>`).join('')}<button data-plk="w">B ${fmt(pl.w)}</button><button data-plk="h">H ${fmt(pl.h)}</button>${CONSTRAINTS ? `<button data-pm="${key}">Maß</button>` : ''}<button class="icbtn danger" data-bb="pldel" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
+    // Lage und Größe stellt man in 3D ein (Pfeil, Kanten, Ecken, Maße); die Leiste hat nur Sperren und Löschen
+    const lt = pl.locked ? 'Entsperren' : 'Sperren';
+    bar.innerHTML = `<span>R${planeNo(pl)} · ${'XYZ'[pl.axis]}-Ebene</span>${CONSTRAINTS && !pl.locked ? `<button data-pm="${key}">Maß</button>` : ''}<button class="lockbtn${pl.locked ? '' : ' open'}" data-bb="pllock" title="${lt}" aria-label="${lt}" aria-pressed="${!!pl.locked}">${lockIcon(pl.locked)}</button><button class="icbtn danger" data-bb="pldel" title="Löschen" aria-label="Löschen">${IC('trash')}</button>`;
   } else if (selPoint && pipeById(selPoint.pid)) {
     const q = pipeById(selPoint.pid), key = `${selPoint.w}:${q.id}`, isS = selPoint.w === 'S', ways = routeOptions(V.sub(endOf(q), points(q)[0])).length;
     bar.innerHTML = `<span>${nodeName(key)}</span>${!isS && !q.unrouted ? `${extAngChips()}<i class="bsep"></i>` : ''}${pipeLocks(q, selPoint.w)}${isS && startOpen ? `<button class="icbtn" data-bb="parend" title="Fertig" aria-label="Fertig">${IC('check')}</button>` : ''}${fitsOf().length ? '<button data-bb="dock">Andocken</button>' : ''}<button data-bb="move"${pointMove ? ' class="on"' : ''}>Verschieben</button>${pointMove ? xyz(key) + (isS ? `` : '') : ''}${CONSTRAINTS ? `<button data-pm="${key}">Maß</button>` : ''}${ROUTES && ways ? `<button data-bb="route">${q.unrouted ? 'Weg vorschlagen' : 'Anderer Weg'}</button>` : ''}`;
@@ -5235,7 +5281,7 @@ $('#bundleBar').addEventListener('click', e => {
   else if (ds.bb === 'parno') { parPick = false; renderBundleBar(); draw(); }
   else if (ds.bb === 'move') { pointMove = !pointMove; renderBundleBar(); draw(); }
   else if (ds.bb === 'route') applyRoute(p, !p.unrouted);
-  else if (ds.bb === 'pldel') { delPlane(selPlane); } else if (ds.la) {
+  else if (ds.bb === 'pldel') { delPlane(selPlane); } else if (ds.bb === 'pllock') { togglePlaneLock(selPlane, true); } else if (ds.la) {
     const pl = planeById(ds.la), d = p.deltas[sel];
     commit(); d.ref = { plane: pl.id, off: r1(points(p)[sel][pl.axis] - pl.c) }; recompute(); toast(`Schenkel ${sel + 1} hängt jetzt an R${planeNo(pl)}.`);
   }
@@ -5306,13 +5352,165 @@ const AX_RGB = [[0.88, 0.19, 0.19], [0.18, 0.62, 0.27], [0.11, 0.49, 0.84]];
 function drawPlanesOverlay(P3) {
   scene().planes.forEach((pl, i) => {
     if (pl.hidden) return;
-    const c = planeCorners(pl).map(q => P3(q)), col = rgbCss(AX_RGB[pl.axis]), on = selPlane === pl.id;
-    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = on ? 1.5 : 0.8; ctx.globalAlpha = on ? 0.9 : 0.35;
+    const c = planeCorners(pl).map(q => P3(q)), col = rgbCss(AX_RGB[pl.axis]), on = selPlane === pl.id, front = on ? 0 : planeFront(pl);
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = on ? 1.5 : 0.8; ctx.globalAlpha = on ? 0.9 : 0.35 * (1 - 0.6 * front);
     ctx.beginPath(); c.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
     ctx.globalAlpha = on ? 1 : 0.55; ctx.fillStyle = col; ctx.font = '600 10px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; if (vis.labels || pick) ctx.fillText(`R${i + 1}`, c[2][0] + 4, c[2][1] - 4);
     ctx.restore();
     if (pl.locked) lockMark(c[2][0] + 32, c[2][1] - 8, true, on ? 1 : lockFade());
   });
+}
+// ---------- Ebenen direkt in 3D ----------
+// Puppenhaus: 0 = Ebene liegt hinter dem Modell oder seitlich, 1 = sie steht zwischen Betrachter und Modell
+function modelMid() {
+  const p = proj(), q = [...scenePipes(p).filter(x => !x.hidden && !x.empty).flatMap(x => points(x)), ...fitsOf(p).map(f => f.pos), ...exOf(p).filter(x => !x.hidden).flatMap(exEnds)];
+  if (!q.length) return null;
+  const mn = [0, 1, 2].map(k => Math.min(...q.map(v => v[k]))), mx = [0, 1, 2].map(k => Math.max(...q.map(v => v[k])));
+  return mn.map((v, k) => (v + mx[k]) / 2);
+}
+var midCache = null; // var: render3d darf auch vor dieser Zeile laufen
+function planeFront(pl) {
+  if (!vis.dollhouse) return 0;
+  const M = midCache ??= { m: modelMid() }, Mm = M.m;
+  if (!Mm) return 0;
+  const side = Math.sign(Mm[pl.axis] - pl.c);
+  if (!side) return 0;
+  const e = [0, 0, 0]; e[pl.axis] = 1;
+  const dz = side * (project(e).z - project([0, 0, 0]).z); // > 0: Vom Betrachter aus liegt das Modell hinter der Ebene
+  return Math.max(0, Math.min(1, (dz - 0.08) / 0.2));
+}
+// Achsen in der Ebene: a (Breite B, Feld u/w) und b (Höhe H, Feld v/h)
+const planeAx = pl => [0, 1, 2].filter(i => i !== pl.axis);
+function planePt(pl, sa, sb, out = 0) {
+  const [a, b] = planeAx(pl), q = [0, 0, 0];
+  q[pl.axis] = pl.c; q[a] = pl.u + sa * (pl.w / 2 + out * (sb ? 0 : 1)); q[b] = pl.v + sb * (pl.h / 2 + out * (sa ? 0 : 1));
+  return q;
+}
+// Bildschirm-Pixel je mm entlang einer Achse
+const pxPerMmAx = k => { const e = [0, 0, 0]; e[k] = 100; const [x0, y0] = view.P3([0, 0, 0]), [x1, y1] = view.P3(e); return [(x1 - x0) / 100, (y1 - y0) / 100]; };
+function planeHandles(pl) {
+  const P3 = view.P3, col = rgbCss(AX_RGB[pl.axis]), [a, b] = planeAx(pl), ma = pxPerMmAx(a), mb = pxPerMmAx(b);
+  const la = Math.hypot(...ma) * pl.w, lb = Math.hypot(...mb) * pl.h; // Kantenlängen auf dem Bildschirm
+  const ctr = P3(planePt(pl, 0, 0));
+  // Ziehen: Kanten in der Mitte, Ecken; ausblenden, wenn die Kante auf dem Bildschirm zu kurz ist
+  const fade = gz ? (gz.type === 'pedge' ? 1 : 1 - grabE) : relE * handA;
+  const handle = (sa, sb) => {
+    const [x, y] = P3(planePt(pl, sa, sb)), corner = sa && sb;
+    if (!corner && (sa ? lb : la) < 24) return;
+    if (corner && (la < 24 || lb < 24)) return;
+    const on = gz?.type === 'pedge' && gz.sa === sa && gz.sb === sb;
+    if (fade > 0.02 || on) {
+      ctx.save(); ctx.globalAlpha = on ? 1 : fade;
+      ctx.beginPath();
+      if (corner) ctx.roundRect(x - 5, y - 5, 10, 10, 2);
+      else { // Kantengriff: kurzer Balken längs der Kante
+        const [ex, ey] = sa ? mb : ma, l = Math.hypot(ex, ey) || 1, ux = ex / l, uy = ey / l;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(uy, ux)); ctx.roundRect(-11, -4, 22, 8, 4); ctx.restore();
+      }
+      ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+      ctx.restore();
+    }
+    gizmo.push({ type: 'pedge', id: pl.id, sa, sb, at: [x, y], r: 12 });
+  };
+  [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sa, sb]) => handle(sa, sb));
+  // Anbauen: Plus außen an jeder Kante setzt dort eine Ebene im rechten Winkel an
+  if (!gz) [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([sa, sb]) => {
+    if ((sa ? lb : la) < 40) return;
+    const [ex, ey] = P3(planePt(pl, sa, sb)), m = sa ? ma : mb, l = Math.hypot(...m);
+    if (l * 1e3 < 1) return;
+    const d = 30 / l, [x, y] = P3(planePt(pl, sa, sb, d)), f = relE * handA;
+    if (Math.hypot(x - ex, y - ey) < 20) return; // Kante zeigt in die Bildtiefe
+    ctx.save(); ctx.globalAlpha = f;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fillStyle = css('--accent'); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.stroke();
+    ctx.restore();
+    gizmo.push({ type: 'padd', id: pl.id, sa, sb, at: [x, y], r: 11 });
+  });
+  void ctr;
+  // Verschieben nur senkrecht zur Ebene
+  moveArrows(`R:${pl.id}`, [pl.axis]);
+}
+// Maße der gewählten Ebene innen an zwei Kanten, antippbar (nach den Griffen gezeichnet wie alle Maße)
+function planeDims() {
+  const pl = selPlane && planeById(selPlane);
+  if (!pl || pl.locked || pl.hidden || !vis.refPlanes || (gz && gz.type !== 'pedge')) return;
+  const P3 = view.P3, col = rgbCss(AX_RGB[pl.axis]), [a, b] = planeAx(pl);
+  const la = Math.hypot(...pxPerMmAx(a)) * pl.w, lb = Math.hypot(...pxPerMmAx(b)) * pl.h;
+  const inner = (sa, sb) => P3(planePt(pl, sa, sb, 1e4)); // Punkt weit draußen: Maßtext zeigt nach innen
+  if (la > 40) dimLine(P3(planePt(pl, -1, -1)), P3(planePt(pl, 1, -1)), `B ${fmt(pl.w)}`, inner(0, -1), 44, { key: `pl${pl.id}w`, plDim: { id: pl.id, f: 'w' } }, { color: col });
+  if (lb > 40) dimLine(P3(planePt(pl, 1, -1)), P3(planePt(pl, 1, 1)), `H ${fmt(pl.h)}`, inner(1, 0), 44, { key: `pl${pl.id}h`, plDim: { id: pl.id, f: 'h' } }, { color: col });
+}
+// Fangen beim Ziehen einer Ebene: Lage und Kanten anderer Ebenen auf Achse k, mit Fangpunkten auch Punkte und Ursprung
+function planeSnap(k, val, px, selfId, of) {
+  let best = null, bd = 10 / px;
+  const cand = (v, plane, at) => { const d = Math.abs(v - val); if (d < bd) { bd = d; best = { v, plane, at }; } };
+  scene().planes.filter(q => !q.hidden && q.id !== selfId).forEach(q => {
+    if (q.axis === k) cand(q.c, q);
+    else { const half = planeKey(q, k) === 'u' ? q.w / 2 : q.h / 2, m = q[planeKey(q, k)]; cand(m - half, q); cand(m + half, q); }
+  });
+  cand(0, null, [0, 0, 0]);
+  if (vis.snap) (gz?.pool || []).forEach(q => cand(q[k], null, q));
+  if (!best) return val;
+  snapLine = best.plane ? { plane: best.plane, of } : { at: best.at, of };
+  return best.v;
+}
+// Kante oder Ecke ziehen: die gegenüberliegende Kante bleibt stehen
+function planeEdgeMove() {
+  const pl = planeById(gz.id), o = gz.pl0, [a, b] = planeAx(o);
+  gzChanged();
+  Object.assign(pl, { u: o.u, v: o.v, w: o.w, h: o.h });
+  const dx = gz.px - gz.gx, dy = gz.py - gz.gy, ma = gz.ma, mb = gz.mb;
+  let da, db;
+  const det = ma[0] * mb[1] - ma[1] * mb[0], la = Math.hypot(...ma), lb = Math.hypot(...mb);
+  if (Math.abs(det) > 0.2 * la * lb) { da = (dx * mb[1] - dy * mb[0]) / det; db = (ma[0] * dy - ma[1] * dx) / det; }
+  else { da = la > 1e-9 ? (dx * ma[0] + dy * ma[1]) / (la * la) : 0; db = lb > 1e-9 ? (dx * mb[0] + dy * mb[1]) / (lb * lb) : 0; }
+  const side = (s, k, c0, size0, d, m) => {
+    const fixed = c0 - s * size0 / 2, edge0 = c0 + s * size0 / 2;
+    let e = Math.round(edge0 + d);
+    e = planeSnap(k, e, m, o.id, () => planePt(pl, gz.sa, gz.sb));
+    if (s * (e - fixed) < 20) e = fixed + s * 20; // mindestens 20 mm
+    const r10 = x => Math.round(x * 10) / 10;
+    return [r10((e + fixed) / 2), r10(Math.abs(e - fixed))];
+  };
+  if (gz.sa) [pl.u, pl.w] = side(gz.sa, a, o.u, o.w, da, la);
+  if (gz.sb) [pl.v, pl.h] = side(gz.sb, b, o.v, o.h, db, lb);
+  gz.label = `B ${fmt(pl.w)} · H ${fmt(pl.h)}`;
+  recompute(true);
+}
+// Plus an einer Kante: neue Ebene im rechten Winkel, teilt sich die Kante, zeigt zur Seite des Modells
+function planeAttach(pl, sa, sb) {
+  const [a, b] = planeAx(pl), k = sa ? a : b, along = sa ? b : a; // k: Achse der neuen Ebene, along: Richtung der Kante
+  const c = sa ? pl.u + sa * pl.w / 2 : pl.v + sb * pl.h / 2;
+  const sc = scene(), dup = sc.planes.find(q => q.axis === k && Math.abs(q.c - c) < 0.5 && Math.abs(q[planeKey(q, along)] - (along === a ? pl.u : pl.v)) < 0.5);
+  if (dup) { toast(`Dort ist schon R${planeNo(dup)}.`); selectPlane(dup.id); return; }
+  const M = modelMid(), dir = M && Math.abs(M[pl.axis] - pl.c) > 0.5 ? Math.sign(M[pl.axis] - pl.c) : 1;
+  const L = sa ? pl.w : pl.h; // so tief wie die Ausgangsebene quer zur Kante
+  const len = along === a ? pl.w : pl.h, mid = along === a ? pl.u : pl.v;
+  const n = { id: uid(), axis: k, c, w: 0, h: 0, u: 0, v: 0, ref: null };
+  const set = (ax, center, size) => { if (planeKey(n, ax) === 'u') { n.u = center; n.w = size; } else { n.v = center; n.h = size; } };
+  set(along, mid, len);
+  set(pl.axis, pl.c + dir * L / 2, L);
+  commit();
+  sc.planes.push(n);
+  recompute(); selectPlane(n.id); renderBrowser();
+  toast(`R${planeNo(n)} angesetzt.`);
+}
+function editPlaneDim(d) {
+  const pl = planeById(d.plDim.id), f = d.plDim.f;
+  if (!pl) return;
+  const { inp, close } = dimBox(d, pl[f]);
+  inp.focus({ preventScroll: true }); inp.select();
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true;
+    const v = num(inp.value);
+    close();
+    // Die untere bzw. linke Kante bleibt stehen, damit z. B. eine Wand auf dem Boden bleibt
+    if (ok && v >= 1 && Math.abs(v - pl[f]) > 0.01) { commit(); const m = f === 'w' ? 'u' : 'v'; pl[m] += (v - pl[f]) / 2; pl[f] = v; recompute(); }
+    draw();
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
 }
 // Griffe in 3D: alle Punkte der Szene, Ebenen, Verschiebepfeile
 function drawSceneHandles() {
@@ -5320,9 +5518,8 @@ function drawSceneHandles() {
   (vis.refPlanes ? sc.planes.filter(pl => !pl.hidden) : []).forEach(pl => {
     const c = planeCorners(pl).map(q => P3(q)), x = (c[0][0] + c[2][0]) / 2, y = (c[0][1] + c[2][1]) / 2, col = rgbCss(AX_RGB[pl.axis]);
     if (selPlane !== pl.id || pl.locked) return;
-    knob(x, y, 7, col);
-    gizmo.push({ type: 'plane', id: pl.id, at: [x, y], r: 12 });
-    moveArrows(`R:${pl.id}`, [0, 1, 2]);
+    void x; void y; void col;
+    planeHandles(pl);
   });
   const shownLabels = new Set(); // Treffen sich Rohrenden, reicht ein Name
   scenePipes(p).forEach((q, n) => {
@@ -5944,7 +6141,7 @@ function drawFit(P3) {
   fitPorts(f).forEach(o => {
     const [x, y] = P3(o.p), [ax, ay] = P3(V.add(o.p, V.mul(o.d, 24 / view.sc)));
     ctx.save(); ctx.strokeStyle = css('--accent'); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ax, ay); ctx.stroke(); ctx.restore();
-    knob(ax, ay, 8, css('--accent'));
+    portMark(ax, ay, css('--accent'));
     ctx.save(); ctx.fillStyle = '#fff'; ctx.font = '700 10px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.i + 1, ax, ay + 0.5); ctx.restore();
   });
   // Verbunden dreht es um eines seiner Rohre; je Rohr ein Ring, wenn alles andere Verbundene mitschwenken kann.
@@ -6911,7 +7108,7 @@ function renderBrowser() {
   if (box.hidden || treeEdit) return;
   const p = proj(), sc = scene(p), pipes = scenePipes(p), scroll = box.scrollTop;
   const open = (k, d) => treeOpen.get(k) ?? d;
-  const row = (lv, o) => `<div class="trow${o.on ? ' on' : ''}${o.off ? ' off' : ''}" style="padding-left:${lv * 14 + 2}px">${o.tg ? `<button class="tchev" data-tg="${o.tg}" data-open="${o.open ? 1 : 0}" aria-label="Auf- oder zuklappen">${o.open ? '▾' : '▸'}</button>` : '<span class="tchev"></span>'}${o.eye ? `<button class="teye" data-eye="${o.eye}" aria-label="Ein- oder ausblenden">${o.off ? EYE_OFF : EYE_ON}</button>` : ''}${o.lock ? `<button class="teye tlock${o.lock.on ? ' on' : ''}" data-pl="${o.lock.id}" aria-label="${o.lock.on ? 'Entsperren' : 'Sperren'}" aria-pressed="${o.lock.on}">${lockIcon(o.lock.on)}</button>` : ''}${o.dot ? `<button class="tdot" data-tc="${o.dot.id}" aria-label="Rohrfarbe" aria-expanded="${treeCol === o.dot.id}"><i style="background:${o.dot.css}"></i></button>` : ''}<button class="tname" ${o.go ? `data-go="${o.go}"` : `data-tg="${o.tg}" data-open="${o.open ? 1 : 0}"`}><span>${esc(o.t)}</span>${o.m ? `<small>${o.m}</small>` : ''}</button>${o.acts ? `<button class="tmore" data-tm="${o.acts.k}" aria-label="Aktionen">⋮</button>` : ''}</div>${o.acts && treeMenu === o.acts.k ? `<div class="tacts" style="padding-left:${lv * 14 + 26}px">${o.acts.b.map(([a, t, cls]) => `<button data-ta="${a}" data-k="${o.acts.k}"${cls ? ` class="${cls}"` : ''}>${t}</button>`).join('')}</div>` : ''}`;
+  const row = (lv, o) => `<div class="trow${o.on ? ' on' : ''}${o.off ? ' off' : ''}" style="padding-left:${lv * 14 + 2}px">${o.tg ? `<button class="tchev" data-tg="${o.tg}" data-open="${o.open ? 1 : 0}" aria-label="Auf- oder zuklappen">${o.open ? '▾' : '▸'}</button>` : '<span class="tchev"></span>'}${o.eye ? `<button class="teye" data-eye="${o.eye}" aria-label="Ein- oder ausblenden">${o.off ? EYE_OFF : EYE_ON}</button>` : ''}${o.lock ? `<button class="teye tlock${o.lock.on ? ' on' : ''}" data-pl="${o.lock.id}" aria-label="${o.lock.on ? 'Entsperren' : 'Sperren'}" aria-pressed="${o.lock.on}">${lockIcon(o.lock.on)}</button>` : o.eye ? '<span class="tsp"></span>' : ''}${o.dot ? `<button class="tdot" data-tc="${o.dot.id}" aria-label="Rohrfarbe" aria-expanded="${treeCol === o.dot.id}"><i style="background:${o.dot.css}"></i></button>` : o.eye ? '<span class="tsp2"></span>' : ''}<button class="tname" ${o.go ? `data-go="${o.go}"` : `data-tg="${o.tg}" data-open="${o.open ? 1 : 0}"`}><span>${esc(o.t)}</span>${o.m ? `<small>${o.m}</small>` : ''}</button>${o.acts ? `<button class="tmore" data-tm="${o.acts.k}" aria-label="Aktionen">⋮</button>` : ''}</div>${o.acts && treeMenu === o.acts.k ? `<div class="tacts" style="padding-left:${lv * 14 + 26}px">${o.acts.b.map(([a, t, cls]) => `<button data-ta="${a}" data-k="${o.acts.k}"${cls ? ` class="${cls}"` : ''}>${t}</button>`).join('')}</div>` : ''}`;
   const pipeRows = q => {
     const me = q === p, k = `p:${q.id}`, o = open(k, me), Bs = q.bundle || [];
     let h = row(1, { tg: k, open: o, eye: k, off: q.hidden, go: k, t: q.name, on: me && sel < 0 && selCorner < 1 && bundleSel < 0 && !selPoint && !selPlane, m: `Ø ${fmt(typeOf(q).D)}`, dot: { id: q.id, css: pipeCss(q.color) }, acts: { k, b: [['ren', 'Umbenennen'], ['type', 'Rohrtyp'], ['del', 'Löschen', 'danger']] } });
@@ -6962,7 +7159,7 @@ function delBundle(q, i) {
   if (!q.bundle.length) q.bundleTx = [];
   bundleSel = -1; recompute(); renderBundleBar();
 }
-function togglePlaneLock(id) {
+function togglePlaneLock(id, keepSel) {
   if (id.includes(':')) {
     const [t, a] = id.split(':'), o = { t: t === 'fi' ? 'fit' : t === 'p' ? 'pipe' : 'ex', id: a }, v = objGet(o);
     commit(); v.locked = !v.locked;
@@ -6973,8 +7170,8 @@ function togglePlaneLock(id) {
   commit();
   const pl = planeById(id);
   pl.locked = !pl.locked;
-  if (pl.locked && selPlane === id) selectLeg(-1);
-  recompute(); renderBrowser();
+  if (pl.locked && selPlane === id && !keepSel) selectLeg(-1);
+  recompute(); renderBrowser(); if (keepSel) renderBundleBar();
 }
 function setBrowser(on) {
   vis.tree = on; saveVis();

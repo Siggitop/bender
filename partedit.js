@@ -611,7 +611,7 @@ export function openPartEditor(lib, mesh, env) {
       if (!o.p || !o.d) return;
       const on = live || (sel?.kind === 'port' && sel.i === i), [ax, ay] = P3(o.p), [tx, ty] = portTip(o);
       ctx.save(); ctx.strokeStyle = acc; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(tx, ty); ctx.stroke(); ctx.restore();
-      ctx.beginPath(); ctx.arc(tx, ty, 10, 0, 7); ctx.fillStyle = acc; ctx.fill();
+      ctx.beginPath(); ctx.roundRect(tx - 10, ty - 10, 20, 20, 5); ctx.fillStyle = acc; ctx.fill(); // Anschluss: Quadrat wie im 3D
       ctx.save(); ctx.fillStyle = '#fff'; ctx.font = '700 11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(i + 1, tx, ty + 0.5); ctx.restore();
       block(tx, ty, 24, 24);
       ctx.save(); if (!on && !xray && !visible(o.p)) ctx.globalAlpha = 0.4; dot2(o.p, 5, acc); ctx.restore();

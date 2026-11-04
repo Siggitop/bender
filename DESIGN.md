@@ -20,7 +20,11 @@ Die App orientiert sich in Design, UI und UX stark an **Autodesk Fusion 360**. F
 | Oben rechts | Ansichtswürfel mit XYZ, Häuschen, Dreiecken | ViewCube |
 | Unten Mitte | Navigationsleiste | Navigationsleiste |
 | Über der Navigationsleiste | Leiste der aktuellen Auswahl | Kontextmenü, Befehlsoptionen |
-| Unten | Reiter 3D, Biegen, Einstellungen | Arbeitsbereiche |
+| Unten (Handy), links als schmale Leiste (Rechner ab 900 px Breite, Querformat) | Reiter 3D, Biegen, Einstellungen | Arbeitsbereiche |
+
+- Auf den Seiten Biegen und Einstellungen steht der Seitentitel neben dem Menüknopf, an derselben Stelle wie in der 3D-Ansicht.
+- Menüs der unteren Leisten (Anzeige, Hinzufügen, Ebenen, Rohrtyp) öffnen über ihrem Knopf.
+- Der Titel der Auswahlleiste sitzt immer direkt über ihr, auch wenn sich die Fläche ändert.
 
 ## Farben
 
@@ -41,6 +45,23 @@ Alle Farben stehen als Variablen in `style.css`, für Hell und Dunkel. Keine fes
 - **Akzent** heißt aktiv, gewählt oder antippbar. Nicht zur Dekoration verwenden.
 - **Rot** nur für Löschen und Fehler. **Orange** (`--mark`) nur für Biegemarken und Winkel.
 - `--canvas` und `PAL.fog` in `app.js` müssen zur Mitte des Verlaufs passen.
+
+## Raster
+
+Eine Stelle in `style.css` (Schicht „Gestaltungsraster“ am Ende) legt fest, wie alles aussieht. Neue Regeln nutzen diese Werte statt eigener Zahlen.
+
+| Zweck | Variablen |
+|---|---|
+| Radien | `--r-s` 8 px (Felder, kleine Knöpfe), `--r-m` 12 px (Leisten, Menüs, Karten), `--r-l` 16 px (Dialoge), `--r-full` |
+| Schatten | `--sh-1` Knöpfe und Leisten, `--sh-2` Menüs und Felder, `--sh-3` Dialoge |
+| Schrift | `--fs-xs` 12 (Gruppentitel, Großbuchstaben), `--fs-s` 13 (Leisten, Baum), `--fs-m` 15 (Menüeinträge), `--fs-l` 17 (Seitentitel), `--fs-xl` 22 |
+| Höhen | `--h-btn` 36 px mit Maus, `--h-touch` 44 px mit Finger |
+| Flächen | `--glass` (Knöpfe, Leisten), `--glass-strong` (Menüs, Projektmanager, Felder mit viel Text), `--blur` |
+| Bewegung | `--ease`, `--t-fast` 140 ms (Knopffarben), `--t` 200 ms (Menüs, Leisten, Dialoge) |
+
+**Durchscheinende Flächen:** Alles, was über der 3D-Ansicht schwebt, ist leicht durchscheinend mit Weichzeichner und feinem Rand. So bleibt das Modell darunter erahnbar. Flächen mit viel Text sind dichter, damit sie lesbar bleiben.
+
+**Bewegung:** Menüs, Leisten, Felder, Dialoge und Meldungen gleiten mit 200 ms auf und zu (Einblenden plus 6 px Weg, Dialoge von unten). Reiterwechsel blendet weich über. Mit „Bewegung reduzieren“ im System springt alles ohne Animation.
 
 ## Symbole
 
@@ -65,7 +86,11 @@ Alle Farben stehen als Variablen in `style.css`, für Hell und Dunkel. Keine fes
 - Tippen daneben oder eine Wahl schließt das Menü.
 - Zeilen mit Objekten tragen rechts ein ⋮ mit ihren Aktionen, zum Beispiel Umbenennen. Der Name wird direkt in der Zeile geändert.
 
-**Projektmanager (`.trow`):** Zeilen mit Pfeil, Auge, Farbpunkt, Name, Wert rechts und ⋮ für Aktionen. Auf dem Handy schließt er nach einer Auswahl.
+**Projektmanager (`.trow`):** Zeilen mit Pfeil, Auge, Schloss, Farbpunkt, Name, Wert rechts und ⋮ für Aktionen. Die Spalten stehen fest untereinander; fehlt ein Schloss oder Farbpunkt, hält eine Lücke den Platz. Er öffnet an derselben Stelle wie das Menü oben links: gleicher Abstand unter den Knöpfen, gleiche linke Kante. Steht die 3D-Ansicht neben einer Seite (Biegen am Rechner), sitzt er oben links in der 3D-Ansicht. Auf dem Handy schließt er nach einer Auswahl.
+
+**Marken in der 3D-Ansicht:** Biegemarken sind orange Kreise, Anschlussnummern von Fittings blaue abgerundete Quadrate, überall gleich (3D, Vorschau in den Einstellungen, Bauteil-Editor).
+
+**Biegen auf dem Handy:** Drucken, Bildschirm anlassen und Große Schrift sind einzeilige Symbolknöpfe; am Rechner steht der Text daneben.
 
 **Auswahl-Leiste (`#bundleBar`):** Gebaut wie die Navigationsleiste: Pille, Knöpfe ohne Rahmen, Trennstrich zwischen Gruppen. Die Überschrift steht ohne Hintergrund darüber. So breit wie ihr Inhalt, sie bricht um: Nichts liegt außerhalb des Bildschirms. Zeigt nur, was zur Auswahl passt.
 
@@ -96,7 +121,10 @@ Alle Farben stehen als Variablen in `style.css`, für Hell und Dunkel. Keine fes
 - **Fitting einfügen:** `+` → Fitting zeigt bei mehreren Fittings sofort ein Raster mit Bildern der Modelle (nummerierte Anschlüsse) und Namen; der Knopf in der Leiste öffnet es wieder.
 - **Griffmitte eines ganzen Rohrs** ist der Schwerpunkt seiner Punkte: Er dreht starr mit, beim Drehen bleibt der Griff stehen.
 - **Schlösser:** Das Schloss steht nur in der Leiste des gewählten Anfangs- oder Endpunkts, als Symbol ohne Text. In 3D zeigt es den Status am Punkt: klein, ohne Hintergrundkreis, mit feiner heller Kontur; beim Rauszoomen allmählich kleiner und blasser. Alle Schlösser in 3D, auch an Ebenen, blenden unter einem einstellbaren Maßstab aus (Einstellungen → Anzeige, Vorgabe 0,8 px/mm); das Gewählte bleibt sichtbar.
-- **Ebenen sperren:** Das Schloss in der Ebenenzeile des Projektmanagers macht eine Ebene im 3D-Raum unanwählbar und hält ihre Position fest. Sie bleibt löschbar und Fangziel.
+- **Ebenen sperren:** Das Schloss in der Leiste der gewählten Ebene oder in ihrer Zeile im Projektmanager macht eine Ebene im 3D-Raum unanwählbar und hält ihre Position fest. Über die Leiste gesperrt, bleibt sie gewählt, damit man sie gleich wieder entsperren kann. Sie bleibt löschbar und Fangziel.
+- **Ebenen bearbeiten:** Alles direkt in 3D, die Leiste hat nur Schloss und Papierkorb. Ein Pfeil in Achsfarbe senkrecht zur Ebene verschiebt sie. Weiße Balken in der Kantenmitte ziehen eine Kante, weiße Quadrate an den Ecken zwei; die gegenüberliegende Kante bleibt stehen, mindestens 20 mm. Griffe an Kanten, die auf dem Bildschirm zu kurz sind, entfallen. B und H stehen innen an der unteren und rechten Kante und sind antippbar; die Eingabe hält die untere bzw. linke Kante fest. Fangen beim Ziehen: Lage und Kanten anderer Ebenen (auch auf anderen Achsen) und der Ursprung immer, Punkte mit „Fangpunkte“; die getroffene Ebene wird kräftig umrandet.
+- **Ebenen anbauen:** Ein blaues Plus außen an jeder Kante der gewählten Ebene setzt dort eine neue Ebene im rechten Winkel an. Sie teilt sich die Kante, ist so tief wie die Ausgangsebene quer zur Kante und zeigt zur Seite der Rohre. Steht dort schon eine, wird sie gewählt. So baut man aus einem Boden einen Raum.
+- **Puppenhaus:** Ebenen, die zwischen Betrachter und Rohren stehen, blenden beim Drehen bis auf einen blassen Umriss aus, ohne Füllung; ein Tipp in ihre Fläche geht hindurch, an der Kante sind sie wählbar. Alle übrigen Ebenen tragen einen Hauch Füllung (auch gesperrte), die gewählte eine deutliche. Schalter „Puppenhaus“ im Anzeige-Menü, Vorgabe an.
 - **Beschriftungen:** S1, E1, R1, A und die Bündelzahl hängen an einem Schalter im Auge. Maße, Schlösser und Biegemarken bleiben davon unberührt.
 - **Rohr anlegen ist ein Befehl:** Die Leiste führt Schritt für Schritt (Bezug, Versatz, Richtung und Länge). Die Wirkung ist im Raum sofort sichtbar, Abbrechen hinterlässt nichts. Neue mehrstufige Befehle folgen diesem Muster.
 - **Messen** läuft nur orthogonal: je Achse ein Maß, kein Diagonalwert. Ohne Eingabe ändert der Befehl nichts und landet nicht im Verlauf. Ein Tipp auf ein Maß stellt den Abstand je Achse ein: Der zuletzt gewählte Punkt ist der gefüllte Festpunkt, der erste wandert. Bewegen lassen sich Fittings, Bestandsstücke, freie Ebenen, Eckpunkte und ungesperrte Rohrenden; was gesperrt ist, bleibt immer fest. Das Maß wird einmalig eingestellt, eine Beziehung entsteht nicht. Bei Ebenen zählt nur der senkrechte Abstand.
