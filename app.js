@@ -11,7 +11,7 @@ const num = s => { const v = parseFloat(String(s ?? '').replace(',', '.')); retu
 const r1 = n => Math.round(n * 10) / 10;
 const uid = () => Math.random().toString(36).slice(2, 9);
 // Liniensymbole im Text, gleiche Bauart wie die Knöpfe
-const IC_PATHS = { copy: 'M9 9h10v12H9zM5 15V3h10', trash: 'M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6', x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', unlink: 'M9 15l-1 1a4 4 0 0 1-5.7-5.7l1-1M15 9l1-1a4 4 0 0 1 5.7 5.7l-1 1M8 3v3M3 8h3M16 21v-3M21 16h-3', ortho: 'M5 4v15h15M5 14h5v5', paste: 'M8 5H6v16h12V5h-2M9 3h6v4H9z', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3', download: 'M12 4v11M7 10l5 5 5-5M5 20h14' };
+const IC_PATHS = { copy: 'M9 9h10v12H9zM5 15V3h10', trash: 'M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6', x: 'M6 6l12 12M18 6 6 18', check: 'm5 12 5 5 9-10', link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1', unlink: 'M9 15l-1 1a4 4 0 0 1-5.7-5.7l1-1M15 9l1-1a4 4 0 0 1 5.7 5.7l-1 1M8 3v3M3 8h3M16 21v-3M21 16h-3', ortho: 'M5 4v15h15M5 14h5v5', paste: 'M8 5H6v16h12V5h-2M9 3h6v4H9z', warn: 'M12 4 2.5 20h19zM12 10v5M12 17.5v.01', print: 'M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z', sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4', lock: 'M4 11h16v10H4zM8 11V7a4 4 0 0 1 8 0v4', swap: 'M4 8h14l-3-3M20 16H6l3 3', offset: 'M3 18h6l6-12h6', edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3', download: 'M12 4v11M7 10l5 5 5-5M5 20h14', bksp: 'M21 6H8l-5 6 5 6h13zM11 9l6 6M17 9l-6 6' };
 const IC = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${IC_PATHS[n]}"/></svg>`;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const normRot = r => { let x = ((r % 360) + 360) % 360; return x > 180 ? x - 360 : x; };
@@ -212,6 +212,7 @@ function restoreSnapshot(snap) {
   });
   db.projects = merge(db.projects, s.projects); db.scenes = merge(db.scenes, s.scenes); db.rooms = merge(db.rooms, s.rooms);
   db.currentId = s.currentId;
+  linkGood = null; // neuer Ausgangsstand für die Prüfung der Verbindungen
 }
 let lastKey = null, lastTime = 0;
 function commit(key = null, snap = null) {
@@ -1172,7 +1173,7 @@ function recompute(light = false) {
 
 function messages() {
   return layout.errors.map(m => `<div class="msg err">${IC('x')} ${esc(m)}</div>`).join('') +
-    [...layout.warnings, ...fitGapWarns(proj())].map(m => `<div class="msg warn">${IC('warn')} ${esc(m)}</div>`).join('') +
+    [...layout.warnings, ...fitGapWarns(proj()), ...skewWarns(proj())].map(m => `<div class="msg warn">${IC('warn')} ${esc(m)}</div>`).join('') +
     (layout.hints || []).map(m => `<div class="msg hint">${esc(m)}</div>`).join('');
 }
 
@@ -1459,6 +1460,8 @@ function renderTools() {
       <label class="sfield"><span>Schlösser ausblenden unter</span><b id="lockVal">${lockText()}</b><input type="range" id="lockMin" min="0.2" max="2.5" step="0.05" value="${vis.lockMin}" aria-label="Maßstab, ab dem Schlösser verschwinden"><small>Weiter herausgezoomt verschwinden die Schlösser an Punkten und Ebenen. Maßstab der 3D-Ansicht gerade: ${view ? view.sc.toFixed(2).replace('.', ',') : '–'} px/mm</small></label>
       <div class="swrow"><label class="chk sswitch">Abstandsschatten auf Ebenen<input type="checkbox" data-svis="planeShadow"${vis.planeShadow ? ' checked' : ''}></label></div>
       <small class="shint">Rohre werfen weiche Schatten auf die Ebenen: je näher, desto dunkler und schärfer.</small>
+      <div class="swrow"><label class="chk sswitch">Eigener Zahlenblock<input type="checkbox" data-svis="numPad"${vis.numPad !== false ? ' checked' : ''}></label></div>
+      <small class="shint">Auf dem Handy und Tablet statt der Zifferntastatur: rechnen (1200 − 35), ±, zuletzt verwendete Werte, weiter zum nächsten Feld.</small>
     </div></div></section>
     <section><h2>App</h2><div class="slist"><div class="spad sapp"><span>Version <b>${APP_VERSION}</b> vom ${APP_DATE}</span><span id="appStatus">${updateStatus()}</span><button id="reloadBtn">Neu laden</button></div></div></section>
   </div>`;
@@ -1969,7 +1972,7 @@ const COLOR_NAMES = ['Blau', 'Rot', 'Grün', 'Orange', 'Violett', 'Türkis', 'Pi
 const PIPE_COLORS = [[0.13, 0.45, 0.85], [0.84, 0.2, 0.2], [0.15, 0.6, 0.33], [0.93, 0.55, 0.1], [0.55, 0.3, 0.8], [0.05, 0.63, 0.68], [0.85, 0.3, 0.6], [0.5, 0.38, 0.25]];
 const rgbCss = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
 const lighter = (c, t) => c.map(v => v + (1 - v) * t);
-const VIS_DEFAULT = { origin: true, snap: false, cornerMove: false, offsets: false, extAng: 90, tree: false, actsOpen: false, colors: true, labels: true, twist: true, lockMin: 0.8, refPlanes: true, dollhouse: true, planeShadow: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
+const VIS_DEFAULT = { origin: true, snap: false, cornerMove: false, offsets: false, extAng: 90, tree: false, actsOpen: false, colors: true, labels: true, twist: true, lockMin: 0.8, refPlanes: true, dollhouse: true, planeShadow: true, numPad: true, dimLevel: 'sel', axis: true, total: false, angles: false, marks: true, grid: true, planes: true, clamps: true, ghosts: true, extAlways: false };
 let vis = { ...VIS_DEFAULT };
 try { Object.assign(vis, JSON.parse(localStorage.getItem('biege.vis') || '{}')); } catch {}
 const saveVis = () => { try { localStorage.setItem('biege.vis', JSON.stringify(vis)); } catch {} };
@@ -2602,10 +2605,178 @@ function calc(text, base, signed = false) {
   try { const v = sum(); return i === t.length && Number.isFinite(v) ? v : null; } catch { return null; }
 }
 const hasCalc = s => /[+\-−*×x/÷:(]/i.test(String(s).trim().slice(1)) || /^[+\-−*×x/÷:]/i.test(String(s).trim());
+// ---------- Zahlenblock ----------
+// Auf Touchgeräten ersetzt ein eigener Block die Zifferntastatur des Systems: Rechnen, ±, zuletzt verwendete Werte, Weiter zum nächsten Feld.
+// Im Feld steht immer eine fertige Zahl (die Bearbeiter lesen sie live), die Rechnung steht im Block. Am Mac bleibt die Tastatur,
+// gerechnet wird dort beim Übernehmen (Enter oder Verlassen des Felds).
+const padOn = () => vis.numPad !== false && matchMedia('(pointer: coarse)').matches;
+const isNumField = el => el instanceof HTMLInputElement && !el.readOnly && !el.disabled && (el.inputMode === 'decimal' || el.dataset.np != null);
+const padVisible = el => el.isConnected && el.getClientRects().length > 0;
+let pad = null, padEl = null;
+const padRecent = (() => { try { return JSON.parse(localStorage.getItem('biege.np')) || {}; } catch { return {}; } })();
+function padLabel(inp) {
+  if (inp.dataset.npLabel) return inp.dataset.npLabel;
+  const lb = inp.closest('label');
+  const t = lb ? [...lb.childNodes].filter(n => n !== inp && !n.contains?.(inp) && !['I', 'SMALL'].includes(n.nodeName)).map(n => n.textContent).join(' ') : '';
+  return (t || inp.getAttribute('aria-label') || inp.placeholder || 'Wert').replace(/\s+/g, ' ').trim();
+}
+function padUnit(inp) {
+  const u = inp.dataset.npUnit || inp.parentElement?.querySelector('i, .unit > span')?.textContent || '';
+  return /°/.test(u) || /winkel|drehung/i.test(padLabel(inp)) ? '°' : 'mm';
+}
+const padNum = v => String(Math.round(v * 100) / 100).replace('.', ',');
+function padEval(expr) {
+  if (!expr.trim()) return null;
+  return calc(expr, num(pad.v0), true);
+}
+function padFields() { return [...document.querySelectorAll('input')].filter(el => isNumField(el) && !el.classList.contains('dimedit') && padVisible(el)); }
+function padBuild() {
+  padEl = document.createElement('div');
+  padEl.id = 'numPad'; padEl.hidden = true;
+  const k = (t, cls = '') => `<button type="button" data-k="${t}"${cls ? ` class="${cls}"` : ''}>${t}</button>`;
+  padEl.innerHTML = `<div class="nphead"><span class="nplab"></span><span class="npexpr"></span><span class="npres"></span><button type="button" data-k="del" class="npdel" aria-label="Löschen">${IC('bksp')}</button></div>
+    <div class="npchips"></div>
+    <div class="npgrid">${k('7')}${k('8')}${k('9')}${k('×', 'op')}${k('4')}${k('5')}${k('6')}${k('−', 'op')}${k('1')}${k('2')}${k('3')}${k('+', 'op')}${k(',')}${k('0')}${k('±', 'op')}${k('÷', 'op')}</div>
+    <div class="npact"><button type="button" data-k="esc">Abbrechen</button><button type="button" data-k="next">Weiter</button><button type="button" data-k="ok" class="on" aria-label="Übernehmen">${IC('check')}</button></div>`;
+  // Der Fokus bleibt im Feld: Tippen auf den Block darf es nicht verlassen
+  const hold = e => e.preventDefault();
+  padEl.addEventListener('touchstart', hold, { passive: false });
+  padEl.addEventListener('pointerdown', hold);
+  padEl.addEventListener('mousedown', hold);
+  padEl.addEventListener('pointerup', e => { const b = e.target.closest('button'); if (b && !b.disabled) padKey(b.dataset.k ?? b.dataset.v, b); });
+  document.body.append(padEl);
+}
+function padRender() {
+  if (!pad) return;
+  const v = padEval(pad.expr), calcOn = hasCalc(pad.expr);
+  padEl.querySelector('.nplab').textContent = pad.label;
+  const ex = padEl.querySelector('.npexpr');
+  ex.textContent = pad.expr || '0'; ex.classList.toggle('fresh', pad.fresh);
+  const res = padEl.querySelector('.npres');
+  res.textContent = calcOn ? (v == null ? '= …' : `= ${padNum(v)}`) : ` ${pad.unit}`;
+  res.classList.toggle('bad', calcOn && v == null);
+  const chips = pad.unit === '°' ? [15, 30, 45, 60, 90] : [];
+  const recent = (padRecent[pad.unit] || []).filter(x => !chips.includes(x)).slice(0, 5 - Math.min(chips.length, 3));
+  padEl.querySelector('.npchips').innerHTML = [...chips.map(x => `<button type="button" data-v="${x}" class="quick">${padNum(x)}°</button>`), ...recent.map(x => `<button type="button" data-v="${x}">${padNum(x)}</button>`)].join('') || `<span>${pad.unit === '°' ? '' : 'Zuletzt verwendete Werte erscheinen hier'}</span>`;
+  padEl.querySelector('[data-k="±"]').disabled = pad.inp.dataset.signed != null; // dort gibt es den eigenen Vorzeichen-Knopf
+  const nx = padEl.querySelector('[data-k="next"]');
+  nx.hidden = pad.inp.classList.contains('dimedit'); nx.disabled = !padNext();
+}
+function padNext() {
+  const all = padFields(), i = all.indexOf(pad.inp);
+  return i >= 0 ? all[i + 1] || null : null;
+}
+// Feld auf den Wert der Rechnung setzen und die Bearbeiter live mitlaufen lassen
+function padApply() {
+  const v = padEval(pad.expr), t = pad.expr.trim() === '' ? '' : v == null ? null : padNum(v);
+  if (t == null || t === pad.inp.value) return;
+  pad.inp.value = t;
+  pad.inp.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function padKey(k, b) {
+  if (!pad) return;
+  const ops = '+−×÷';
+  if (b?.dataset.v != null) { pad.expr = padNum(+b.dataset.v); pad.fresh = false; }
+  else if (/^[0-9,]$/.test(k)) {
+    if (pad.fresh) pad.expr = '';
+    pad.fresh = false;
+    const last = pad.expr.split(/[+−×÷]/).at(-1);
+    if (k === ',' && last.includes(',')) return;
+    pad.expr += k === ',' && !last ? '0,' : k;
+  } else if (ops.includes(k) && k !== '±') {
+    pad.fresh = false;
+    pad.expr = ops.includes(pad.expr.slice(-1)) ? pad.expr.slice(0, -1) + k : (pad.expr || '0') + k;
+  } else if (k === '±') {
+    pad.fresh = false;
+    pad.expr = pad.expr.startsWith('−') ? pad.expr.slice(1) : '−' + (pad.expr.includes('+') || pad.expr.includes('−') ? `(${pad.expr})` : pad.expr);
+  } else if (k === 'del') {
+    pad.expr = pad.fresh ? '' : pad.expr.slice(0, -1); pad.fresh = false;
+  } else if (k === 'ok') { padDone(true); return; }
+  else if (k === 'esc') { padDone(false); return; }
+  else if (k === 'next') { padGoNext(); return; }
+  padApply(); padRender();
+}
+function padRemember(v) {
+  if (!Number.isFinite(v) || v === 0) return;
+  const l = (padRecent[pad.unit] || []).filter(x => x !== v);
+  padRecent[pad.unit] = [v, ...l].slice(0, 8);
+  try { localStorage.setItem('biege.np', JSON.stringify(padRecent)); } catch {}
+}
+// Übernehmen oder Verwerfen. Das Feld bekommt die Ereignisse wie beim Tippen mit der Tastatur: change, dann blur (Enter/Escape bei den Maßfeldern im Bild)
+function padDone(ok, viaBlur = false) {
+  const p = pad;
+  if (!p || p.closing) return;
+  p.closing = true;
+  const inp = p.inp;
+  if (ok) {
+    padApply();
+    if (inp.value !== p.v0) { padRemember(num(inp.value)); inp.dispatchEvent(new Event('change', { bubbles: true })); }
+  } else if (inp.value !== p.v0) { inp.value = p.v0; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+  if (!ok && inp.classList.contains('dimedit')) inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  padClose();
+  if (!viaBlur && document.activeElement === inp) inp.blur();
+}
+function padGoNext() {
+  const all = padFields(), i = all.indexOf(pad.inp);
+  padDone(true);
+  // Das Übernehmen kann die Liste neu aufbauen: dasselbe Feld an derselben Stelle suchen
+  const nx = padFields()[i + 1];
+  if (nx) { nx.dataset.np ??= ''; nx.inputMode = 'none'; nx.focus({ preventScroll: true }); nx.select?.(); }
+}
+function padOpen(inp) {
+  if (pad?.inp === inp) return;
+  if (pad) padDone(true, true);
+  if (!padEl) padBuild();
+  pad = { inp, v0: inp.value, expr: inp.value, fresh: true, label: padLabel(inp), unit: padUnit(inp) };
+  padEl.hidden = false; document.body.classList.add('np-open');
+  padRender();
+  requestAnimationFrame(() => padReveal(inp));
+}
+function padClose() {
+  pad = null;
+  if (padEl) padEl.hidden = true;
+  document.body.classList.remove('np-open');
+  document.querySelectorAll('[data-np-pad]').forEach(el => { el.style.paddingBottom = el.dataset.npPad; delete el.dataset.npPad; });
+}
+// Das Feld darf nicht unter dem Block liegen: die scrollende Liste darüber schiebt es hoch
+function padReveal(inp) {
+  if (!pad || inp.classList.contains('dimedit')) return;
+  const top = padEl.getBoundingClientRect().top - 12, r = inp.getBoundingClientRect();
+  if (r.bottom <= top) return;
+  let sp = inp.parentElement;
+  while (sp && !(sp.scrollHeight > sp.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(sp).overflowY))) sp = sp.parentElement;
+  sp ??= document.scrollingElement; // sonst scrollt die Seite selbst
+  const room = sp === document.scrollingElement ? document.body : sp;
+  if (room.dataset.npPad == null) { room.dataset.npPad = room.style.paddingBottom; room.style.paddingBottom = `${padEl.offsetHeight}px`; }
+  sp.scrollTop += r.bottom - top;
+}
+document.addEventListener('pointerdown', e => { // vor dem Fokus: keine Systemtastatur
+  const t = e.target;
+  if (isNumField(t) && padOn()) { t.dataset.np ??= ''; t.inputMode = 'none'; }
+}, true);
+document.addEventListener('focusin', e => {
+  const t = e.target;
+  if (!isNumField(t)) return;
+  t.dataset.npBase = t.value;
+  if (!padOn()) { if (t.dataset.np != null) t.inputMode = 'decimal'; return; }
+  t.dataset.np ??= ''; t.inputMode = 'none';
+  padOpen(t);
+});
+document.addEventListener('focusout', e => { if (pad && e.target === pad.inp) padDone(true, true); });
+// Tastatur (Mac): Rechnung beim Übernehmen auflösen, bevor die Bearbeiter den Wert lesen
+const settleField = t => {
+  if (!isNumField(t) || t.classList.contains('dimedit') || !hasCalc(t.value)) return;
+  const v = calc(t.value, num(t.dataset.npBase ?? t.defaultValue), false);
+  if (v == null) return;
+  t.value = padNum(v);
+  t.dispatchEvent(new Event('input', { bubbles: true }));
+};
+document.addEventListener('keydown', e => { if (e.key === 'Enter') settleField(e.target); }, true);
+document.addEventListener('change', e => settleField(e.target), true);
 function dimBox(d, value, signed = false) {
   const vv = window.visualViewport, box = document.createElement('div'), inp = document.createElement('input'), r = cv.getBoundingClientRect();
   box.className = 'dimbox';
-  inp.className = 'dimedit'; inp.inputMode = 'decimal'; inp.enterKeyHint = 'done'; inp.value = fin(value);
+  inp.className = 'dimedit'; inp.inputMode = padOn() ? 'none' : 'decimal'; inp.dataset.npLabel = 'Maß'; inp.dataset.np = ''; inp.enterKeyHint = 'done'; inp.value = fin(value);
   box.append(inp);
   // Rechnung: Vorschau beim Tippen; vor der Übernahme steht das Ergebnis im Feld, die Bearbeiter lesen nur noch die Zahl
   const res = document.createElement('div');
@@ -2628,7 +2799,7 @@ function dimBox(d, value, signed = false) {
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') settle(); });
   inp.addEventListener('blur', settle);
   // Die Zifferntastatur des Handys hat keine Rechenzeichen
-  if (matchMedia('(pointer: coarse)').matches) {
+  if (matchMedia('(pointer: coarse)').matches && !padOn()) {
     const ops = document.createElement('div');
     ops.className = 'dimtools dimcalc';
     ops.innerHTML = ['+', '−', '×', '÷'].map(o => `<button data-op="${o}">${o}</button>`).join('');
@@ -3026,10 +3197,96 @@ function solveLengths(diff, pool) {
   }
   return { S, c: cur.c, ok: V.len(cur.res) < 0.01, res: cur.res };
 }
+// ---------- Selbsttest der Regeln (REGELN.md): im Testmodus biegeDebug.selfTest() ----------
+// Baut je Fall eine kleine Szene, führt die Bearbeitung über dieselben Funktionen wie die Griffe aus und prüft das Ergebnis.
+// Danach ist alles wie vorher (auch der gespeicherte Stand).
+async function selfTest() {
+  const keepDb = JSON.stringify(db), keepLs = localStorage.getItem(STORE), keepHist = JSON.stringify(hist), out = [];
+  const tick = () => new Promise(r => setTimeout(r, 30));
+  const libOf = kind => db.fittings.find(l => fitKind(l).kind === kind && l.ports?.length);
+  const pipe = (id, o, ds) => ({ ...newProject(db.pipeTypes[0].id, id), id, name: id, sceneId: '_T', origin: o, deltas: ds.map(v => ({ x: v[0], y: v[1], z: v[2] })), mode: 'deltas', bundle: [], bundleTx: [] });
+  const mk = (pipes, fits = []) => {
+    db.scenes = db.scenes.filter(x => x.id !== '_T'); db.projects = db.projects.filter(q => q.sceneId !== '_T');
+    db.scenes.push({ id: '_T', name: 'Selbsttest', planes: [], existing: [], fittings: fits }); db.projects.push(...pipes);
+    db.currentId = pipes[0].id; linkGood = null; bendGuard = null; hist.undo = []; hist.redo = [];
+    recompute(); return { P: id => pipeById(id), F: id => fitById(id) };
+  };
+  const len = (q, j) => V.len(deltaVec(q.deltas[j]));
+  const near = (a, b, t = 0.05) => Math.abs(a - b) <= t;
+  const check = (name, ok, info = '') => out.push({ Fall: name, ok: ok ? 'ok' : 'FEHLER', Info: info });
+  // Fitting so setzen, dass Anschluss pa auf Rohrende 'to' sitzt und in das Rohr zeigt
+  const seat = (f, pa, to) => { const e = linkEnd(to), l = fitLib(f.libId); f.rot = rotFromTo(l.ports[pa].d, V.mul(e.u, -1)); f.pos = V.sub(e.T, mulR(f.rot, l.ports[pa].p)); };
+  const cua = libOf('straight'), cla = libOf('elbow');
+  try {
+    // 1 Schenkellänge, Ende frei: Das Ende wandert mit
+    { const { P } = mk([pipe('A', [0, 0, 0], [[300, 0, 0], [0, 200, 0]])]);
+      withEnd(0, () => setDelta(0, [400, 0, 0])); recompute();
+      check('Schenkel länger, Ende frei: Ende wandert', near(endOf(P('A'))[0], 400), `Ende x=${fmt(endOf(P('A'))[0])}`); }
+    // 2 Schenkellänge, Ende in gehaltenem Fitting: Ende bleibt, ein anderer Schenkel gleicht aus
+    if (cua) { const A = pipe('A', [0, 0, 0], [[300, 0, 0], [0, 200, 0], [150, 0, 0]]), B = pipe('B', [460, 200, 0], [[200, 0, 0]]);
+      const f = { id: 'F', libId: cua.id, pos: [0, 0, 0], rot: [1, 0, 0, 0, 1, 0, 0, 0, 1], links: [] };
+      const { P } = mk([A, B], [f]); seat(f, 0, 'E:A'); f.links = [{ port: 0, to: 'E:A' }]; const o1 = fitPorts(f)[1]; B.origin = [...o1.p]; f.links.push({ port: 1, to: 'S:B' }); recompute();
+      const E0 = [...endOf(P('A'))], S0 = [...points(P('A'))[0]]; withEnd(0, () => setDelta(0, [350, 0, 0])); recompute();
+      check('Ende im gehaltenen Fitting, Anfang frei: Ende bleibt, Rohr wandert', V.len(V.sub(endOf(P('A')), E0)) < 0.05 && near(points(P('A'))[0][0] - S0[0], -50), `Anfang ${fmt(points(P('A'))[0][0] - S0[0])} mm`);
+      P('A').deltas[0] = { x: 300, y: 0, z: 0 }; P('A').origin = [...S0]; P('A').startFixed = true; recompute();
+      withEnd(0, () => setDelta(0, [350, 0, 0])); recompute();
+      check('Ende im gehaltenen Fitting, Anfang fest: anderer Schenkel gleicht aus', V.len(V.sub(endOf(P('A')), E0)) < 0.05 && near(len(P('A'), 2), 100), `letzter Schenkel ${fmt(len(P('A'), 2))} mm`); }
+    // 3 Ende im Endstück: Das Fitting wandert mit
+    if (cla) { const A = pipe('A', [0, 0, 0], [[300, 0, 0]]), f = { id: 'F', libId: cla.id, pos: [0, 0, 0], rot: [1, 0, 0, 0, 1, 0, 0, 0, 1], links: [] };
+      const { F } = mk([A], [f]); seat(f, 0, 'E:A'); f.links = [{ port: 0, to: 'E:A' }]; recompute(); const p0 = [...F('F').pos];
+      withEnd(0, () => setDelta(0, [350, 0, 0])); recompute();
+      check('Ende im Endstück: Fitting wandert mit', near(F('F').pos[0] - p0[0], 50), `Fitting ${fmt(F('F').pos[0] - p0[0])} mm`); }
+    // 4 Fitting längs der Leitung: ein Rohr länger, eins kürzer, freie Enden bleiben
+    if (cua) { const A = pipe('A', [0, 0, 0], [[200, 0, 0]]), B = pipe('B', [0, 0, 0], [[200, 0, 0]]), f = { id: 'F', libId: cua.id, pos: [0, 0, 0], rot: [1, 0, 0, 0, 1, 0, 0, 0, 1], links: [] };
+      const { P, F } = mk([A, B], [f]); seat(f, 0, 'E:A'); B.origin = [...fitPorts(f)[1].p]; f.links = [{ port: 0, to: 'E:A' }, { port: 1, to: 'S:B' }]; recompute();
+      const S0 = [...points(P('A'))[0]], E0 = [...endOf(P('B'))], ax = V.norm(V.sub(fitPorts(F('F'))[1].p, fitPorts(F('F'))[0].p));
+      F('F').pos = V.add(F('F').pos, V.mul(ax, 30)); drv.add('F'); recompute();
+      check('Fitting längs: A +30, B −30, Enden bleiben', near(len(P('A'), 0), 230) && near(len(P('B'), 0), 170) && V.len(V.sub(points(P('A'))[0], S0)) < 0.05 && V.len(V.sub(endOf(P('B')), E0)) < 0.05, `A ${fmt(len(P('A'), 0))}, B ${fmt(len(P('B'), 0))}`); }
+    // 5 Schräg im Anschluss: Endschenkel eines Rohrs in gehaltenem Fitting kippen wird abgelehnt
+    if (cua) { const A = pipe('A', [0, 0, 0], [[300, 0, 0], [0, 200, 0], [150, 0, 0]]), B = pipe('B', [0, 0, 0], [[200, 0, 0]]), f = { id: 'F', libId: cua.id, pos: [0, 0, 0], rot: [1, 0, 0, 0, 1, 0, 0, 0, 1], links: [] };
+      const { P } = mk([A, B], [f]); seat(f, 0, 'E:A'); B.origin = [...fitPorts(f)[1].p]; f.links = [{ port: 0, to: 'E:A' }, { port: 1, to: 'S:B' }]; recompute();
+      const before = JSON.stringify(P('A').deltas); P('A').deltas[2] = { x: 150, y: 30, z: 0 }; recompute();
+      check('Endschenkel im Fitting kippen: abgelehnt', JSON.stringify(P('A').deltas) === before && Object.values(skewMap()).every(v => v.a < 0.05), JSON.stringify(P('A').deltas[2])); }
+    // 6 Zu kurze Gerade zwischen zwei Bögen: Befehl wird zurückgenommen
+    { const { P } = mk([pipe('A', [0, 0, 0], [[200, 0, 0], [0, 80, 0], [200, 0, 0]])]);
+      commit(); P('A').deltas[1] = { x: 0, y: 40, z: 0 }; recompute(); await tick();
+      check('Gerade zwischen Bögen < Zange: zurückgenommen', near(len(pipeById('A'), 1), 80), `Mittelschenkel ${fmt(len(pipeById('A'), 1))} mm`); }
+    // 7 Verbinder einsetzen und wieder zusammenführen
+    if (cua) { const { P } = mk([pipe('A', [0, 0, 0], [[400, 0, 0], [0, 300, 0]])]);
+      const before = JSON.stringify(P('A').deltas.map(deltaVec)), s0 = pipeStraights().find(x => x.q.id === 'A' && x.i === 0);
+      create = { kind: 'fit', libId: cua.id, step: 'ref' }; placeInline({ s: s0, plan: inlinePlan(cua.id, s0, 200) }); create = null;
+      const f = fitsAll()[0], two = scenePipes().length === 2; await tick();
+      mergeJoin(f); scene().fittings = []; recompute();
+      check('Verbinder einsetzen, löschen, verbinden: wie vorher', two && JSON.stringify(pipeById('A').deltas.map(d => deltaVec(d).map(v => Math.round(v * 1000) / 1000))) === JSON.stringify(JSON.parse(before).map(v => v.map(x => Math.round(x * 1000) / 1000))), two ? 'getrennt und wieder eins' : 'nicht getrennt'); }
+    // 8 Winkel statt Bogen: Eckpunkte bleiben
+    if (cla) { const { P } = mk([pipe('A', [0, 0, 0], [[400, 0, 0], [0, 300, 0]])]), L = buildLayout(P('A')), Pts = points(P('A'));
+      const plan = elbowPlan(cla.id, P('A'), 1, Pts, L);
+      if (plan.ok) { create = { kind: 'fit', libId: cla.id, step: 'ref' }; placeInline({ s: { q: P('A'), i: 0, P: Pts }, plan }); create = null; recompute(); }
+      const B = scenePipes().find(q => q.id !== 'A');
+      check('Winkel statt Bogen: gerade bis zum Winkel, Eckpunkt bleibt', plan.ok && !!B && near(V.len(V.sub(Pts[1], endOf(pipeById('A')))) , V.len(V.sub(Pts[1], points(B)[0]))) && Object.values(skewMap()).every(v => v.a < 0.05), plan.why || ''); }
+  } catch (e) { check('Abbruch', false, e.message); }
+  finally {
+    const d = JSON.parse(keepDb); Object.keys(db).forEach(k => delete db[k]); Object.assign(db, d);
+    if (keepLs != null) localStorage.setItem(STORE, keepLs);
+    Object.assign(hist, JSON.parse(keepHist)); linkGood = null; bendGuard = null; create = null;
+    fullRender();
+  }
+  console.table(out);
+  return out;
+}
+// Gebundenes Rohrende (REGELN.md, Abschnitt 2): fest markiert oder in einem Fitting, das noch an weiteren Rohren hängt oder gesperrt ist.
+// Ein Endstück (Fitting nur an diesem Rohr) bindet nicht: Es wandert mit.
+function heldBy(q, w) {
+  const k = `${w}:${q.id}`;
+  return fitsAll().some(f => (f.links || []).some(L => L.to === k) && (f.locked || f.links.length > 1));
+}
+const endBound = q => !!q.endFixed || heldBy(q, 'E');
+const startBound = q => !!q.startFixed || heldBy(q, 'S');
 function keepEnd(p, edited, E0, force = false) {
+  const eB = endBound(p), sB = startBound(p);
   // Anfang lose: nicht ausgleichen, sondern das ganze Rohr so schieben, dass das Ende stehen bleibt
-  if (!force && p.endFixed && !p.startFixed && E0) { p.origin = V.add(p.origin, V.sub(E0, endOf(p))); return { ok: true, changed: [] }; }
-  if ((!p.endFixed && !force) || p.deltas.length < 2 || !E0) return { ok: true, changed: [] };
+  if (!force && eB && !sB && E0) { p.origin = V.add(p.origin, V.sub(E0, endOf(p))); return { ok: true, changed: [] }; }
+  if ((!eB && !force) || p.deltas.length < 2 || !E0) return { ok: true, changed: [] };
   const diff = V.sub(E0, endOf(p));
   if (V.len(diff) < 0.01) return { ok: true, changed: [] };
   const n = p.deltas.length;
@@ -3189,6 +3446,14 @@ function extCandidates(E, d) {
 
 // Zu kurze Gerade zwischen zwei Bögen: rot, damit man es nicht nur unter „Biegen“ sieht (auch ohne Auswahl)
 function drawShortStraights(P3) {
+  // Schräg im Anschluss (Regel I2): roter Ring am Anschluss, in der ganzen Szene
+  fitsAll().forEach(f => (f.links || []).forEach(L => {
+    if (linkSkew(f, L) <= 0.5) return;
+    const o = fitPorts(f)[L.port];
+    if (!o) return;
+    const [x, y] = P3(o.p);
+    ctx.save(); ctx.strokeStyle = '#d83b3b'; ctx.lineWidth = 3; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.stroke(); ctx.restore();
+  }));
   const p = proj();
   if (p.empty || p.unrouted || p.stub || p.hidden) return;
   const pts = points(p), msz = prof(p).minStraight || 0, sts = layout.straights || [];
@@ -3256,7 +3521,9 @@ function drawGizmo() {
     const E = gz ? gz.E : pts[n], d = gz ? gz.d : V.norm(V.sub(pts[n], pts[n - 1]));
     const [ex, ey] = P3(E);
     // Pfeile nur beim Fortführen: Griff angetippt, gerade gezogen, Maus darüber (blass) oder „immer zeigen“
-    const showArrows = !!gz || extOpen || vis.extAlways || extHover;
+    // Steckt das Rohrende in einem Fitting, geht es dort nicht weiter: keine Fortführ-Pfeile
+    const endInFit = fitsAll().some(f => (f.links || []).some(L => L.to === `E:${proj().id}`));
+    const showArrows = !endInFit && (!!gz || extOpen || vis.extAlways || extHover);
     // Ein neuer Bogen am Ende macht den letzten Schenkel zum Mittelschenkel: Dann braucht er Bogen + Bogen + Mindest-Gerade der Zange
     const pf = prof(), lastLen = V.len(V.sub(pts[n], pts[n - 1])), Tprev = n > 1 ? layout.bends.at(-1)?.T || 0 : 0;
     const needFor = c => Tprev + pf.R * Math.tan(Math.acos(Math.max(-1, Math.min(1, V.dot(c.a, d)))) / 2) + (pf.minStraight || 0);
@@ -3318,7 +3585,7 @@ function drawGizmo() {
       if (ring && !gz) gizmo.push({ type: 'rot', i, poly: ring });
     }
     // Der Teil davor darf sich nur am rechten Winkel drehen, und nur wenn der Anfang frei ist
-    if ((!gz || gz.type === 'head') && !proj().startFixed && Math.abs(Math.abs(theta) - 90) <= 0.5) {
+    if ((!gz || gz.type === 'head') && !startBound(proj()) && Math.abs(Math.abs(theta) - 90) <= 0.5) {
       const { d, u, v } = headBasis(i, pts), ring = ballRing(A, u, v, r, axisColor(d), !gz);
       if (ring && !gz) gizmo.push({ type: 'head', i, poly: ring });
     }
@@ -3360,7 +3627,7 @@ function drawGizmo() {
     [0, 1, 2].forEach(k => {
       if (Math.abs(d[k]) > 0.999) return; // in Laufrichtung geht der Längenpfeil
       const e = [0, 0, 0]; e[k] = 1;
-      if (legShift(ds, sel, e, !proj().endFixed, !proj().startFixed).locked) return;
+      if (legShift(ds, sel, e, !endBound(proj()), !startBound(proj())).locked) return;
       const [px, py] = P3(V.add(m, V.mul(e, 100))), ax = (px - mx) / 100, ay = (py - my) / 100, l = Math.hypot(ax, ay);
       if (l < sc * 0.2) return;
       const ux = ax / l, uy = ay / l, col = rgbCss(AX_RGB[k]);
@@ -3385,7 +3652,7 @@ function drawStartHandle() {
   // vor: Dann bleibt nur die Drehung um die eigene Achse des ersten Schenkels, und die nur, wenn danach Biegungen kommen
   const spinning = gz?.type === 'spin', inFit = fitsAll().some(f => (f.links || []).some(L => L.to === `S:${p.id}`));
   const side = V.norm(V.cross(d0, Math.abs(d0[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0])), spinAx = inFit ? (p.deltas.length > 1 ? [[side, V.cross(d0, side), d0]] : []) : SPIN_AX;
-  if (selPoint?.pid === p.id && selPoint.w === 'S' && !startOpen && !pointMove && (!p.endFixed || p.deltas.length === 1) && (!gz || spinning) && spinAx.length) {
+  if (selPoint?.pid === p.id && selPoint.w === 'S' && !startOpen && !pointMove && (!endBound(p) || p.deltas.length === 1) && (!gz || spinning) && spinAx.length) {
     if (!gz) ballShade(ax, ay);
     spinAx.forEach(([u, v, n], k) => {
       if (spinning && gz.k !== k) return;
@@ -3559,7 +3826,7 @@ function rotateHead(axis, deg) {
 }
 function rotateTail(axis, deg) {
   const a = deg * Math.PI / 180, p = proj();
-  if (p.endFixed && gz.i < gz.orig.length - 1) {
+  if (endBound(p) && gz.i < gz.orig.length - 1) {
     // Ende fixiert: nur dieser Schenkel dreht sich, die freien Schenkel gleichen über ihre Länge aus
     p.deltas = structuredClone(gz.orig);
     setDelta(gz.i, rotAbout(deltaVec(gz.orig[gz.i]), axis, a));
@@ -3778,7 +4045,7 @@ function ofsBuild(ds, origin, o, p, v, s, nd) {
   // Bezug und Ausgleich bleiben an dem Stück, das nicht wandert
   out.splice(i, 1, s > 0 ? { ...ds[i], ...A } : A, vec(V.add(V.mul(w, s), V.mul(u, run))), s > 0 ? B : { ...ds[i], ...B });
   const changed = [i, i + 1, i + 2];
-  if (s > 0 ? !p.endFixed : !p.startFixed) return { deltas: out, origin: s > 0 ? origin : V.add(origin, w), changed };
+  if (s > 0 ? !endBound(p) : !startBound(p)) return { deltas: out, origin: s > 0 ? origin : V.add(origin, w), changed };
   const pool = out.map((d, j) => j).filter(j => (s > 0 ? j > i + 2 : j < i)).sort((x, y) => (s > 0 ? x - y : y - x)).filter(j => !out[j].lock)
     .map(j => { const q = deltaVec(out[j]), l = V.len(q); return { j, L: l, u: l > 1e-9 ? V.mul(q, 1 / l) : null, d: out[j] }; }).filter(l => l.u);
   const r = solveLengths(V.mul(w, -s), pool);
@@ -3834,12 +4101,12 @@ function legLimit(t, base) {
 function legMoveTo(t) {
   const p = proj(), e = [0, 0, 0], ds = gz.dOrig;
   e[gz.k] = t;
-  let r = legShift(ds, gz.i, e, !p.endFixed, !p.startFixed);
+  let r = legShift(ds, gz.i, e, !endBound(p), !startBound(p));
   if (!shiftOk(p, r)) {
     const t0 = t ? vanishAt(ds, r, t) : null;
     if (t0 == null) return null;
     e[gz.k] = t0;
-    r = collapseLegs(legShift(ds, gz.i, e, !p.endFixed, !p.startFixed));
+    r = collapseLegs(legShift(ds, gz.i, e, !endBound(p), !startBound(p)));
     if (!r || !shiftOk(p, r)) return null;
     t = t0;
   }
@@ -4100,7 +4367,7 @@ function bundleEnd(g) {
     const f = fitById(g.fit);
     if (f && fitDock?.to && fitDock.id === f.id) { addLink(f, fitDock.port, fitDock.to); fitDock = null; toast(`Verbunden mit ${linkName(f.links.at(-1).to)}.`); }
     // Schon verbunden und verschoben: Ein offener Anschluss, der jetzt an einem Rohrende liegt, verbindet sich auch
-    else if (f?.links?.length && g.type === 'fmove' && g.moved) { const h = dockNear(f, true); if (h) { addLink(f, h.port, h.to); toast(`Anschluss ${h.port + 1} verbunden mit ${linkName(h.to)}.`); } }
+    else if (f?.links?.length && g.type === 'fmove' && g.moved) { const h = dockNear(f, true), o = h && fitPorts(f)[h.port]; if (h && -V.dot(h.u, V.norm(o.d)) > 0.99999) { addLink(f, h.port, h.to); toast(`Anschluss ${h.port + 1} verbunden mit ${linkName(h.to)}.`); } }
     recompute(); save(); renderBundleBar(); draw();
     return;
   }
@@ -4380,8 +4647,8 @@ function renderRoomBar() {
   bar.hidden = camTool !== 'room';
   if (bar.hidden) return;
   bar.innerHTML = roomDraw
-    ? `<span>${roomDraw.pts.length < 3 ? 'Ecken auf dem Boden antippen' : 'Ersten Punkt antippen oder „Schließen“'}</span>
-       <button class="icbtn" data-rb="cancel" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button><button data-rb="undo"${roomDraw.pts.length ? '' : ' disabled'}>${IC('undo')} Punkt</button><button data-rb="close" class="primary"${roomDraw.pts.length >= 3 ? '' : ' disabled'}>Schließen</button>`
+    ? `<span>${roomDraw.pts.length < 3 ? 'Ecken auf dem Boden antippen' : 'Ersten Punkt antippen oder „Fertig“'}</span>
+       <button data-rb="cancel">Abbrechen</button><button data-rb="undo"${roomDraw.pts.length ? '' : ' disabled'}>${IC('undo')} Punkt</button><button data-rb="close" class="primary"${roomDraw.pts.length >= 3 ? '' : ' disabled'}>Fertig</button>`
     : `<span>Wand ziehen · Maß antippen</span><button data-rb="new">${IC('edit')} Neu zeichnen</button><button class="icbtn primary" data-rb="done" title="Fertig" aria-label="Fertig">${IC('check')}</button>`;
 }
 $('#roomBar').addEventListener('click', e => {
@@ -5279,7 +5546,8 @@ function setPoint(q, w, tgt) {
   const before = structuredClone(q.deltas), o0 = q.origin;
   return withPipe(q, () => {
     if (w === 'S') q.origin = [...tgt];
-    const r = keepEnd(q, -1, w === 'S' ? E : tgt, true);
+    // Ausgleich: der Schenkel nächst der bewegten Stelle zuerst (REGELN.md, Abschnitt 4) – am Ende also von hinten her
+    const r = keepEnd(q, w === 'S' ? -1 : q.deltas.length, w === 'S' ? E : tgt, true);
     if (!r.ok) { q.deltas = before; q.origin = o0; }
     return r.ok;
   });
@@ -5401,11 +5669,11 @@ function setNodeCoord(key, k, v) {
 function renderSceneBar(bar) {
   const p = proj(), sc = scene(p), xyz = key => [0, 1, 2].map(k => `<button data-pk="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(nodePos(key)[k])}</button>`).join('');
   if (pick?.to) {
-    bar.innerHTML = `<span>${nodeName(pick.key)} an ${nodeName(pick.to)}, Achse:</span>${[0, 1, 2].map(k => `<button data-pa="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(Math.abs(nodeVal(pick.key, k) - nodeVal(pick.to, k)))}</button>`).join('')}<button class="icbtn" data-pc="1" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`;
+    bar.innerHTML = `<span>${nodeName(pick.key)} an ${nodeName(pick.to)}, Achse:</span>${[0, 1, 2].map(k => `<button data-pa="${k}" class="ax-${'xyz'[k]}-b">${'XYZ'[k]} ${fmt(Math.abs(nodeVal(pick.key, k) - nodeVal(pick.to, k)))}</button>`).join('')}<button data-pc="1">Abbrechen</button>`;
   } else if (pick) {
     const srcPl = pick.key[0] === 'R' ? planeById(pick.key.slice(2)) : null;
     const opts = sc.planes.filter(pl => `R:${pl.id}` !== pick.key && (!srcPl || pl.axis === srcPl.axis));
-    bar.innerHTML = `<span>${nodeName(pick.key)}: Bezug wählen</span>${opts.map(pl => `<button data-pr="${pl.id}" class="ax-${'xyz'[pl.axis]}-b">R${planeNo(pl)}</button>`).join('')}<button class="icbtn" data-pc="1" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`;
+    bar.innerHTML = `<span>${nodeName(pick.key)}: Bezug wählen</span>${opts.map(pl => `<button data-pr="${pl.id}" class="ax-${'xyz'[pl.axis]}-b">R${planeNo(pl)}</button>`).join('')}<button data-pc="1">Abbrechen</button>`;
   } else if (selPlane && planeById(selPlane)) {
     const pl = planeById(selPlane), key = `R:${pl.id}`;
     // Lage und Größe stellt man in 3D ein (Pfeil, Kanten, Ecken, Maße); die Leiste hat nur Sperren und Löschen
@@ -5988,12 +6256,12 @@ function renderBar() {
   $('#measBtn').classList.toggle('on', !!measure);
   if (create) { renderCreateBar(bar); return; }
   if (measure) { renderMeasureBar(bar); return; }
-  if (dockPick) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">Anschluss wählen</span><button class="icbtn" data-bb="dockno" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
+  if (dockPick) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">Anschluss wählen</span><button data-bb="dockno">Abbrechen</button>`; return; }
   if (copyC) { renderCopyBar(bar); return; }
   if (objs.length || multi) { renderObjBar(bar); return; }
   if (selFit && fitById(selFit)) { renderFitBar(bar); return; }
-  if (parPick) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">Parallelrohr: Rohr wählen</span><button class="icbtn" data-bb="parno" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
-  if (p.stub) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">${esc(p.name)}: Richtung und Länge ziehen</span><button class="icbtn" data-bb="stubdrop" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
+  if (parPick) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">Parallelrohr: Rohr wählen</span><button data-bb="parno">Abbrechen</button>`; return; }
+  if (p.stub) { bar.hidden = false; bar.innerHTML = `<span class="bprompt">${esc(p.name)}: Richtung und Länge ziehen</span><button data-bb="stubdrop">Abbrechen</button>`; return; }
   $('#offLegView').classList.toggle('on', !!ofs);
   if (ofs) {
     const f = ofsFrame(), names = Math.abs(f.u[2]) > 0.999 ? ['X-Richtung', 'Y-Richtung'] : ['Waagerecht', 'Senkrecht'];
@@ -6118,7 +6386,7 @@ function createPick(c) {
 }
 function renderCreateBar(bar) {
   bar.hidden = false;
-  const isFit = create.kind === 'fit', isEx = create.kind === 'ex', cancel = `<button class="icbtn" data-co="cancel" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`, list = isFit ? db.fittings : db.pipeTypes;
+  const isFit = create.kind === 'fit', isEx = create.kind === 'ex', cancel = `<button data-co="cancel">Abbrechen</button>`, list = isFit ? db.fittings : db.pipeTypes;
   const type = list.length > 1 ? `<button data-co="type">${esc(isFit ? fitLib(create.libId).name : typeOf({ typeId: create.typeId }).name)}</button>` : '';
   const inl = create.step === 'ref' && !create.hover && create.inline;
   const fk = isFit && fitInline(fitLib(create.libId)) ? fitKind(fitLib(create.libId)).kind : '', inlineAsk = fk === 'straight' || fk === 'tee' ? ' oder auf ein gerades Rohrstück tippen' : fk === 'elbow' ? ' oder auf einen Bogen tippen' : '';
@@ -6359,6 +6627,14 @@ function endFit(q, w) {
   if (!f) return null;
   const L = f.links.find(x => x.to === key), l = fitLib(f.libId), ins = l?.ports[L.port] ? portIns(l.ports[L.port]) : 0;
   return { f, l, ins, need: ins }; // am Fitting zählt nur „gerade min.“, nicht die Zange
+}
+// Warnungen: Rohrende steht schräg in einem Anschluss (Regel I2)
+function skewWarns(q) {
+  if (!q || q.empty) return [];
+  return fitsAll().flatMap(f => (f.links || []).filter(L => L.to === `S:${q.id}` || L.to === `E:${q.id}`).map(L => {
+    const a = linkSkew(f, L);
+    return a > 0.5 ? `${L.to[0] === 'S' ? 'Rohranfang' : 'Rohrende'} steht ${fmt(a)}° schräg im Anschluss ${L.port + 1} von ${fitLib(f.libId)?.name || 'Fitting'}. Ende lösen, gerade legen und wieder verbinden.` : null;
+  }).filter(Boolean));
 }
 // Warnungen: Bogen zu nah an einem Fitting am Rohrende
 function fitGapWarns(q) {
@@ -6660,6 +6936,9 @@ function fitAct(a) {
     else {
       const t = portTarget(f, i);
       if (!t) { toast(`Kein Rohrende an Anschluss ${i + 1}. Rohrende heranziehen oder das Fitting verschieben.`); return; }
+      // Hängt das Fitting schon an Rohren, dreht es sich nicht mehr: Das Rohr muss in Richtung des Anschlusses kommen
+      const ang = Math.acos(Math.max(-1, Math.min(1, -V.dot(t.u, V.norm(fitPorts(f)[i].d))))) * 180 / Math.PI;
+      if (f.links?.length && ang > 0.05) { hist.undo.pop(); updateUndoButtons(); toast(`${linkName(t.to)} steht ${fmt(ang)}° schräg zum Anschluss ${i + 1}. So nicht verbinden – das Rohrende erst in Richtung des Anschlusses legen.`); return; }
       addLink(f, i, t.to); toast(`Anschluss ${i + 1} verbunden mit ${linkName(t.to)}.`);
     }
   }
@@ -6700,8 +6979,14 @@ function drawFit(P3) {
   if (!f.links?.length) rotHandles(c, ax ? [ring(ax.n)] : SPIN_AX, gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, ...g }), 'frot');
   else spins.forEach((sp, j) => rotHandles(sp.e.T, [ring(sp.e.u)], gap + ROT_GAP, g => ({ type: 'frot', fit: f.id, link: sp.i, follow: sp.follow, ...g }), 'frot', j));
   // In der Leitung: nur ein Pfeilpaar längs der Rohrachse (seitlich würde es die Rohre verbiegen; dafür gibt es „Ganzer Strang“)
-  if (!fixed && runAx) dirArrows(m, runAx.u, gap, g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); });
-  else if (!fixed) axisArrows(m, [0, 1, 2], g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); }, null, gap, 'fmove');
+  // In der Leitung: längs gleitet es (Pfeile in Leitungsrichtung), quer wandern bzw. gleichen die Rohre aus (Weltachsen quer zur Leitung).
+  // Liegt die Leitung auf einer Weltachse, sind das einfach die drei Achspfeile
+  const push = g => { if (!gz) gizmo.push({ type: 'fmove', fit: f.id, ...g }); };
+  if (!fixed && runAx) {
+    const k = runAx.u.findIndex(v => Math.abs(v) > 0.9999);
+    if (k >= 0) axisArrows(m, [0, 1, 2], push, null, gap, 'fmove');
+    else { dirArrows(m, runAx.u, gap, push); axisArrows(m, [0, 1, 2].filter(i => Math.abs(runAx.u[i]) < 1e-3), push, null, gap, 'fmove'); }
+  } else if (!fixed) axisArrows(m, [0, 1, 2], push, null, gap, 'fmove');
 }
 // Pfeilpaar in beliebiger Richtung u: Achsfarbe, wenn u auf X, Y oder Z liegt, sonst Akzent
 function dirArrows(A, u, gap, push) {
@@ -6881,7 +7166,7 @@ function renderObjBar(bar) {
   objs = objs.filter(objGet);
   const n = objs.length, end = '';
   bar.hidden = false;
-  if (pivotPick) { bar.innerHTML = `<span class="bprompt">Drehpunkt: Punkt tippen</span><button class="icbtn" data-ob="pivno" title="Abbrechen" aria-label="Abbrechen">${IC('x')}</button>`; return; }
+  if (pivotPick) { bar.innerHTML = `<span class="bprompt">Drehpunkt: Punkt tippen</span><button data-ob="pivno">Abbrechen</button>`; return; }
   if (!n) { bar.innerHTML = `<span class="bprompt">Objekte antippen</span>${end}`; return; }
   const ref = objs.at(-1), fixed = objs.filter(objFixed).length, one = n === 1 && ref;
   const title = (n > 1 ? `${n} Objekte · Bezug: ${objName(ref)}` : objName(ref)) + (fixed ? (n > 1 ? ` · ${fixed} fest, ${fixed > 1 ? 'bleiben' : 'bleibt'} stehen` : ' · gesperrt') : '');
@@ -7087,8 +7372,8 @@ function renderCopyBar(bar) {
   bar.hidden = false;
   // Maße stehen im Bild an der Kopie; die Leiste trägt nur Modus, Einfügen und Beenden, als Symbole
   const ib = (a, ic, t, cls = '') => `<button class="icbtn${cls}" data-ob="${a}" title="${t}" aria-label="${t}">${IC(ic)}</button>`;
-  const back = copyC.made ? ib('cend', 'check', 'Fertig') : ib('cno', 'x', 'Abbrechen');
-  if (copyC.step === 'ref') { bar.innerHTML = `<span class="bprompt">Kopieren: Referenzpunkt wählen</span>${ib('cno', 'x', 'Abbrechen')}`; return; }
+  const back = copyC.made ? ib('cend', 'check', 'Fertig') : `<button data-ob="cno">Abbrechen</button>`;
+  if (copyC.step === 'ref') { bar.innerHTML = `<span class="bprompt">Kopieren: Referenzpunkt wählen</span>${`<button data-ob="cno">Abbrechen</button>`}`; return; }
   if (copyC.place) { bar.innerHTML = `<span>Lage ändern: Maße antippen, leer tippen beendet</span>${ib('cend', 'check', 'Fertig')}`; return; }
   const tog = `<button class="icbtn${copyC.ortho ? ' on' : ''}" data-ob="cort" title="Orthogonal" aria-label="Orthogonal" aria-pressed="${copyC.ortho}">${IC('ortho')}</button>`;
   const n = copyC.made?.length ? ` · ${copyC.made.length} eingefügt` : '';
@@ -7370,7 +7655,8 @@ function setLinkEnd(to, T) {
   }
   const ok = setPoint(q, w, T);
   if (ok && V.len(V.sub(linkEnd(to).u, u0)) < 1e-6) return true; // auch kleinste Kippung nicht: sie summierte sich sonst Schritt für Schritt
-  if (linkFixed(other) || fitsAll().some(f => (f.links || []).some(L => L.to === other))) return ok;
+  // Anderes Ende gebunden: kippen ist nie erlaubt (Regel I2), dann geht es so nicht
+  if (linkFixed(other) || fitsAll().some(f => (f.links || []).some(L => L.to === other))) { if (ok) { q.origin = o0; q.deltas = d0; } return false; }
   q.origin = o0; q.deltas = d0;
   q.origin = V.add(q.origin, V.sub(T, linkEnd(to).T));
   return true;
@@ -7383,7 +7669,7 @@ const fitD = f => {
   const L = f.links?.[0], e = L && linkEnd(L.to);
   return e ? { id: f.id, port: L.port, T: e.T, u: e.u, link: true } : fitDock?.id === f.id ? fitDock : null;
 };
-let linkGood = null, linkToast = 0, quietLinks = false;
+var linkGood = null, linkToast = 0, quietLinks = false; // var: restoreSnapshot kann vor dieser Zeile laufen
 function syncLinks() {
   const fits = fitsAll().filter(f => f.links?.length);
   if (!fits.length) { linkGood = null; drv.clear(); return true; }
@@ -7398,7 +7684,8 @@ function syncLinks() {
       if (lead) {
         if (f.locked) { ok = false; break; }
         const e = linkEnd(lead.to), d = fitPorts(f)[lead.port].d;
-        if (lead === f.links[0] && V.len(V.add(d, e.u)) > 0.002) f.rot = mulRR(rotFromTo(d, V.mul(e.u, -1)), f.rot);
+        // Nur ein Endstück (eine Verbindung) dreht mit seinem Rohr; hängt es an mehreren, dreht es nie als Folge (Regel I7)
+        if (lead === f.links[0] && f.links.length === 1 && V.len(V.add(d, e.u)) > 0.002) f.rot = mulRR(rotFromTo(d, V.mul(e.u, -1)), f.rot);
         f.pos = V.sub(e.T, mulR(f.rot, fitLib(f.libId).ports[lead.port].p));
         changed = true;
       }
@@ -7415,10 +7702,25 @@ function syncLinks() {
     if (!changed) break;
   }
   drv.clear();
-  if (ok) { linkGood = { id: proj().sceneId, m: sceneMark() }; return true; }
+  // Regel I2: Der Endschenkel fluchtet mit dem Anschluss. Was schon schräg steht, darf bleiben, aber nicht schräger werden
+  let why = 'So nicht möglich: Eine Verbindung hält dagegen.';
+  const sk = ok ? skewMap() : null, base = linkGood?.id === proj().sceneId ? linkGood.skew : null;
+  if (ok && base) for (const k in sk) if (sk[k].a > (base[k]?.a ?? 0) + 0.05) { ok = false; why = `So nicht: ${sk[k].pipe} stünde schräg im Anschluss von ${sk[k].fit} (${fmt(sk[k].a)}°).`; break; }
+  if (ok) { linkGood = { id: proj().sceneId, m: sceneMark(), skew: sk }; return true; }
   if (linkGood?.id === proj().sceneId) sceneBack(linkGood.m);
-  if (!quietLinks && Date.now() - linkToast > 2500) { linkToast = Date.now(); toast('So nicht möglich: Eine Verbindung hält dagegen.'); }
+  if (!quietLinks && Date.now() - linkToast > 2500) { linkToast = Date.now(); toast(why); }
   return false;
+}
+// Winkel zwischen Endschenkel und Anschlussachse je Verbindung (0 = fluchtet)
+function linkSkew(f, L) {
+  const e = linkEnd(L.to), o = fitPorts(f)[L.port];
+  if (!e || !o || L.to[0] === 'X') return 0;
+  return Math.acos(Math.max(-1, Math.min(1, -V.dot(e.u, V.norm(o.d))))) * 180 / Math.PI;
+}
+function skewMap() {
+  const m = {};
+  fitsAll().forEach(f => (f.links || []).forEach(L => { m[`${f.id}:${L.port}`] = { a: linkSkew(f, L), pipe: linkName(L.to), fit: fitLib(f.libId)?.name || 'Fitting' }; }));
+  return m;
 }
 function strandOf(o) {
   const seen = [o], same = a => seen.some(q => sameObj(q, a));
@@ -7475,7 +7777,7 @@ function measMovable(c) {
   if (c.ex) return !exById(c.ex)?.locked;
   if (c.plane) return !c.plane.locked;
   const [w, id] = c.id.split(':'), q = pipeById(id);
-  return !!q && !q.locked && (w === 'C' || (w === 'S' && !q.startFixed) || (w === 'E' && !q.endFixed));
+  return !!q && !q.locked && (w === 'C' || (w === 'S' && !startBound(q)) || (w === 'E' && !endBound(q)));
 }
 // Punkt, der beim Eingeben wandert: Der zuletzt gewählte Punkt ist fest, außer nur er ist beweglich oder der Festpunkt wurde getauscht
 function measMover() {
@@ -7660,7 +7962,7 @@ $('#bundleCard').addEventListener('click', e => {
 
 // Testzugang nur mit ?debug in der Adresse
 if (new URLSearchParams(location.search).has('debug')) {
-  window.biegeDebug = { editDim, get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get dimHits() { return dimHits; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
+  window.biegeDebug = { selfTest, editDim, get gizmo() { return gizmo; }, get view() { return view; }, get layout() { return layout; }, get dimHits() { return dimHits; }, get animLayout() { return animLayout; }, get roomDraw() { return roomDraw; }, proj, points, resetView };
 }
 
 // ---------- Browser: Objektbaum wie in Fusion ----------

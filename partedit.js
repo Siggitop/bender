@@ -494,9 +494,9 @@ export function openPartEditor(lib, mesh, env) {
   function renderCmd() {
     cmdEl.hidden = !cmd;
     if (!cmd) { cmdEl.innerHTML = ''; return; }
-    const ok = ib('ok', 'ok', 'Übernehmen', ' on'), no = ib('cancel', 'x', 'Abbrechen');
+    const ok = ib('ok', 'ok', 'Übernehmen', ' on'), no = '<button data-pe="cancel">Abbrechen</button>';
     let h = '';
-    if (cmd.t === 'measure') h = `<span class="bprompt">${meas.length ? (meas.length === 1 ? 'Zweites Element wählen' : 'Neues Element wählen') : 'Messen: Punkt, Kreis, Kante oder Fläche wählen'}</span>${ib('cancel', 'x', 'Beenden')}`;
+    if (cmd.t === 'measure') h = `<span class="bprompt">${meas.length ? (meas.length === 1 ? 'Zweites Element wählen' : 'Neues Element wählen') : 'Messen: Punkt, Kreis, Kante oder Fläche wählen'}</span><button data-pe="cancel">Beenden</button>`;
     else if (cmd.t === 'port' && cmd.step === 'pivot') h = `<span class="bprompt">Erst den Drehpunkt wählen: Punkt oder Kreismitte</span>${no}`;
     else if (cmd.t === 'port' && cmd.step === 'axis') h = `<span class="bprompt">Achse wählen, auf der das Rohr liegt</span>${no}`;
     else if (cmd.t === 'port') h = `<span class="bprompt">Abstand tippen oder Punkt wählen</span>${fld('dist', cmd.dist, 'vom Drehpunkt')}${fld('D', cmd.D, 'Ø')}${ib('flip', 'flip', 'Andere Seite')}${no}${ok}`;
