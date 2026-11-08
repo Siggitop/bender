@@ -82,8 +82,11 @@ const IC = {
   fit: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
   trash: '<path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
+  door: '<path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><circle cx="14.5" cy="12" r=".8"/>',
 };
-const TYPE_NAME = { wall: 'Wand', column: 'Stütze', slab: 'Decke' };
+const TYPE_NAME = { wall: 'Wand', column: 'Stütze', slab: 'Decke', door: 'Tür', window: 'Fenster', opening: 'Wanddurchbruch', hole: 'Deckendurchbruch' };
+const WALL_OPS = ['door', 'window', 'opening'], OPS = [...WALL_OPS, 'hole'];
+const OP_DEF = { door: { w: 1010, h: 2135, sill: 0 }, window: { w: 1260, h: 1385, sill: 900 }, opening: { w: 300, h: 300, sill: 2300 }, hole: { w: 600, d: 400 } };
 const JUST = [['l', 'Links'], ['c', 'Mitte'], ['r', 'Rechts']];
 
 export async function openBuilding(env) {
@@ -112,10 +115,10 @@ export async function openBuilding(env) {
         <button class="nvb" data-b="t:wall" title="Wand" aria-label="Wand">${SVG(IC.wall)}</button>
         <button class="nvb" data-b="t:column" title="Stütze" aria-label="Stütze">${SVG(IC.column)}</button>
         <button class="nvb" data-b="t:slab" title="Decke" aria-label="Decke">${SVG(IC.slab)}</button>
+        <button class="nvb" data-b="t:open" title="Tür, Fenster, Durchbruch" aria-label="Tür, Fenster, Durchbruch">${SVG(IC.door)}</button>
         <button class="nvb" data-b="t:grid" title="Achse" aria-label="Achse">${SVG(IC.grid)}</button>
         <i class="bsep"></i>
         <button class="nvb" data-b="view" title="Grundriss oder 3D" aria-label="Grundriss oder 3D"></button>
-        <button class="nvb" data-b="above" title="Geschosse darüber zeigen" aria-label="Geschosse darüber zeigen">${SVG(IC.layers)}</button>
         <button class="nvb" data-b="fit" title="Einpassen" aria-label="Einpassen">${SVG(IC.fit)}</button>
       </div>
     </div>
@@ -142,6 +145,9 @@ export async function openBuilding(env) {
   const snap = () => JSON.stringify(B);
   function change(fn) { undo.push(snap()); if (undo.length > 200) undo.shift(); redo.length = 0; fn(); dirty = true; persist(); renderUi(); draw(); }
   const elById = id => B.els.find(e => e.id === id);
+  const pipeCache = new Map();
+  const pipeGeom = id => { if (!pipeCache.has(id)) { let g = []; try { g = env.sceneGeom?.(id) || []; } catch {} pipeCache.set(id, g); } return pipeCache.get(id); };
+  B.links ||= [];
 
   // ---------- Bauteile ----------
   const wallOffs = w => (w.just === 'l' ? [0, w.t] : w.just === 'r' ? [-w.t, 0] : [-w.t / 2, w.t / 2]);
@@ -152,13 +158,22 @@ export async function openBuilding(env) {
     for (const end of ['a', 'b']) {
       const P = w[end], away = end === 'a' ? d : mul(d, -1);
       const others = B.els.filter(o => o !== w && o.type === 'wall' && o.storey === w.storey && (near(o.a, P) || near(o.b, P)));
-      let m = null;
+      let m = null, face = null;
+      // T-Stoß: Das Ende sitzt auf der Achse einer anderen Wand und endet an deren Fläche
+      if (!others.length) {
+        const host = B.els.find(o => { if (o === w || o.type !== 'wall' || o.storey !== w.storey) return false; const [dd, t] = segD(P[0], P[1], o.a, o.b); return dd < 1 && t > 0.001 && t < 0.999; });
+        if (host) {
+          const hd = norm(sub(host.b, host.a)), hn = perp(hd), [hlo, hhi] = wallOffs(host), side = dot(sub(w[end === 'a' ? 'b' : 'a'], host.a), hn);
+          face = { p: add(host.a, mul(hn, side > 0 ? hhi : hlo)), d: hd };
+        }
+      }
       if (others.length === 1) {
         const o = others[0], od = norm(sub(o.b, o.a)), oAway = near(o.a, P) ? od : mul(od, -1), s = add(away, oAway);
         if (len(s) > 1e-3 && Math.abs(cross2(away, oAway)) > 0.02) m = norm(s);
       }
       for (const [k, off] of [['L', hi], ['R', lo]]) {
         const Q = add(P, mul(n, off));
+        if (face) { const den = cross2(d, face.d); if (Math.abs(den) > 1e-6) { r[end + k] = add(Q, mul(d, cross2(sub(face.p, Q), face.d) / den)); continue; } }
         if (!m) { r[end + k] = Q; continue; }
         const den = cross2(d, m), s = cross2(sub(P, Q), m) / den, X = add(Q, mul(d, s));
         r[end + k] = len(sub(X, P)) > Math.abs(off) * 8 + 50 ? Q : X;
@@ -171,7 +186,42 @@ export async function openBuilding(env) {
     const a = (c.rot || 0) * Math.PI / 180, u = [Math.cos(a), Math.sin(a)], v = perp(u), hw = c.w / 2, hd = c.d / 2;
     return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([x, y]) => add(c.p, add(mul(u, x), mul(v, y))));
   }
-  const footprint = e => (e.type === 'wall' ? wallPoly(e) : e.type === 'column' ? colPoly(e) : e.pts);
+  const hostOf = o => elById(o.host);
+  const wallAxis = w => { const v = sub(w.b, w.a), L = len(v); return { d: L ? mul(v, 1 / L) : [1, 0], L }; };
+  // Öffnung in der Wand: Rechteck über die ganze Wanddicke, at = Mitte ab Wandanfang
+  function opPoly(o) {
+    if (o.type === 'hole') return [[-o.w / 2, -o.d / 2], [o.w / 2, -o.d / 2], [o.w / 2, o.d / 2], [-o.w / 2, o.d / 2]].map(q => add(o.p, q));
+    const w = hostOf(o);
+    if (!w) return [];
+    const { d } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), A = add(w.a, mul(d, o.at - o.w / 2)), Bp = add(w.a, mul(d, o.at + o.w / 2));
+    return [add(A, mul(n, lo)), add(Bp, mul(n, lo)), add(Bp, mul(n, hi)), add(A, mul(n, hi))];
+  }
+  const opZ = o => { if (o.type === 'hole') { const h = hostOf(o); return h ? zRange(h) : [0, 0]; } const w = hostOf(o), z0 = w ? zRange(w)[0] : st(o.storey).elev; return [z0 + (o.sill || 0), z0 + (o.sill || 0) + o.h]; };
+  const footprint = e => (e.type === 'wall' ? wallPoly(e) : e.type === 'column' ? colPoly(e) : OPS.includes(e.type) ? opPoly(e) : e.pts);
+  const zOf = e => (OPS.includes(e.type) ? opZ(e) : zRange(e));
+  // Streifen eines konvexen Grundrisses zwischen s0 und s1 entlang der Wandachse
+  function clipStrip(poly, a, d, s0, s1) {
+    const clip = (P, f) => { const out = []; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length], fp = f(p), fq = f(q); if (fp >= 0) out.push(p); if ((fp >= 0) !== (fq >= 0)) out.push(add(p, mul(sub(q, p), fp / (fp - fq)))); } return out; };
+    const sv = p => dot(sub(p, a), d);
+    return clip(clip(poly, p => sv(p) - s0), p => s1 - sv(p));
+  }
+  // Wand mit Öffnungen in Stücke: neben den Öffnungen ganz, darunter Brüstung, darüber Sturz
+  function wallPieces(w) {
+    const poly = wallPoly(w), [z0, z1] = zRange(w), { d } = wallAxis(w);
+    const ops = B.els.filter(o => o.host === w.id && WALL_OPS.includes(o.type)).map(o => ({ s0: o.at - o.w / 2, s1: o.at + o.w / 2, b: z0 + (o.sill || 0), t: z0 + (o.sill || 0) + o.h }));
+    if (!ops.length) return [{ poly, z0, z1 }];
+    const cuts = [...new Set([-1e7, ...ops.flatMap(o => [o.s0, o.s1]), 1e7])].sort((a, b) => a - b), out = [];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const s0 = cuts[i], s1 = cuts[i + 1], m = (s0 + s1) / 2, strip = clipStrip(poly, w.a, d, s0, s1);
+      if (strip.length < 3 || s1 - s0 < 0.01) continue;
+      const hit = ops.filter(o => m > o.s0 && m < o.s1);
+      if (!hit.length) { out.push({ poly: strip, z0, z1 }); continue; }
+      const lo2 = Math.min(...hit.map(o => o.b)), hi2 = Math.max(...hit.map(o => o.t));
+      if (lo2 > z0 + 0.5) out.push({ poly: strip, z0, z1: Math.min(lo2, z1) });
+      if (hi2 < z1 - 0.5) out.push({ poly: strip, z0: Math.max(hi2, z0), z1 });
+    }
+    return out;
+  }
   const slabArea = e => Math.abs(area2(e.pts)) / 1e6;
 
   // ---------- Kamera ----------
@@ -186,7 +236,7 @@ export async function openBuilding(env) {
   const onPlane = (x, y, z0 = curSt().elev) => { const { rz } = basis(); if (Math.abs(rz[2]) < 0.12) return null; const P = unP(x, y, 0), t = (z0 - P[2]) / rz[2]; return [P[0] + rz[0] * t, P[1] + rz[1] * t]; };
   function bounds() {
     const pts = [];
-    B.els.forEach(e => { if (!visible(st(e.storey))) return; const [z0, z1] = zRange(e); footprint(e).forEach(p => pts.push([...p, z0], [...p, z1])); });
+    B.els.forEach(e => { if (!visible(st(e.storey))) return; const [z0, z1] = zOf(e); footprint(e).forEach(p => pts.push([...p, z0], [...p, z1])); });
     B.grids.forEach(g => pts.push([...g.a, curSt().elev], [...g.b, curSt().elev]));
     B.underlays.filter(u => u.storey === cur).forEach(u => ulCorners(u).forEach(p => pts.push([...p, curSt().elev])));
     if (!pts.length) pts.push([-5000, -5000, curSt().elev], [15000, 10000, curSt().elev + curSt().height]);
@@ -245,6 +295,49 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (lines) { lines.push(A, Bq, D, C); if (!smooth) lines.push(A, D); }
     }
   }
+  // Decke mit Durchbrüchen: Löcher über Brücken zum Außenrand in ein einfaches Polygon, Seiten außen und an den Löchern
+  function prismHoles(outer, holes, z0, z1, col, out, lines) {
+    if (!holes.length) { prism(outer, z0, z1, col, out, lines); return; }
+    let P = area2(outer) < 0 ? [...outer].reverse() : [...outer];
+    const Hs = holes.map(h => (area2(h) > 0 ? [...h].reverse() : [...h])).sort((a, b) => Math.max(...b.map(q => q[0])) - Math.max(...a.map(q => q[0])));
+    const crosses = (a, b, segs) => segs.some(([c, e]) => { if (near(a, c, 1e-6) || near(a, e, 1e-6) || near(b, c, 1e-6) || near(b, e, 1e-6)) return false; const d1 = cross2(sub(b, a), sub(c, a)), d2 = cross2(sub(b, a), sub(e, a)), d3 = cross2(sub(e, c), sub(a, c)), d4 = cross2(sub(e, c), sub(b, c)); return d1 * d2 < 0 && d3 * d4 < 0; });
+    const edges = poly => poly.map((q, i) => [q, poly[(i + 1) % poly.length]]);
+    for (const h of Hs) {
+      const mi = h.reduce((bi, q, i) => (q[0] > h[bi][0] ? i : bi), 0), M = h[mi];
+      const segs = [...edges(P), ...Hs.flatMap(edges)];
+      let vi = -1, bd = Infinity;
+      P.forEach((q, i) => { const dd = len(sub(q, M)); if (dd < bd && !crosses(M, q, segs)) { bd = dd; vi = i; } });
+      if (vi < 0) continue;
+      const ring = [...h.slice(mi), ...h.slice(0, mi), M];
+      P = [...P.slice(0, vi + 1), ...ring, P[vi], ...P.slice(vi + 1)];
+    }
+    const put = (p, n) => out.push(p[0], p[1], p[2], n[0], n[1], n[2], col[0], col[1], col[2]);
+    triangulate(P).forEach(([a, b, c]) => {
+      put([...P[a], z1], [0, 0, 1]); put([...P[b], z1], [0, 0, 1]); put([...P[c], z1], [0, 0, 1]);
+      put([...P[a], z0], [0, 0, -1]); put([...P[c], z0], [0, 0, -1]); put([...P[b], z0], [0, 0, -1]);
+    });
+    for (const ring of [area2(outer) < 0 ? [...outer].reverse() : outer, ...Hs]) for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length], e = sub(q, p), l = len(e);
+      if (l < 0.01) continue;
+      const n = [e[1] / l, -e[0] / l, 0], A = [...p, z0], Bq = [...q, z0], C = [...q, z1], D = [...p, z1];
+      [A, Bq, C, A, C, D].forEach(v => put(v, n));
+      if (lines) lines.push(A, Bq, D, C, A, D);
+    }
+  }
+  // Rohr aus der Rohrplanung: Zylinder je Abschnitt
+  function tubeInto(pts, r, col, out) {
+    const N = 10;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const s = pts[i], e = pts[i + 1], ax = sub(e, s), L = len(ax);
+      if (L < 0.01) continue;
+      const a = mul(ax, 1 / L), u0 = Math.abs(a[2]) < 0.9 ? [a[1], -a[0], 0] : [1, 0, 0], u = norm(sub(u0, mul(a, dot(u0, a)))), w = [a[1] * u[2] - a[2] * u[1], a[2] * u[0] - a[0] * u[2], a[0] * u[1] - a[1] * u[0]];
+      for (let k = 0; k < N; k++) {
+        const t0 = 2 * Math.PI * k / N, t1 = 2 * Math.PI * (k + 1) / N, n0 = add(mul(u, Math.cos(t0)), mul(w, Math.sin(t0))), n1 = add(mul(u, Math.cos(t1)), mul(w, Math.sin(t1)));
+        const A = add(s, mul(n0, r)), Bq = add(s, mul(n1, r)), C = add(e, mul(n1, r)), D = add(e, mul(n0, r));
+        [[A, n0], [Bq, n1], [C, n1], [A, n0], [C, n1], [D, n0]].forEach(([p, n]) => out.push(p[0], p[1], p[2], n[0], n[1], n[2], col[0], col[1], col[2]));
+      }
+    }
+  }
   const COL = { wall: [0.87, 0.85, 0.81], column: [0.70, 0.73, 0.77], slab: [0.78, 0.79, 0.81] };
   // Grundriss: geschnittene Bauteile dunkel, Decken hell, ohne Schattierung
   const PLAN = { wall: [0.36, 0.38, 0.41], column: [0.22, 0.24, 0.27], slab: [0.95, 0.95, 0.94] };
@@ -252,12 +345,31 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const tris = [], lines = [], acc = rgb('--accent', [0.04, 0.49, 0.74]);
     for (const e of B.els) {
       const s = st(e.storey);
-      if (!s || !visible(s)) continue;
+      if (!s || !visible(s) || OPS.includes(e.type)) continue;
       const [z0, z1] = zRange(e), isSel = sel?.el === e.id;
       let c = isSel ? (cam.plan ? acc : acc.map(v => v * 0.7 + 0.3)) : (cam.plan ? PLAN : COL)[e.type];
       if (s.id !== cur) c = c.map(v => v * 0.92 + 0.06);
-      prism(footprint(e), z0, z1, c, tris, lines);
+      if (e.type === 'wall') {
+        const pieces = wallPieces(e);
+        pieces.forEach(pc => prism(pc.poly, pc.z0, pc.z1, c, tris, null));
+        prism(footprint(e), z0, z1, c, [], lines); // Kanten der ganzen Wand
+        B.els.filter(o => o.host === e.id && WALL_OPS.includes(o.type)).forEach(o => { // Kanten der Öffnungen auf beiden Seiten
+          const P = opPoly(o), [b, t] = opZ(o);
+          [[P[0], P[1]], [P[3], P[2]]].forEach(([p, q]) => lines.push([...p, b], [...q, b], [...q, b], [...q, t], [...q, t], [...p, t], [...p, t], [...p, b]));
+        });
+      } else if (e.type === 'slab') prismHoles(e.pts, B.els.filter(o => o.host === e.id && o.type === 'hole').map(opPoly), z0, z1, c, tris, lines);
+      else prism(footprint(e), z0, z1, c, tris, lines);
     }
+    // Ausgewählte Öffnung: als durchsichtiger Körper hervorheben
+    const so = selEl();
+    if (so && OPS.includes(so.type)) { const [b, t] = opZ(so); prism(opPoly(so), b - 2, t + 2, acc, tris, lines); }
+    // Rohrprojekte der Geschosse
+    (B.links || []).forEach(L => {
+      const s = st(L.storey);
+      if (!s || !visible(s)) return;
+      const off = [L.off[0], L.off[1], L.off[2] + s.elev];
+      pipeGeom(L.scene).forEach(pp => tubeInto(pp.pts.map(q => add(q, off)), Math.max(pp.r, 1.6 / cam.sc), pp.col, tris));
+    });
     triN = tris.length / 9;
     const L = new Float32Array(lines.length * 9);
     lines.forEach((p, i) => L.set([p[0], p[1], p[2], 0, 0, 1, 0, 0, 0], i * 9));
@@ -405,7 +517,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (e.storey !== cur || o.skip?.has(e.id)) return;
       if (e.type === 'wall') { consider(e.a, 'Wandende'); consider(e.b, 'Wandende'); consider(mul(add(e.a, e.b), 0.5), 'Wandmitte'); }
       else if (e.type === 'column') consider(e.p, 'Stütze');
-      else e.pts.forEach(q => consider(q, 'Eckpunkt'));
+      else if (e.type === 'slab') e.pts.forEach(q => consider(q, 'Eckpunkt'));
     });
     // Wandenden des Geschosses darunter: Wände stehen oft übereinander
     const below = sorted().filter(s => s.elev < z).at(-1);
@@ -434,16 +546,18 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
 
   // ---------- Befehle ----------
+  const lastOp = { kind: 'door', v: { door: { ...OP_DEF.door }, window: { ...OP_DEF.window }, opening: { ...OP_DEF.opening }, hole: { ...OP_DEF.hole } } };
   const lastWall = { th: 240, just: 'c' }, lastCol = { shape: 'rect', w: 300, d: 300 }, lastSlab = { th: 250 };
   function startCmd(t, extra = {}) {
     sel = null; hover = null; gridForm = false;
     if (t === 'sel') { cmd = null; tool = 'sel'; renderUi(); draw(); return; }
-    if (['wall', 'column', 'slab', 'grid'].includes(t) && Math.abs(basis().rz[2]) < 0.12) setPlan(true);
-    tool = ['wall', 'column', 'slab', 'grid'].includes(t) ? t : tool;
+    if (['wall', 'column', 'slab', 'grid', 'open'].includes(t) && Math.abs(basis().rz[2]) < 0.12) setPlan(true);
+    tool = ['wall', 'column', 'slab', 'grid', 'open'].includes(t) ? t : tool;
     cmd = { t, pts: [], ...extra };
     if (t === 'wall') Object.assign(cmd, { th: lastWall.th, just: lastWall.just });
     if (t === 'column') Object.assign(cmd, { ...lastCol });
     if (t === 'slab') Object.assign(cmd, { th: lastSlab.th });
+    if (t === 'open') Object.assign(cmd, { kind: lastOp.kind, ...structuredClone(lastOp.v) });
     Object.assign(cmd, extra);
     dirty = true; renderUi(); draw();
   }
@@ -458,6 +572,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       return { poly: [add(w.a, mul(n, lo)), add(w.b, mul(n, lo)), add(w.b, mul(n, hi)), add(w.a, mul(n, hi))], z0: s.elev, z1: s.elev + s.height };
     }
     if (cmd.t === 'column' && h) return { poly: colPoly({ ...cmd, p: h }), z0: s.elev, z1: s.elev + s.height };
+    if (cmd.t === 'open' && hover?.op) { const o = hover.op; return { poly: opPoly(o), z0: opZ(o)[0], z1: opZ(o)[1] }; }
     if (cmd.t === 'slab' && cmd.pts.length >= 2) { const P = [...cmd.pts, ...(h ? [h] : [])]; return Math.abs(area2(P)) > 1 ? { poly: P, z0: s.elev - cmd.th, z1: s.elev } : null; }
     return null;
   }
@@ -527,7 +642,32 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     change(() => B.els.push(newEl({ type: 'slab', pts: pts.map(p => [...p]), t: cmd?.th ?? lastSlab.th })));
   }
 
+  // Öffnung unter dem Zeiger: Wand (Tür, Fenster, Durchbruch) oder Decke (Deckendurchbruch)
+  function opAt(x, y) {
+    const k = cmd.kind, v = cmd[k], p = onPlane(x, y);
+    if (!p) return null;
+    if (k === 'hole') {
+      const sl = B.els.filter(e => e.type === 'slab' && e.storey === cur).find(e => pip(p[0], p[1], e.pts));
+      return sl ? { type: 'hole', host: sl.id, storey: cur, p: p.map(q => Math.round(q / 10) * 10), w: v.w, d: v.d } : null;
+    }
+    const tol = (touch ? 22 : 12) / cam.sc;
+    let best = null;
+    B.els.filter(e => e.type === 'wall' && e.storey === cur).forEach(w => {
+      const [dd, t] = segD(p[0], p[1], w.a, w.b);
+      if (dd < w.t / 2 + tol && (!best || dd < best.dd)) best = { w, dd, t };
+    });
+    if (!best) return null;
+    const { L } = wallAxis(best.w), half = Math.min(v.w, L) / 2, at = Math.max(half, Math.min(L - half, Math.round(best.t * L / 10) * 10));
+    return { type: k, host: best.w.id, storey: cur, at, w: Math.min(v.w, L), h: v.h, sill: v.sill, ...(k === 'door' ? { hinge: 'l', swing: 1 } : {}) };
+  }
   function onTap(x, y) {
+    if (cmd?.t === 'open') {
+      const o = opAt(x, y);
+      if (!o) { env.toast(cmd.kind === 'hole' ? 'Auf eine Decke tippen.' : 'Auf eine Wand tippen.'); return; }
+      const id = uid();
+      change(() => B.els.push({ id, ...o }));
+      return;
+    }
     if (!cmd) { pickSelect(x, y); return; }
     const from = cmd.t === 'wall' && cmd.pts.length ? cmd.pts.at(-1) : (cmd.t === 'slab' || cmd.t === 'grid' || cmd.t === 'cal' || cmd.t === 'umove') && cmd.pts.length ? cmd.pts.at(-1) : null;
     const extra = cmd.t === 'wall' && cmd.pts.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : cmd.t === 'slab' && cmd.pts.length > 2 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
@@ -576,10 +716,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const hits = [];
     for (const e of B.els) {
       if (e.storey !== cur) continue;
-      const fp = footprint(e), [z0, z1] = zRange(e);
+      const fp = footprint(e), [z0, z1] = zOf(e);
+      if (fp.length < 3) continue;
       const top = fp.map(p => P3([...p, z1])), bot = fp.map(p => P3([...p, z0]));
       const inside = e.type === 'slab' ? pip(x, y, top) || pip(x, y, bot) : pip(x, y, hull([...top, ...bot].map(s => [s[0], s[1]])));
-      if (inside) hits.push({ e, pri: { column: 0, wall: 1, slab: 2 }[e.type], z: Math.min(...top.map(s => s[2])) });
+      if (inside) hits.push({ e, pri: OPS.includes(e.type) ? -1 : { column: 0, wall: 1, slab: 2 }[e.type], z: Math.min(...top.map(s => s[2])) });
     }
     hits.sort((a, b) => a.pri - b.pri || a.z - b.z);
     if (hits.length) return { el: hits[0].e.id };
@@ -595,6 +736,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (e?.type === 'wall') H2.push({ k: 'a', p: e.a }, { k: 'b', p: e.b }, { k: 'm', p: mul(add(e.a, e.b), 0.5), move: true });
     if (e?.type === 'column') H2.push({ k: 'p', p: e.p, move: true });
     if (e?.type === 'slab') e.pts.forEach((p, i) => H2.push({ k: i, p }));
+    if (e && WALL_OPS.includes(e.type) && hostOf(e)) { const w = hostOf(e); H2.push({ k: 'o', p: add(w.a, mul(wallAxis(w).d, e.at)), move: true }); }
+    if (e?.type === 'hole') H2.push({ k: 'o', p: e.p, move: true });
     if (g) H2.push({ k: 'a', p: g.a }, { k: 'b', p: g.b });
     return H2;
   }
@@ -624,6 +767,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else { e[h.k] = p; D.follow.forEach(f => { f.o[f.w] = [...p]; }); }
     } else if (e?.type === 'column') e.p = p;
     else if (e?.type === 'slab') e.pts[h.k] = p;
+    else if (e && WALL_OPS.includes(e.type)) { const w = hostOf(e), { d, L } = wallAxis(w), half = e.w / 2; e.at = Math.max(half, Math.min(L - half, Math.round(dot(sub(p, w.a), d) / 10) * 10)); }
+    else if (e?.type === 'hole') e.p = p;
     else if (g) g[h.k] = p;
     hover = { p, label: s.label };
     dirty = true; draw();
@@ -641,7 +786,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const z = curSt().elev, acc = css('--accent') || '#0a7cbd', mark = css('--mark') || '#ff7a1a', text = css('--text') || '#222', muted = css('--muted') || '#888';
     // Unterlage: über dem Modell, durchscheinend
     const u = curUl();
-    if (u) {
+    if (u && (cam.plan || cmd?.t === 'cal' || cmd?.t === 'umove')) { // in 3D nur beim Ausrichten, sonst verdeckt sie das Modell
       const img = imgs.get(u.file);
       if (img === undefined) ulImage(u);
       if (img) {
@@ -666,9 +811,32 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         ctx.fillStyle = on ? acc : 'rgb(200,60,60)'; ctx.fillText(g.name, c[0], c[1] + 0.5);
       }
     });
+    // Grundriss: Türaufschlag als Viertelkreis, Fenster als Doppellinie
+    if (cam.plan) B.els.forEach(o => {
+      if (o.storey !== cur || !WALL_OPS.includes(o.type) || o.type === 'opening') return;
+      const w = hostOf(o);
+      if (!w) return;
+      const { d } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), col = sel?.el === o.id ? acc : (css('--text') || '#333');
+      ctx.strokeStyle = col; ctx.lineWidth = 1.2;
+      if (o.type === 'window') {
+        const P = opPoly(o).map(q => P2(q, z));
+        ctx.fillStyle = css('--card') || '#fff'; ctx.beginPath(); P.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.fill(); ctx.stroke();
+        const m0 = P2(add(add(w.a, mul(d, o.at - o.w / 2)), mul(n, (lo + hi) / 2)), z), m1 = P2(add(add(w.a, mul(d, o.at + o.w / 2)), mul(n, (lo + hi) / 2)), z);
+        ctx.beginPath(); ctx.moveTo(m0[0], m0[1]); ctx.lineTo(m1[0], m1[1]); ctx.stroke();
+        return;
+      }
+      const sw = o.swing ?? 1, face = sw > 0 ? hi : lo, hingeS = (o.hinge || 'l') === 'l' ? o.at - o.w / 2 : o.at + o.w / 2, freeS = (o.hinge || 'l') === 'l' ? o.at + o.w / 2 : o.at - o.w / 2;
+      const Hp = add(add(w.a, mul(d, hingeS)), mul(n, face)), Fp = add(add(w.a, mul(d, freeS)), mul(n, face)), Op = add(Hp, mul(n, sw * o.w));
+      const h2 = P2(Hp, z), f2 = P2(Fp, z), o2 = P2(Op, z), r2 = Math.hypot(f2[0] - h2[0], f2[1] - h2[1]);
+      const a0 = Math.atan2(f2[1] - h2[1], f2[0] - h2[0]), a1 = Math.atan2(o2[1] - h2[1], o2[0] - h2[0]);
+      let da = a1 - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+      ctx.beginPath(); ctx.moveTo(h2[0], h2[1]); ctx.lineTo(o2[0], o2[1]); ctx.stroke();
+      ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.arc(h2[0], h2[1], r2, a0, a0 + da, da < 0); ctx.stroke(); ctx.setLineDash([]);
+    });
     // Maße der Auswahl
     const e = selEl();
     if (e?.type === 'wall') dimLine(e.a, e.b, `${fmt(len(sub(e.b, e.a)))}`, acc, z);
+    if (e && WALL_OPS.includes(e.type) && hostOf(e)) { const w = hostOf(e), { d } = wallAxis(w); dimLine(w.a, add(w.a, mul(d, e.at - e.w / 2)), fmt(e.at - e.w / 2), acc, z); dimLine(add(w.a, mul(d, e.at - e.w / 2)), add(w.a, mul(d, e.at + e.w / 2)), fmt(e.w), acc, z); }
     // Befehl: gesetzte Punkte und Länge zum Zeiger
     if (cmd) {
       const pts = cmd.pts || [];
@@ -679,6 +847,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         if (hover?.p && cmd.t !== 'cal') { const s = P2(hover.p, z); ctx.lineTo(s[0], s[1]); }
         ctx.stroke(); ctx.setLineDash([]);
       }
+      if (hover?.op && hover.op.type !== 'hole') { const o = hover.op, w = hostOf(o), { d } = wallAxis(w); dimLine(w.a, add(w.a, mul(d, o.at - o.w / 2)), fmt(o.at - o.w / 2), mark, z); }
       if (hover?.p && pts.length && ['wall', 'grid', 'slab'].includes(cmd.t)) dimLine(pts.at(-1), hover.p, fmt(len(sub(hover.p, pts.at(-1)))), mark, z);
       if (cmd.t === 'cal' && pts.length === 2) dimLine(pts[0], pts[1], `${fmt(cmd.have)} → ${fmt(num(cmd.real))}`, mark, z);
     }
@@ -721,7 +890,6 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     root.querySelectorAll('[data-b^="t:"]').forEach(b => b.classList.toggle('on', b.dataset.b === `t:${cmd ? cmd.t : 'sel'}`));
     $('[data-b="view"]').innerHTML = SVG(cam.plan ? IC.iso : IC.plan);
     $('[data-b="view"]').title = cam.plan ? '3D' : 'Grundriss';
-    $('[data-b="above"]').classList.toggle('on', showAbove);
     $('[data-b="undo"]').disabled = !undo.length; $('[data-b="redo"]').disabled = !redo.length;
     renderList(); renderCmd(); renderInfo();
   }
@@ -738,6 +906,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       h = `<span class="bprompt">Stütze: Punkt tippen</span>${seg('shape', cmd.shape, [['rect', 'Eckig'], ['round', 'Rund']])}${fld('w', cmd.w, cmd.shape === 'round' ? 'Ø' : 'B')}${cmd.shape === 'round' ? '' : fld('d', cmd.d, 'T')}${done}`;
     } else if (cmd.t === 'slab') {
       h = `<span class="bprompt">${cmd.pts.length ? `${cmd.pts.length} Punkte · Startpunkt schließt` : 'Decke: Umriss tippen'}</span>${fld('th', cmd.th, 'Dicke')}<button data-b="fromwalls">Aus Wänden</button>${cmd.pts.length >= 3 ? '<button data-b="slabok" class="on">Schließen</button>' : ''}${cancel}`;
+    } else if (cmd.t === 'open') {
+      const v = cmd[cmd.kind];
+      h = `<span class="bprompt">${cmd.kind === 'hole' ? 'Auf eine Decke tippen' : 'Auf eine Wand tippen'}</span>${seg('okind', cmd.kind, [['door', 'Tür'], ['window', 'Fenster'], ['opening', 'Durchbruch'], ['hole', 'Decke']])}${fld('ow', v.w, 'B')}${cmd.kind === 'hole' ? fld('od', v.d, 'T') : fld('oh', v.h, 'H')}${cmd.kind === 'window' || cmd.kind === 'opening' ? fld('osill', v.sill, cmd.kind === 'window' ? 'Brüstung' : 'UK') : ''}${done}`;
     } else if (cmd.t === 'grid') {
       h = `<span class="bprompt">${cmd.pts.length ? 'Endpunkt der Achse' : 'Achse: zwei Punkte tippen'}</span><button data-b="gridform"${gridForm ? ' class="on"' : ''}>Raster erzeugen</button>${done}`;
     } else if (cmd.t === 'cal') {
@@ -771,11 +942,30 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     } else if (e?.type === 'slab') {
       h = `<h4>Decke</h4><div class="ped-grid">${fld('st', e.t, 'Dicke')}</div><small>${fmt(slabArea(e))} m² · ${e.pts.length} Eckpunkte. Oberkante = OK Rohdecke ${esc(st(e.storey).name)} (${fmt(st(e.storey).elev)}).</small>
         <div class="ped-acts"><button data-b="del">${SVG(IC.trash)} Löschen</button></div>`;
+    } else if (e && WALL_OPS.includes(e.type)) {
+      const w = hostOf(e), L = w ? wallAxis(w).L : 0;
+      h = `<h4>${TYPE_NAME[e.type]}</h4><div class="ped-grid">${fld('pw', e.w, 'Breite')}${fld('ph', e.h, 'Höhe')}</div>
+        <div class="ped-grid">${fld('pleft', e.at - e.w / 2, 'ab Wandanfang')}${e.type === 'door' ? '' : fld('psill', e.sill || 0, e.type === 'window' ? 'Brüstung' : 'UK')}</div>
+        ${e.type === 'door' ? `<div class="ped-acts">${seg('phinge', e.hinge || 'l', [['l', 'Anschlag links'], ['r', 'rechts']])}${seg('pswing', String(e.swing ?? 1), [['1', 'Aufschlag hier'], ['-1', 'drüben']])}</div>` : ''}
+        <small>In der Wand ${fmt(L)} mm, rechts bleiben ${fmt(L - e.at - e.w / 2)} mm. Ziehen am Quadrat verschiebt entlang der Wand.</small>
+        <div class="ped-acts"><button data-b="del">${SVG(IC.trash)} Löschen</button></div>`;
+    } else if (e?.type === 'hole') {
+      h = `<h4>Deckendurchbruch</h4><div class="ped-grid">${fld('pw', e.w, 'B')}${fld('pd', e.d, 'T')}</div><small>Mitte X ${fmt(e.p[0])} · Y ${fmt(e.p[1])}. Ziehen am Quadrat verschiebt.</small>
+        <div class="ped-acts"><button data-b="del">${SVG(IC.trash)} Löschen</button></div>`;
     } else if (g) {
       h = `<h4>Achse</h4><label class="ped-f"><span>Name</span><input data-gname value="${esc(g.name)}"></label><small>Länge ${fmt(len(sub(g.b, g.a)))} mm. Enden lassen sich ziehen.</small>
         <div class="ped-acts"><button data-b="delgrid">${SVG(IC.trash)} Löschen</button></div>`;
     }
     infoEl.hidden = !h; infoEl.innerHTML = h;
+  }
+  // Rohrprojekte (Szenen der Rohrplanung) in diesem Geschoss: Lage über X/Y/Z ab OK Rohdecke
+  function linksHere() {
+    const scenes = env.scenes?.() || [], name = id => scenes.find(x => x.id === id)?.name || 'Szene fehlt';
+    const here = B.links.filter(L => L.storey === cur), free = scenes.filter(x => !B.links.some(L => L.scene === x.id));
+    return `${here.map(L => `<div class="bau-link"><div class="ped-row"><span class="ped-rn"><b>${esc(name(L.scene))}</b><small>${pipeGeom(L.scene).length} Rohre</small></span><button class="icbtn" data-unlink="${L.scene}" title="Zuordnung lösen" aria-label="Zuordnung lösen">${SVG(IC.trash)}</button></div>
+      <div class="ped-grid">${['X', 'Y', 'Z'].map((t, k) => `<label class="ped-f"><span>${t}</span><input data-loff="${L.scene}:${k}" inputmode="decimal" value="${fmt(L.off[k])}"><i>mm</i></label>`).join('')}</div></div>`).join('')}
+      ${free.length ? `<div class="ped-add"><select class="bau-scene">${free.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select><button data-b="link">Zuordnen</button></div>` : here.length ? '' : '<p class="ped-hint">Keine Rohrprojekte vorhanden.</p>'}
+      ${here.length ? '<p class="ped-hint">Lage der Szene ab Ursprung, Z ab OK Rohdecke. Im Rohrteil gibt es dann „Ebenen aus Gebäude“.</p>' : ''}`;
   }
   const nextName = s => { const i = sorted().indexOf(s); return sorted()[i + 1]?.name || 'Dach'; };
   function renderList() {
@@ -789,10 +979,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         <div class="ped-add"><button data-b="stup">+ darüber</button><button data-b="stdown">+ darunter</button>${B.storeys.length > 1 ? `<button data-b="stdel" title="Geschoss löschen" aria-label="Geschoss löschen">${SVG(IC.trash)}</button>` : ''}</div>
         <p class="ped-hint">${count('wall')} Wände · ${count('column')} Stützen · ${count('slab')} Decken. Höhenänderungen nehmen alle Bauteile mit.</p>
       </div>
+      <div class="ped-add"><button data-b="above"${showAbove ? ' class="on"' : ''}>${showAbove ? 'Geschosse darüber ausblenden' : 'Geschosse darüber zeigen'}</button></div>
+      <h4>Rohrprojekte · ${esc(s.name)}</h4>
+      ${linksHere()}
       <h4>Achsraster</h4>
       <p class="ped-hint">${B.grids.length ? `${B.grids.length} Achsen` : 'Noch keine Achsen.'}</p>
       <div class="ped-add"><button data-b="gridtool">Raster erzeugen</button></div>
-      <h4>Planunterlage · ${esc(s.name)}</h4>
+      <h4>Planunterlage · ${esc(s.name)}</h4><p class="ped-hint">Sichtbar im Grundriss.</p>
       ${u ? `<p class="ped-hint">${esc(u.name || 'Bild')} · 1 Bildpunkt = ${fmt(u.s)} mm</p>
         <label class="ped-f bau-range"><span>Deckkraft</span><input type="range" data-ualpha min="0.1" max="1" step="0.05" value="${u.alpha ?? 0.55}"></label>
         <div class="ped-grid">${fld('urot', u.rot || 0, 'Drehung', '°')}</div>
@@ -801,13 +994,14 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       <div class="ped-add"><button data-b="uload">${u ? 'Andere Unterlage' : 'Bild oder PDF laden'}</button></div>
       <h4>Datei</h4>
       <div class="ped-add"><button data-b="export">Sichern</button><button data-b="import">Laden</button></div>
-      <p class="ped-hint">Sichern lädt das Gebäude als JSON herunter (ohne Unterlagen). Laden ersetzt das Gebäude.</p>`;
+      <p class="ped-hint">Sichern lädt das Gebäude als JSON-Datei herunter, mit Planunterlagen und Zuordnungen. Laden ersetzt das Gebäude.</p>`;
   }
 
   // ---------- Bedienung ----------
   root.addEventListener('click', async e => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.unlink) { const id = b.dataset.unlink; change(() => { B.links = B.links.filter(L => L.scene !== id); }); return; }
     if (b.dataset.st) { cur = b.dataset.st; sel = null; if (cmd) cmd.pts = []; dirty = true; renderUi(); draw(); return; }
     if (b.dataset.seg) {
       const [k, v] = b.dataset.seg.split(':'), el = selEl();
@@ -815,6 +1009,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k === 'shape' && cmd) { cmd.shape = v; lastCol.shape = v; }
       else if (k === 'wjust' && el) change(() => { el.just = v; });
       else if (k === 'cshape' && el) change(() => { el.shape = v; if (v === 'round') el.d = el.w; });
+      else if (k === 'okind' && cmd) { cmd.kind = v; lastOp.kind = v; }
+      else if (k === 'phinge' && el) change(() => { el.hinge = v; });
+      else if (k === 'pswing' && el) change(() => { el.swing = +v; });
       renderUi(); draw(); return;
     }
     if (b.dataset.dir && cmd?.t === 'wall') { wallLen(b.dataset.dir.split(',').map(Number)); return; }
@@ -829,10 +1026,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         if (!from.length) return;
         to.push(snap()); B = JSON.parse(from.pop());
         if (!st(cur)) cur = B.storeys[0].id;
+        B.links ||= [];
         sel = null; dirty = true; persist(); renderUi(); draw(); return;
       }
       case 'view': setPlan(!cam.plan); return;
       case 'above': showAbove = !showAbove; dirty = true; renderUi(); draw(); return;
+      case 'link': { const id = $('.bau-scene')?.value; if (id) change(() => B.links.push({ scene: id, storey: cur, off: [0, 0, 0] })); return; }
       case 'fit': fitView(); draw(); return;
       case 'end': endCmd(); return;
       case 'chain': cmd.pts = []; renderUi(); draw(); return;
@@ -847,7 +1046,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         return;
       }
       case 'calok': calOk(); return;
-      case 'del': { const el = selEl(); if (el) { change(() => { B.els = B.els.filter(x => x !== el); }); sel = null; dirty = true; renderUi(); draw(); } return; }
+      case 'del': { const el = selEl(); if (el) { change(() => { B.els = B.els.filter(x => x !== el && x.host !== el.id); }); sel = null; dirty = true; renderUi(); draw(); } return; }
       case 'delgrid': { const g = selGrid(); if (g) { change(() => { B.grids = B.grids.filter(x => x !== g); }); sel = null; renderUi(); draw(); } return; }
       case 'stup': case 'stdown': {
         const s = curSt(), S = sorted(), i = S.indexOf(s);
@@ -868,7 +1067,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'umove': startCmd('umove'); return;
       case 'udel': { const u = curUl(); if (u && await env.ask('Planunterlage entfernen?', 'Entfernen')) { change(() => { B.underlays = B.underlays.filter(x => x !== u); }); } return; }
       case 'export': {
-        const blob = new Blob([JSON.stringify(B, null, 1)], { type: 'application/json' }), url = URL.createObjectURL(blob), l = document.createElement('a');
+        const files = {};
+        for (const u of B.underlays) { const f = await getFile(u.file).catch(() => null); if (f) files[u.file] = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(f); }); }
+        const blob = new Blob([JSON.stringify({ ...B, files }, null, 1)], { type: 'application/json' }), url = URL.createObjectURL(blob), l = document.createElement('a');
         l.href = url; l.download = `gebaeude-${new Date().toISOString().slice(0, 10)}.json`; document.body.appendChild(l); l.click(); l.remove();
         setTimeout(() => URL.revokeObjectURL(url), 2000); return;
       }
@@ -888,7 +1089,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const o = JSON.parse(await f.text());
       if (!Array.isArray(o.storeys) || !o.storeys.length || !Array.isArray(o.els)) throw new Error('keine Gebäudedatei');
       if (!await env.ask('Gebäude aus der Datei laden? Das jetzige wird ersetzt (Rückgängig möglich).', 'Laden')) return;
-      change(() => { B = { ...newBuilding(), ...o, id: 'main', grids: o.grids || [], underlays: [] }; });
+      const files = o.files || {}, uls = [];
+      for (const u of o.underlays || []) if (files[u.file]) { await putFile(u.file, await (await fetch(files[u.file])).blob()); imgs.delete(u.file); uls.push(u); }
+      delete o.files;
+      change(() => { B = { ...newBuilding(), ...o, id: 'main', grids: o.grids || [], links: o.links || [], underlays: uls }; });
       cur = B.storeys[0].id; sel = null; fitView(); dirty = true; renderUi(); draw();
     } catch (err) { env.toast(`Laden: ${err.message || err}`); }
   });
@@ -900,6 +1104,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const el = e.target;
     if (el.matches('[data-ualpha]')) return;
     if (el.matches('[data-sname]')) { const v = el.value.trim(); if (v) change(() => { curSt().name = v; }); return; }
+    if (el.matches('[data-loff]')) { const [id, k] = el.dataset.loff.split(':'), L = B.links.find(x => x.scene === id), v = num(el.value); if (L && Number.isFinite(v)) change(() => { L.off[+k] = v; }); else renderUi(); return; }
     if (el.matches('[data-gname]')) { const g = selGrid(), v = el.value.trim(); if (g && v) change(() => { g.name = v; }); return; }
     const k = el.dataset.f;
     if (!k) return;
@@ -913,15 +1118,16 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k === 'd' && pos(v)) { cmd.d = v; lastCol.d = v; }
       else if (k === 'real' && pos(v)) cmd.real = v;
       else if (['gnx', 'gny', 'gsx', 'gsy'].includes(k) && pos(v)) cmd[k] = v;
+      else if (cmd.t === 'open' && ['ow', 'oh', 'od', 'osill'].includes(k) && (pos(v) || (k === 'osill' && v === 0))) { const key = { ow: 'w', oh: 'h', od: 'd', osill: 'sill' }[k]; cmd[cmd.kind][key] = v; lastOp.v[cmd.kind][key] = v; }
       renderUi(); draw(); return;
     }
     if (k === 'selev' && Number.isFinite(v)) { change(() => { s.elev = v; }); return; }
-    if (k === 'sheight' && pos(v)) { change(() => { s.height = v; }); return; }
+    if (k === 'sheight' && pos(v)) { change(() => { const dz = v - s.height; B.storeys.forEach(x => { if (x !== s && x.elev > s.elev + 1e-6) x.elev += dz; }); s.height = v; }); return; } // Geschosse darüber rücken nach
     if (k === 'urot' && Number.isFinite(v)) { const u = curUl(); if (u) change(() => { u.rot = v; }); return; }
     if (!e2) return;
     const empty = el.value.trim() === '';
     change(() => {
-      if (k === 'wl' && pos(v)) e2.b = add(e2.a, mul(norm(sub(e2.b, e2.a)), v));
+      if (k === 'wl' && pos(v)) { e2.b = add(e2.a, mul(norm(sub(e2.b, e2.a)), v)); B.els.filter(o => o.host === e2.id && WALL_OPS.includes(o.type)).forEach(o => { o.w = Math.min(o.w, v); o.at = Math.max(o.w / 2, Math.min(v - o.w / 2, o.at)); }); }
       else if (k === 'wt' && pos(v)) e2.t = v;
       else if ((k === 'wh' || k === 'ch')) e2.h = empty ? null : pos(v) ? v : e2.h;
       else if (k === 'wbase' && Number.isFinite(v)) e2.base = v;
@@ -929,6 +1135,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k === 'cd' && pos(v)) e2.d = v;
       else if (k === 'crot' && Number.isFinite(v)) e2.rot = v;
       else if (k === 'st' && pos(v)) e2.t = v;
+      else if (k === 'pw' && pos(v)) { if (e2.type === 'hole') e2.w = v; else { const L = wallAxis(hostOf(e2)).L; e2.w = Math.min(v, L); e2.at = Math.max(e2.w / 2, Math.min(L - e2.w / 2, e2.at)); } }
+      else if (k === 'ph' && pos(v)) e2.h = v;
+      else if (k === 'pd' && pos(v)) e2.d = v;
+      else if (k === 'psill' && Number.isFinite(v) && v >= 0) e2.sill = v;
+      else if (k === 'pleft' && Number.isFinite(v)) { const L = wallAxis(hostOf(e2)).L; e2.at = Math.max(e2.w / 2, Math.min(L - e2.w / 2, v + e2.w / 2)); }
     });
   });
   // Feldwerte des Befehls schon beim Tippen merken (Länge mit Richtungspfeil)
@@ -940,6 +1151,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const local = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   const hoverOf = (x, y) => {
     if (!cmd) return null;
+    if (cmd.t === 'open') { const o = opAt(x, y); return o ? { op: o } : null; }
     const from = cmd.pts?.length && cmd.t !== 'cal' && cmd.t !== 'umove' ? cmd.pts.at(-1) : null;
     const extra = cmd.pts?.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
     return snapAt(x, y, { from, extra });
@@ -1016,8 +1228,62 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   fitView(); renderUi(); draw(); root.focus({ preventScroll: true });
   if (!(await loadB().catch(() => null))) saveB(B).catch(() => {});
   return {
-    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan,
+    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint,
     get B() { return B; }, get state() { return { cmd, sel, cur, cam, hover }; },
     setCur(id) { cur = id; dirty = true; renderUi(); draw(); },
   };
+}
+
+// ---------- Für die Rohrplanung: Ebenen aus dem Gebäude ----------
+// Achsparallele Flächen von Wänden und eckigen Stützen, Fußboden (OK Rohdecke) und Deckenunterseite darüber,
+// in den Koordinaten der Szene (Zuordnung im Gebäude: Geschoss und Versatz). Nur was nahe an den Rohren liegt.
+export async function bauPlanesFor(sceneId, box) {
+  const B = await loadB().catch(() => null);
+  const L = B?.links?.find(x => x.scene === sceneId);
+  if (!L) return null;
+  const S = [...B.storeys].sort((a, b) => a.elev - b.elev), s = S.find(x => x.id === L.storey);
+  if (!s) return null;
+  const up = S[S.indexOf(s) + 1], off = [L.off[0], L.off[1], L.off[2] + s.elev], out = [];
+  const rect = (axis, c, mn, mx) => { const [a, b] = [0, 1, 2].filter(i => i !== axis); out.push({ axis, c: c - off[axis], u: (mn[a] + mx[a]) / 2 - off[a], v: (mn[b] + mx[b]) / 2 - off[b], w: mx[a] - mn[a], h: mx[b] - mn[b] }); };
+  const zTop = e => s.elev + (e.h ?? s.height), zBot = e => s.elev + (e.base || 0);
+  for (const e of B.els) {
+    if (e.storey !== s.id) continue;
+    if (e.type === 'wall') {
+      const v = sub(e.b, e.a), l = len(v);
+      if (!l) continue;
+      const d = mul(v, 1 / l), k = Math.abs(d[0]) > 0.9999 ? 0 : Math.abs(d[1]) > 0.9999 ? 1 : -1;
+      if (k < 0) continue; // schräge Wände haben keine achsparallele Ebene
+      const n = [-d[1], d[0]], [lo, hi] = e.just === 'l' ? [0, e.t] : e.just === 'r' ? [-e.t, 0] : [-e.t / 2, e.t / 2], o = 1 - k;
+      const s0 = Math.min(e.a[k], e.b[k]) - e.t / 2, s1 = Math.max(e.a[k], e.b[k]) + e.t / 2;
+      for (const f of [lo, hi]) {
+        const c = e.a[o] + n[o] * f, mn = [0, 0, zBot(e)], mx = [0, 0, zTop(e)];
+        mn[k] = s0; mx[k] = s1; mn[o] = mx[o] = c;
+        rect(o, c, mn, mx);
+      }
+    } else if (e.type === 'column' && e.shape !== 'round' && Math.abs(((e.rot || 0) % 90 + 90) % 90) < 1e-6) {
+      const sw = Math.round((e.rot || 0) / 90) % 2 ? [e.d, e.w] : [e.w, e.d];
+      for (const k of [0, 1]) for (const sg of [-1, 1]) {
+        const o = 1 - k, c = e.p[k] + sg * sw[k] / 2, mn = [0, 0, zBot(e)], mx = [0, 0, zTop(e)];
+        mn[o] = e.p[o] - sw[o] / 2; mx[o] = e.p[o] + sw[o] / 2; mn[k] = mx[k] = c;
+        rect(k, c, mn, mx);
+      }
+    } else if (e.type === 'slab') {
+      const xs = e.pts.map(p => p[0]), ys = e.pts.map(p => p[1]);
+      rect(2, s.elev, [Math.min(...xs), Math.min(...ys), 0], [Math.max(...xs), Math.max(...ys), 0]);
+    }
+  }
+  if (up) for (const e of B.els) if (e.storey === up.id && e.type === 'slab') {
+    const xs = e.pts.map(p => p[0]), ys = e.pts.map(p => p[1]);
+    rect(2, up.elev - e.t, [Math.min(...xs), Math.min(...ys), 0], [Math.max(...xs), Math.max(...ys), 0]);
+  }
+  // nur Flächen nahe den Rohren (3 m Rand), doppelte weg
+  const M = 3000, nearBox = pl => {
+    if (!box) return true;
+    const [a, b] = [0, 1, 2].filter(i => i !== pl.axis), lo = [], hi = [];
+    lo[pl.axis] = hi[pl.axis] = pl.c; lo[a] = pl.u - pl.w / 2; hi[a] = pl.u + pl.w / 2; lo[b] = pl.v - pl.h / 2; hi[b] = pl.v + pl.h / 2;
+    return [0, 1, 2].every(k => hi[k] >= box.mn[k] - M && lo[k] <= box.mx[k] + M);
+  };
+  const res = [];
+  for (const pl of out.filter(nearBox)) if (!res.some(q => q.axis === pl.axis && Math.abs(q.c - pl.c) < 1 && Math.abs(q.u - pl.u) < 1 && Math.abs(q.v - pl.v) < 1 && Math.abs(q.w - pl.w) < 1 && Math.abs(q.h - pl.h) < 1)) res.push(pl);
+  return { storey: s.name, planes: res.slice(0, 200) };
 }

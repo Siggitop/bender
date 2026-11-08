@@ -848,3 +848,7 @@ body[data-tab="tools"] .floatbar { display: flex; }
 .bau .ped-info .ped-acts .bprompt { font-size: 12px; color: var(--muted); padding-right: 4px; }
 .bau .ped-info .ped-acts button svg { width: 16px; height: 16px; vertical-align: -3px; }
 .bau .ped-add button { white-space: nowrap; }
+.bau .bau-scene { flex: 1; min-width: 0; min-height: 36px; font-size: 13px; }
+.bau .bau-link { margin: 2px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.bau .bau-link .ped-f input { width: 64px; }
+.bau .ped-add button.on { background: var(--accent); border-color: var(--accent); color: #fff; }

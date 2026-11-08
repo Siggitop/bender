@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 2 umgesetzt in Version 253** (siehe Abschnitt 6), Phasen 3 bis 8 offen. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 3 und Teile von Phase 7 umgesetzt (Version 254)**, siehe Abschnitt 6 und 7. Offen: Phase 4 bis 6, 8 und der Rest von 7. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -134,10 +134,31 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - Auswählen, Werte im Feld ändern, Löschen. Ziehen an Anfassern: Wandenden (verbundene Wände laufen mit), Wand verschieben, Stütze verschieben, Deckenecken, Achsenden.
 - Fangen: Wandenden und -mitten, Wandenden des Geschosses darunter, Stützen, Deckenecken, Achsschnittpunkte, Achsen; sonst 15°-Winkel und 10-mm-Raster.
 
+**Bekannte Lücken:** siehe Abschnitt 7.
+
+## 7. Nachgezogen (Version 254)
+
+**Lücken aus Phase 2:**
+- T-Stöße: Endet eine Wand auf der Achse einer anderen, endet sie an deren Fläche (keine Überlappung mehr).
+- Höhe eines Geschosses ändern schiebt alle Geschosse darüber mit.
+- „Sichern“ nimmt Planunterlagen (als Bilddaten) und die Zuordnungen der Rohrprojekte mit, „Laden“ stellt sie wieder her.
+- Die Planunterlage erscheint nur im Grundriss und beim Kalibrieren oder Verschieben; in 3D verdeckte sie das Modell.
+- „Geschosse darüber zeigen“ steht jetzt in der Liste, die Werkzeugleiste hat Platz für „Öffnung“.
+
+**Phase 3, Öffnungen** (Werkzeug Tür-Symbol, Art in der Leiste: Tür, Fenster, Durchbruch, Decke):
+- Tür, Fenster, Wanddurchbruch: auf eine Wand tippen, sitzt dort über die ganze Wanddicke, Breite und Höhe, Fenster mit Brüstung, Durchbruch mit Unterkante. Vorgaben: Tür 1010 × 2135, Fenster 1260 × 1385 / Brüstung 900, Durchbruch 300 × 300 / UK 2300.
+- Die Wand wird an der Öffnung ausgespart (Brüstung und Sturz bleiben). Öffnungen wandern mit der Wand, verschieben nur entlang der Wand (Quadrat ziehen oder „ab Wandanfang“), bleiben bei kürzerer Wand in der Wand und verschwinden mit ihr.
+- Tür: Anschlag links/rechts, Aufschlag auf diese oder die andere Seite; im Grundriss mit Türblatt und Aufschlagbogen. Fenster im Grundriss als Rahmen mit Mittellinie.
+- Deckendurchbruch: auf eine Decke tippen, rechteckig B × T, die Decke bekommt ein echtes Loch.
+- Gewählte Öffnung: Maß vom Wandanfang und Breite im Bild.
+
+**Phase 7, erster Teil:**
+- Im Gebäude unter „Rohrprojekte“ eine Szene der Rohrplanung einem Geschoss zuordnen, Lage per X/Y/Z (Z ab OK Rohdecke). Ihre Rohre erscheinen im Gebäude (nur Anzeige, in der Rohrfarbe; Fittings noch nicht).
+- Im Rohrteil im Ebenen-Menü „Aus Gebäude (Experiment)“: übernimmt achsparallele Wandflächen, Flächen eckiger Stützen, den Fußboden (OK Rohdecke) und die Deckenunterseite des Geschosses darüber als Ebenen, nur im Umkreis von 3 m um die Rohre. Erneutes Übernehmen ersetzt die früher übernommenen, eigene Ebenen bleiben; ein Rückgängig-Schritt. Damit gelten Abstände, Fangen und Schatten wie bei eigenen Ebenen.
+
 **Bekannte Lücken:**
-- T-Stöße werden nicht verschnitten (die Wände überlappen, sichtbar nur an den Kanten).
-- Geschosshöhen ändern verschiebt die Bauteile mit, aber nicht automatisch die darüberliegenden Geschosse.
-- Unterlagen gehen beim Sichern als JSON nicht mit.
-- PDF: nur Seite 1, braucht beim Laden Internet. Nicht getestet (kein Netz im Testserver), Bilder getestet.
-- Wände lassen sich nur im aktuellen Geschoss auswählen.
-- Noch keine Maßketten außer der Länge der gewählten Wand.
+- Schräge Wände und gedrehte oder runde Stützen geben keine Ebenen (die Ebenen der Rohrplanung sind achsparallel).
+- Fittings und Bestandsrohre erscheinen im Gebäude noch nicht. Rohre aus dem Gebäude heraus bearbeiten geht nicht.
+- Kein automatischer Durchbruch-Vorschlag, wo ein Rohr eine Wand kreuzt, keine Kollisionsprüfung (Rest von Phase 7).
+- PDF: nur Seite 1, braucht beim ersten Laden Internet; nicht getestet. Bilder getestet.
+- Bauteile lassen sich nur im aktuellen Geschoss auswählen. Maße nur an der gewählten Wand oder Öffnung.
