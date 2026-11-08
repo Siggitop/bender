@@ -852,3 +852,11 @@ body[data-tab="tools"] .floatbar { display: flex; }
 .bau .bau-link { margin: 2px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
 .bau .bau-link .ped-f input { width: 64px; }
 .bau .ped-add button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bau .ped-f select { min-height: 34px; max-width: 150px; padding: 3px 6px; font-size: 14px; }
+.bau .bau-more { flex-wrap: wrap; justify-content: center; }
+.bau .bau-edges { max-height: 34vh; overflow: auto; margin: 4px 0; }
+.bau .bau-edges .ped-grid { align-items: center; padding: 2px 0; }
+.bau .ped-info { max-height: calc(100% - 220px - env(safe-area-inset-top)); overflow: auto; }
+.bau .ped-info .ped-grid .ped-f input[data-txt] { width: 110px; text-align: left; }
+.bau .ped-seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (max-width: 440px) { .bau .ped-tools .nvb { width: 35px; } .bau .ped-tools { gap: 0; } }

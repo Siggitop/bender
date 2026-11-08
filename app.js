@@ -5277,25 +5277,14 @@ function showTab(t) {
 $('.tabbar').addEventListener('click', e => { const b = e.target.closest('button'); if (b?.dataset.bau != null) { openBau(); return; } const t = b?.dataset.tab; if (t) showTab(t); });
 // Experiment Gebäude: nur sichtbar, wenn in den Einstellungen eingeschaltet (der Schalter erscheint erst mit ?exp in der Adresse)
 var EXP_URL = new URLSearchParams(location.search).has('exp');
-function expSync() { const b = $('.tabbar [data-bau]'); if (b) b.hidden = !vis.expBau; const pb = $('#planePop [data-bauplanes]'); if (pb) pb.hidden = !vis.expBau; }
-// Rohre einer Szene für das Gebäude: Mittellinien, Radius, Farbe (nur lesen)
-function bauSceneGeom(id) {
-  const out = [];
-  db.projects.filter(q => q.sceneId === id && !q.hidden && !q.unrouted && !q.stub && !q.empty).forEach(q => {
-    try {
-      const f = prof(q), L = buildLayout(q), col = q.color != null ? PIPE_COLORS[q.color % PIPE_COLORS.length] : PIPE_COLORS[0];
-      [L, ...(L.bundle || []).filter(B => !B.def.hidden)].forEach(x => out.push({ pts: x.samples.map(s => s.p), r: f.D / 2, col }));
-    } catch (err) { console.warn('Gebäude: Rohr nicht darstellbar', q.name, err); }
-  });
-  return out;
-}
+function expSync() { const b = $('.tabbar [data-bau]'); if (b) b.hidden = !vis.expBau; }
 var bauOpen = false;
 async function openBau() {
   if (bauOpen) return;
   bauOpen = true;
   try {
     const m = await import('./building.js');
-    const ed = await m.openBuilding({ toast, ask, scenes: () => db.scenes.map(s => ({ id: s.id, name: s.name })), sceneGeom: bauSceneGeom, onClose: () => { bauOpen = false; if (window.biegeDebug) delete window.biegeDebug.bau; } });
+    const ed = await m.openBuilding({ toast, ask, onClose: () => { bauOpen = false; if (window.biegeDebug) delete window.biegeDebug.bau; } });
     if (window.biegeDebug) window.biegeDebug.bau = ed;
   } catch (err) { bauOpen = false; toast(`Gebäude lässt sich nicht öffnen: ${err.message || err}`); }
 }
@@ -5829,8 +5818,7 @@ $('#selBtn').addEventListener('click', () => { if (multi) endMulti(); else if (!
 $('#addPlane').addEventListener('click', () => {
   $('#planePop').hidden = !$('#planePop').hidden;
 });
-$('#planePop').addEventListener('click', async e => {
-  if (e.target.closest('[data-bauplanes]')) { $('#planePop').hidden = true; await planesFromBau(); return; }
+$('#planePop').addEventListener('click', e => {
   const k = e.target.closest('[data-ax]')?.dataset.ax;
   if (k == null) return;
   const p = proj(), sc = scene(p), id = uid(), a = +k, A = points(p)[0], [u, v] = [0, 1, 2].filter(i => i !== a);
@@ -5840,21 +5828,6 @@ $('#planePop').addEventListener('click', async e => {
   refit();
   selectPlane(id); recompute();
 });
-// Ebenen aus dem Gebäude (Experiment): ersetzt früher übernommene, eigene Ebenen bleiben
-async function planesFromBau() {
-  const sc = scene();
-  if (!sc) return;
-  const pts = bauSceneGeom(sc.id).flatMap(g => g.pts), box = pts.length ? { mn: [0, 1, 2].map(k => Math.min(...pts.map(p => p[k]))), mx: [0, 1, 2].map(k => Math.max(...pts.map(p => p[k]))) } : null;
-  let r;
-  try { r = await (await import('./building.js')).bauPlanesFor(sc.id, box); } catch (err) { toast(`Gebäude nicht lesbar: ${err.message || err}`); return; }
-  if (!r) { toast('Diese Szene ist keinem Geschoss zugeordnet. Im Gebäude unter „Rohrprojekte“ zuordnen.'); return; }
-  if (!r.planes.length) { toast(`Im Geschoss ${r.storey} liegt nahe den Rohren keine achsparallele Fläche.`); return; }
-  commit();
-  sc.planes = sc.planes.filter(pl => !pl.bau);
-  r.planes.forEach(pl => sc.planes.push({ id: uid(), ...pl, ref: null, bau: true }));
-  refit(); recompute(); renderBrowser?.(); draw();
-  toast(`${r.planes.length} Ebenen aus ${r.storey} übernommen.`);
-}
 // Ebene als Rechteck: Mitte (u, v) in den beiden anderen Achsen
 function planeCorners(pl) {
   const [a, b] = [0, 1, 2].filter(i => i !== pl.axis), pt = (x, y) => { const q = [0, 0, 0]; q[pl.axis] = pl.c; q[a] = x; q[b] = y; return q; };

@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 3 und Teile von Phase 7 umgesetzt (Version 254)**, siehe Abschnitt 6 und 7. Offen: Phase 4 bis 6, 8 und der Rest von 7. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt (Version 255)**, siehe Abschnitt 6 bis 8. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -152,7 +152,7 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - Deckendurchbruch: auf eine Decke tippen, rechteckig B × T, die Decke bekommt ein echtes Loch.
 - Gewählte Öffnung: Maß vom Wandanfang und Breite im Bild.
 
-**Phase 7, erster Teil:**
+**Phase 7, erster Teil** (in Version 255 wieder entfernt, siehe Abschnitt 8):
 - Im Gebäude unter „Rohrprojekte“ eine Szene der Rohrplanung einem Geschoss zuordnen, Lage per X/Y/Z (Z ab OK Rohdecke). Ihre Rohre erscheinen im Gebäude (nur Anzeige, in der Rohrfarbe; Fittings noch nicht).
 - Im Rohrteil im Ebenen-Menü „Aus Gebäude (Experiment)“: übernimmt achsparallele Wandflächen, Flächen eckiger Stützen, den Fußboden (OK Rohdecke) und die Deckenunterseite des Geschosses darüber als Ebenen, nur im Umkreis von 3 m um die Rohre. Erneutes Übernehmen ersetzt die früher übernommenen, eigene Ebenen bleiben; ein Rückgängig-Schritt. Damit gelten Abstände, Fangen und Schatten wie bei eigenen Ebenen.
 
@@ -162,3 +162,44 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - Kein automatischer Durchbruch-Vorschlag, wo ein Rohr eine Wand kreuzt, keine Kollisionsprüfung (Rest von Phase 7).
 - PDF: nur Seite 1, braucht beim ersten Laden Internet; nicht getestet. Bilder getestet.
 - Bauteile lassen sich nur im aktuellen Geschoss auswählen. Maße nur an der gewählten Wand oder Öffnung.
+
+## 8. Version 255: eigenständig, Phasen 4 bis 6, IFC
+
+**Entscheidung (08.11.2026):** Das Gebäude bleibt versteckter Tab, wird aber unabhängig vom Rohrteil entwickelt. Die Verbindung aus Phase 7 ist ausgebaut: kein „Aus Gebäude“ im Ebenen-Menü, keine Rohrprojekte im Gebäude. Früher gespeicherte Zuordnungen bleiben unbenutzt in den Daten liegen.
+
+**Fangen beim Zeichnen (korrigiert):**
+- Ortho: Liegt die Richtung ab dem letzten Punkt nahe am 15°-Raster, bleibt sie dort, auch wenn eine Achse oder Wand in der Nähe ist. Dann fängt der Schnittpunkt des Ortho-Strahls mit der Linie („Achse 2 · Ortho“, „Wandfläche · Ortho“).
+- Punktfang (Enden, Ecken, Achsschnitte) gilt mit Ortho nur, wenn der Punkt auf dem Strahl liegt oder der Zeiger sehr nahe ist.
+- Linienfang auf Wänden: Wandachse und beide Wandflächen, auch der Wände, die gerade in der Kette entstanden sind; dazu Trägerachsen und die Kanten von Decken, Dächern, Rasterdecken, Räumen, Schächten. Zwei Linien nahe beieinander: ihr Schnittpunkt.
+
+**Arbeitshilfen:**
+- Geschoss kopieren: „Kopie als neues Geschoss oben“ (alle Bauteile mit Öffnungen, ohne Schächte).
+- Mehrfachauswahl: Shift-Klick am Mac, „+ Weitere“ auf dem Touchscreen; Tafel mit Anzahl je Bauteilart.
+- Verschieben und Kopieren (Basispunkt → Zielpunkt, mit Fangen und Ortho); Kopieren mit Anzahl für Reihen. Öffnungen gehen mit ihrer Wand oder Decke.
+- Wand teilen: Öffnungen kommen auf das Stück, in dem sie liegen.
+
+**Phase 4, Tragwerk:**
+- Träger (Werkzeug neben Stütze): Unterzug B × H oder Stahl mit Profil, Oberkante (OK) über OK Rohdecke, Vorgabe Geschosshöhe − Deckendicke. Stahl auch „Liegend“ (90° gedreht).
+- Stützen auch aus Stahl, Drehung in Grad.
+- Profilkatalog: IPE 80–600, HEA/HEB 100–500, UPN 80–300, RO 48,3–219,1 (Rundrohr), QRO 50–200 (Quadratrohr), echte Querschnitte (I, U, hohl).
+
+**Phase 5, Dächer** (Menü „⋯“ → Dach):
+- Flach: Platte auf Traufhöhe, Überstand, Attika mit Höhe, Breite und Sims (Überstand nach außen).
+- Geneigt: je Umrisskante Traufe mit Neigung oder Giebel; Formen Satteldach, Pultdach, Walmdach per Knopf; Giebel werden auf Wunsch mit einer Scheibe gefüllt. Berechnet als untere Hülle der Dachflächen, exakt für Umrisse ohne einspringende Ecken.
+- „Aus Wänden“ übernimmt die Außenkante eines geschlossenen Wandumrisses.
+
+**Phase 6, Ausbau** (Menü „⋯“):
+- Rasterdecke: in einen Raum tippen oder Umriss zeichnen; Unterkante, Raster (Vorgabe 625 × 625), „Raster mittig“, einzelne Platten herausnehmen. In 3D durchscheinend, im Grundriss gestrichelt.
+- Raum: in einen von Wänden umschlossenen Bereich tippen, die Fläche wird erkannt (Wände als Grenze, Türen schließen nicht auf; auf etwa 1 cm genau). Nummer, Name, Fläche im Grundriss.
+- Schacht: Rechteck über zwei Ecken, von seinem Geschoss bis zu einem Geschoss darüber; Decken dazwischen werden ausgespart. Im Grundriss mit Kreuz.
+- Im Grundriss: Träger, Dächer, Rasterdecken, Schächte (über der Schnittebene) gestrichelt.
+
+**Phase 8, Teil:**
+- IFC exportieren (IFC4): Projekt, Grundstück, Gebäude, Geschosse; Wände, Decken, Dach (IfcSlab ROOF), Stützen, Träger, Rasterdecken (IfcCovering), Räume und Schächte (IfcSpace), Türen, Fenster, Durchbrüche (IfcOpeningElement mit Bezug zur Wand/Decke). Geometrie als Dreiecksnetz (IfcFacetedBrep). Die Datei ist formal geprüft (alle Verweise vorhanden), aber noch nicht in einem IFC-Viewer geöffnet worden.
+- Ansicht als Bild (PNG): aktuelle Ansicht mit Beschriftung.
+
+**Offen:**
+- IFC-Import, Schnitte, Pläne als PDF mit Maßketten.
+- Treppen, Rampen, Aufzugsschächte, Brüstungen und Geländer, Vorsatzschalen.
+- Dächer mit einspringenden Ecken (L-Grundriss) exakt; Gauben.
+- Phase 7 (Rohre im Gebäude), wenn das Gebäude-Werkzeug steht.
