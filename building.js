@@ -1079,8 +1079,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (!it || !nx || !(val > 0)) return;
     const dl = val - (nx.off - it.off);
     if (Math.abs(dl) < 0.05) return;
-    const mv = gShift ? f.items.slice(i + 1) : [nx];
-    if (!gShift && f.items[i + 2] && nx.off + dl >= f.items[i + 2].off - 1) { env.toast(`Achse ${nx.g.name} würde über Achse ${f.items[i + 2].g.name} hinaus wandern. „Folgende mitschieben“ wählen.`); return; }
+    const mv = gMode !== 'one' ? f.items.slice(i + 1) : [nx];
+    if (gMode === 'one' && f.items[i + 2] && nx.off + dl >= f.items[i + 2].off - 1) { env.toast(`Achse ${nx.g.name} würde über Achse ${f.items[i + 2].g.name} hinaus wandern. „Alle folgenden“ wählen.`); return; }
     change(() => mv.forEach(({ g }) => { g.a = add(g.a, mul(f.n, dl)).map(v => Math.round(v * 10) / 10); g.b = add(g.b, mul(f.n, dl)).map(v => Math.round(v * 10) / 10); }));
     renderUi(); draw();
   }
@@ -1089,7 +1089,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     change(() => fams.forEach(f => f.items.forEach(({ g }) => { g.name = f.vert ? String(++ni) : letter(li++); })));
     renderUi(); draw(); env.toast('Achsen neu nummeriert: 1, 2, 3 … von links, A, B, C … von unten.');
   }
-  let gShift = true, gdimHits = [], dimEdit = null;
+  // Mitnahme beim Verschieben einer Achse: one = nur diese, next = alle folgenden, all = ganze Richtung
+  let gMode = 'next', gdimHits = [], dimEdit = null;
+  const G_MODES = [['one', 'Nur diese Achse'], ['next', 'Alle folgenden'], ['all', 'Ganze Richtung']];
   // Maßketten am Raster: Abstände von Achse zu Achse und Gesamtmaß, je Schar vor dem Achsanfang
   function gridDims(z, col) {
     gdimHits = [];
@@ -1127,7 +1129,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     dimEdit = hh;
     const rr = root.getBoundingClientRect(), cr = cv.getBoundingClientRect(), g2 = B.grids.find(g => g.id === hh.ids[1]);
     const typed = dimEd.hidden ? null : dimEd.querySelector('input')?.value;
-    dimEd.innerHTML = `<div class="bau-ddh">Abstand ${esc(B.grids.find(g => g.id === hh.ids[0])?.name || '')} – ${esc(g2?.name || '')}</div><label class="ped-f"><input data-gdim inputmode="decimal" value="${fmt(hh.val)}"><i>mm</i></label>${seg('gshift', gShift ? '1' : '0', [['1', 'Folgende mitschieben'], ['0', `Nur ${esc(g2?.name || '')}`]])}<div class="ped-acts"><button data-b="gdimok" class="on">Übernehmen</button><button data-b="gdimx">Abbrechen</button></div>`;
+    dimEd.innerHTML = `<div class="bau-ddh">Abstand ${esc(B.grids.find(g => g.id === hh.ids[0])?.name || '')} – ${esc(g2?.name || '')}</div><label class="ped-f"><input data-gdim inputmode="decimal" value="${fmt(hh.val)}"><i>mm</i></label>${seg('gshift', gMode === 'one' ? 'one' : 'next', [['next', 'Folgende mitschieben'], ['one', `Nur ${esc(g2?.name || '')}`]])}<div class="ped-acts"><button data-b="gdimok" class="on">Übernehmen</button><button data-b="gdimx">Abbrechen</button></div>`;
     dimEd.hidden = false;
     const x = hh.x + cr.left - rr.left, y = hh.y + cr.top - rr.top;
     dimEd.style.left = `${Math.max(8, Math.min(rr.width - 268, x - 130))}px`; dimEd.style.top = `${Math.max(8, Math.min(rr.height - 150, y + 16))}px`;
@@ -1889,10 +1891,28 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const pts = h.k === 'm' ? [e.a, e.b] : [e[h.k]];
       B.els.forEach(o => { if (o === e || o.type !== 'wall' || o.storey !== e.storey) return; for (const w of ['a', 'b']) if (pts.some(p => near(o[w], p))) follow.push({ o, w, from: [...o[w]] }); });
     }
-    return { h, before, e, g, follow, a0: e?.a && [...e.a], b0: e?.b && [...e.b], ga: g && [...g.a], gb: g && [...g.b], opp: e?.type === 'shaft' && typeof h.k === 'number' ? [...e.pts[(h.k + 2) % 4]] : null };
+    // Achse parallel ziehen: mitwandernde Achsen merken
+    const gmove = g && h.k === 'm' ? (() => { const f = famOf(g), i = f.items.findIndex(it => it.g === g); return (gMode === 'all' ? f.items : gMode === 'next' ? f.items.slice(i) : [f.items[i]]).map(it => ({ g: it.g, a: [...it.g.a], b: [...it.g.b] })); })() : null;
+    return { h, before, e, g, follow, gmove, a0: e?.a && [...e.a], b0: e?.b && [...e.b], ga: g && [...g.a], gb: g && [...g.b], opp: e?.type === 'shaft' && typeof h.k === 'number' ? [...e.pts[(h.k + 2) % 4]] : null };
+  }
+  // Magnet beim stufenlosen Ziehen: nur Bauteilecken und Stützen ganz in der Nähe
+  function magnetAt(x, y) {
+    if (freeSnap) return null;
+    const tol = touch ? 14 : 8; let best = null;
+    B.els.forEach(e => { if (!onStorey(e, cur) || !shown(e) || !['wall', 'column', 'slab', 'shaft'].includes(e.type)) return; (footprint(e) || []).forEach(q => { const s2 = P2(q), dd2 = Math.hypot(s2[0] - x, s2[1] - y); if (dd2 < tol && (!best || dd2 < best.d)) best = { p: q, d: dd2 }; }); if (e.type === 'column') { const s2 = P2(e.p), dd2 = Math.hypot(s2[0] - x, s2[1] - y); if (dd2 < tol && (!best || dd2 < best.d)) best = { p: e.p, d: dd2 }; } });
+    return best?.p || null;
   }
   function dragMove(D, x, y) {
-    const { h, e, g } = D, skip = new Set([e?.id, ...D.follow.map(f => f.o.id)].filter(Boolean));
+    const { h, e, g } = D;
+    if (g && h.k === 'm' && D.gmove) {
+      const mg = magnetAt(x, y), p = mg || onPlane(x, y);
+      if (!p) return;
+      const n = perp(norm(sub(D.gb, D.ga))), dd = Math.round(dot(sub(p, mul(add(D.ga, D.gb), 0.5)), n));
+      D.gmove.forEach(m => { m.g.a = add(m.a, mul(n, dd)); m.g.b = add(m.b, mul(n, dd)); });
+      hover = mg ? { p: mg, label: 'Ecke' } : null;
+      dirty = true; draw(); return;
+    }
+    const skip = new Set([e?.id, ...D.follow.map(f => f.o.id)].filter(Boolean));
     const anchor = h.k === 'a' ? (e ? D.b0 : D.gb) : h.k === 'b' ? (e ? D.a0 : D.ga) : null;
     const s = snapAt(x, y, { skip, from: anchor });
     if (!s) return;
@@ -1982,6 +2002,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       }
     });
     if (cam.plan || cmd?.t === 'grid' || sel?.grid) gridDims(z, 'rgb(200,60,60)'); else gdimHits = [];
+    // gewählte Achse: Abstände zu den Nachbarn direkt an der Achse (laufen beim Ziehen mit)
+    { const g = !cmd && selGrid(), f = g && famOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1;
+      if (f) { const mid = mul(add(g.a, g.b), 0.5); [f.items[i - 1], f.items[i + 1]].forEach(nb => { if (nb) { const o = nb.off - f.items[i].off; dimLine(mid, add(mid, mul(f.n, o)), fmt(Math.abs(o)), acc, z); } }); } }
     if (cmd?.t === 'grid' && cmd.base) {
       const ref = B.grids.find(g => g.id === cmd.ref) || B.grids.find(g => g.id === cmd.base);
       if (ref) {
@@ -2400,7 +2423,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     } else if (g) {
       const f = famOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1, pv = f?.items[i - 1], nx = f?.items[i + 1];
       h = `<h4>Achse ${esc(g.name)}</h4><div class="ped-grid"><label class="ped-f"><span>Name</span><input data-gname value="${esc(g.name)}" class="bau-short"></label>${dd('ghead', 'Achskopf', g.hideA && g.hideB ? 'none' : g.hideA ? 'b' : g.hideB ? 'a' : 'both', [['both', 'Beide Enden'], ['a', 'Nur Anfang'], ['b', 'Nur Ende'], ['none', 'Keiner']])}</div>
-        ${pv || nx ? `<div class="ped-grid">${pv ? fld('ggprev', f.items[i].off - pv.off, `Abstand zu ${esc(pv.g.name)}`) : ''}${nx ? fld('ggnext', nx.off - f.items[i].off, `Abstand zu ${esc(nx.g.name)}`) : ''}</div><div class="ped-acts">${seg('gshift', gShift ? '1' : '0', [['1', 'Alle folgenden'], ['0', 'Nur eine Achse']])}</div>` : ''}
+        ${pv || nx ? `<div class="ped-grid">${pv ? fld('ggprev', f.items[i].off - pv.off, `Abstand zu ${esc(pv.g.name)}`) : ''}${nx ? fld('ggnext', nx.off - f.items[i].off, `Abstand zu ${esc(nx.g.name)}`) : ''}</div><div class="ped-acts">${dd('gshift', 'Beim Verschieben', gMode, G_MODES)}</div>` : ''}
         <small>Länge ${fmt(len(sub(g.b, g.a)))} mm. Enden ziehen ändert die Länge, das Quadrat in der Mitte verschiebt parallel. Maßzahlen im Grundriss antippen ändert Abstände.</small>
         <div class="ped-acts"><button data-b="gpar" class="on">Parallele Achse anfügen</button><button data-b="grenum">Neu nummerieren</button><button data-b="delgrid">${SVG(IC.trash)} Löschen</button></div>`;
     }
@@ -2831,7 +2854,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k === 'stwdd' && C) { C.w = +v; last.stair.w = C.w; }
       else if (k === 'cgdd' && C) { const [a2, b2] = v.split('x').map(Number); C.gx = a2; C.gy = b2; last.ceil.gx = a2; last.ceil.gy = b2; }
       else if (k === 'shtodd' && C) C.to = v;
-      else if (k === 'gshift') { gShift = v === '1'; if (dimEdit) { const hh = dimEdit; openDimEd(hh); } else renderUi(); return; }
+      else if (k === 'gshift') { gMode = v; if (dimEdit) { const hh = dimEdit; openDimEd(hh); } else renderUi(); return; }
       else if (k === 'ghead') { const g = selGrid(); if (g) change(() => { g.hideA = v === 'b' || v === 'none'; g.hideB = v === 'a' || v === 'none'; }); renderUi(); draw(); return; }
       else if (k === 'osize' && C) { const [a2, b2] = v.split('x').map(Number); C[C.kind].w = a2; C[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; last.op.v[C.kind].w = a2; last.op.v[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; }
       else if (k === 'wkind' && C) { C.kind = v; last.wall.kind = v; C.th = WALL_KINDS.find(x => x[0] === v)[2]; last.wall.th = C.th; }

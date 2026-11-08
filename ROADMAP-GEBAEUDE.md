@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 263**, siehe Abschnitt 6 bis 16. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 264**, siehe Abschnitt 6 bis 17. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -301,3 +301,10 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - **Kalibrieren:** Ortho (Knopf oder F8) – zweiter Punkt waagerecht oder senkrecht zum ersten, Maß läuft mit. **Plan ausrichten** (in der Kalibrier-Leiste und unter Unterlage): zwei Punkte auf einer Linie, die gerade liegen soll – der Plan dreht sich um den ersten Punkt auf den nächsten rechten Winkel.
 - Getestet: Achse 1 + „3x6000 7500“ + Tippen bei 33 m → Achsen 1–6; Querrichtung „6000 8000“ → A–C; Achse bei 9 m → „2a“; Maß 1–2 auf 5000 mit Mitschieben → alle folgenden −1000; Abstand 2a–3 auf 2000 nur eine Achse; Neu nummerieren; Kopf antippen fokussiert den Namen; Plan ausrichten bei 5° Schräge → Drehung −5°; Kalibrieren mit Ortho → zweiter Punkt (10000 | 0); Rohr-Selbsttest 9/9.
 - Noch offen: Stützen und Wände folgen beim Verschieben einer Achse nicht automatisch mit; Achsen gelten für alle Geschosse.
+
+## 17. Version 264: Achsen stufenlos verschieben
+
+- Das Quadrat in der Mitte einer gewählten Achse verschiebt jetzt **stufenlos** (1 mm) statt am Objektfang zu springen. Nur ganz nahe an Wand-, Decken- oder Stützenecken rastet es ein („Ecke“); Shift (Mac) schaltet das ab.
+- **Beim Verschieben** (Auswahlknopf in der Achs-Tafel): **Nur diese Achse**, **Alle folgenden** (Abstände dahinter bleiben gleich) oder **Ganze Richtung** (alle Achsen der Richtung wandern mit, alle Abstände bleiben gleich). Gilt fürs Ziehen und für geänderte Abstände; bei Abständen wirkt „Ganze Richtung“ wie „Alle folgenden“.
+- Gewählte Achse: Abstände zu beiden Nachbarachsen stehen blau direkt an der Achse und laufen beim Ziehen mit.
+- Getestet (Ziehen mit Zeiger-Ereignissen): Achse 3 um 437 mm nur allein; um 1234 mm mit allen folgenden (Abstände 3–7 unverändert); um −2777 mm ganze Richtung (alle Abstände unverändert).
