@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt (Version 255)**, siehe Abschnitt 6 bis 8. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 256**, siehe Abschnitt 6 bis 9. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -203,3 +203,38 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - Treppen, Rampen, Aufzugsschächte, Brüstungen und Geländer, Vorsatzschalen.
 - Dächer mit einspringenden Ecken (L-Grundriss) exakt; Gauben.
 - Phase 7 (Rohre im Gebäude), wenn das Gebäude-Werkzeug steht.
+
+## 9. Version 256: Projektmanager, Messen, Treppen, Praxistest
+
+**Bedienung neu geordnet** (Desktop und iPad zuerst, Telefon geht mit):
+- Titel oben = Geschosswahl (antippen) mit „Geschosse bearbeiten …“; Bild auf/ab wechselt das Geschoss.
+- Liste links mit zwei Reitern: **Struktur** (Geschoss → Räume → Bauteile im Raum, darunter „Ohne Raum“ nach Art gruppiert; antippen wählt aus, Auge blendet einzeln aus) und **Layer** (je Bauteilart ein/aus, „Alles einblenden“). Ausgeblendetes lässt sich im Bild nicht antippen und fängt nicht. Zustand wird mit dem Gebäude gespeichert.
+- Unten in der Liste: Fenster für Geschosse, Raster, Unterlage, Datei. Selten gebrauchte Einstellungen (Rasterdecke, Dachform, Treppe) öffnen ebenfalls ein Fenster statt die Tafel zu überladen. Fenster rechts (breit) bzw. als Blatt von unten (Telefon); „Einpassen“ nutzt den freien Bereich daneben bzw. darüber.
+- Tastatur: W Wand, S Stütze, T Träger, D Decke, O Öffnung, M Messen, R Raum, G Achse, V Grundriss/3D, F Einpassen, Esc, Entf, Cmd+Z.
+
+**Rasterdecke einstellbar** (Fenster „Raster einstellen …“): Plattenmaß (625×625, 625×1250, 600×600, 1200×600 oder frei, drehen), Unterkante, **Rasterstart** an einer Raumecke mit Randstreifen X/Y oder „Randstreifen gleich“, Anzeige der vier Randstreifen mit Warnung unter einem Drittel Plattenbreite, Mengen (volle Platten, Zuschnitte, herausgenommen). Im Grundriss: Zuschnitte orange, Rasterstart als orangenes Quadrat zum Ziehen. Räume mit Kern (Insel) werden ausgespart.
+
+**Messen** (Lineal, M): Abstand (mit ΔX/ΔY), Kette (Summe), Fläche (Umriss, m² und Umfang) und Bauteil antippen (Raum, Decke, Rasterdecke, Dach mit Dachfläche, Wand mit Ansichtsfläche abzüglich Öffnungen, Treppe). Messungen werden nicht gespeichert.
+
+**Neue Bauteile und Hilfen:**
+- Treppe (Menü „⋯“): gerade oder zweiläufig mit Halbpodest, Breite, Steigungen (Vorgabe Höhe/175), Auftritt, Wenderichtung, Treppenauge; Schrittmaß-Prüfung 590–650 mm. Die Deckenöffnung darüber wird automatisch angelegt und bei jeder Änderung nachgeführt (auch nach Geschosskopien). Im Grundriss mit Lauflinie und Pfeil.
+- Bodenplatte: im Deckenwerkzeug „Decke | Bodenplatte“ (IFC BASESLAB). Keller: „+ unten (Keller)“ im Geschossfenster.
+- Gelände: Höhe im Geschossfenster, in 3D als durchscheinende Fläche (Keller bleibt sichtbar).
+- Wandstärken als Schnellwahl (365, 300, 240, 175, 115, 100).
+- Stützen „Auf alle Achsschnitte“.
+- Mehrfachauswahl mit gemeinsamen Werten (Wände: Dicke, Höhe, Fuß; Stützen: Höhe; Träger: OK; Decken: Dicke; Öffnungen: Maße).
+- Raum: Namensvorschläge, „Rasterdecke hier“.
+- Datei: „Neues Gebäude“.
+
+**Praxistest Einfamilienhaus** (KG, EG, DG mit Kniestock 1 m, Satteldach 38°): gefunden und behoben
+- Fangergebnisse hatten Rundungsreste (8000,000000000001) → auf 0,1 mm gerundet.
+- Vier Kniestockwände einzeln einstellen → gemeinsame Werte in der Mehrfachauswahl.
+- Raumecken lagen einige Millimeter neben der Wand und zogen den Fang mit → Ecken werden auf die Schnittpunkte der Wandflächen gesetzt (Wohnen/Essen exakt 22,141 m²).
+- „Neues Gebäude“ und Löschen des aktuellen Geschosses ließen die Oberfläche ins Leere zeigen → behoben.
+
+**Praxistest Bürokomplex** (Raster 6 × 4 Achsen à 8,10/7,20 m, 96 Stützen, Kern mit zweiläufiger Treppe und Aufzugsschacht über 4 Geschosse, Unterzüge, Großraum mit Rasterdecke, Flachdach mit Attika): gefunden und behoben
+- Großraum um den Kern zählte den Kern mit → Räume und Rasterdecken mit Inseln (809,09 m² = 856,26 − 47,17).
+- Treppen bekamen keine Deckenöffnung, wenn das Geschoss darüber später entstand → Öffnungen werden laufend nachgeführt.
+- Am Telefon verdeckte das Fenster das Modell → Einpassen in den freien Bereich.
+
+**Noch offen:** Treppengeländer, Brüstungen, Aufzüge als eigenes Bauteil, Dachfenster und Gauben, Schnitte, PDF-Pläne mit Maßketten, IFC-Import; Rasterdecken in schrägen Räumen nur näherungsweise (Randstreifen am umschließenden Rechteck); beim Kopieren eines Geschosses wandern auch Eingangstüren mit.
