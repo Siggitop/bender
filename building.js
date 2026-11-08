@@ -1046,6 +1046,32 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     return fams;
   }
   const famOf = g => gridFams().find(f => f.items.some(it => it.g === g));
+  // Gruppen einer Schar: Achsen, die sich der Länge nach überlappen (z. B. links und rechts im Plan getrennt).
+  // Eine Achse über mehrere Gruppen hinweg gehört zu allen davon. own = eigene Achsen, items = mit durchlaufenden, nach Lage sortiert
+  function gridGroups(f) {
+    const iv = f.items.map(it => { const u = dot(it.g.a, f.d), v = dot(it.g.b, f.d); return { it, t0: Math.min(u, v), t1: Math.max(u, v) }; }).sort((a, b) => (a.t1 - a.t0) - (b.t1 - b.t0));
+    let grs = [];
+    const ov = (a, b) => a.t0 < b.t1 - 1 && a.t1 > b.t0 + 1;
+    for (const x of iv) {
+      const hit = grs.filter(G => ov(x, G));
+      if (!hit.length) grs.push({ t0: x.t0, t1: x.t1, own: [x.it], span: [] });
+      else if (hit.length === 1) { const G = hit[0]; G.own.push(x.it); G.t0 = Math.min(G.t0, x.t0); G.t1 = Math.max(G.t1, x.t1); }
+      else hit.forEach(G => G.span.push(x.it));
+    }
+    for (let k = true; k;) {
+      k = false;
+      for (let i = 0; i < grs.length && !k; i++) for (let j = i + 1; j < grs.length && !k; j++) if (ov(grs[i], grs[j])) {
+        const A = grs[i], Bq = grs[j]; A.own.push(...Bq.own); A.span = [...new Set([...A.span, ...Bq.span])].filter(it => !A.own.includes(it)); A.t0 = Math.min(A.t0, Bq.t0); A.t1 = Math.max(A.t1, Bq.t1); grs.splice(j, 1); k = true;
+      }
+    }
+    return grs.map(G => ({ ...G, n: f.n, d: f.d, f, items: [...new Set([...G.own, ...G.span])].sort((a, b) => a.off - b.off), side: G.own.find(it => it.g.dimSide)?.g.dimSide || 'a' }));
+  }
+  // Gruppe einer Achse (die, zu der sie selbst gehört; sonst die erste, die sie durchläuft)
+  function grpOf(g) {
+    const f = famOf(g); if (!f) return null;
+    const G = gridGroups(f);
+    return G.find(x => x.own.some(it => it.g === g)) || G.find(x => x.items.some(it => it.g === g));
+  }
   const letterIdx = t => [...t].reduce((a, c) => a * 26 + c.charCodeAt(0) - 64, 0) - 1;
   const nextInSeq = t => (/^\d+$/.test(t) ? String(+t + 1) : /^[A-Z]+$/.test(t) ? letter(letterIdx(t) + 1) : null);
   const prevInSeq = t => (/^\d+$/.test(t) ? (+t > 1 ? String(+t - 1) : null) : /^[A-Z]+$/.test(t) && letterIdx(t) > 0 ? letter(letterIdx(t) - 1) : null);
@@ -1074,7 +1100,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (n > 1) env.toast(`${n} Achsen gesetzt.`);
   }
   // Abstand zwischen Achse i und i+1 einer Schar setzen: i+1 (und mit „mitschieben“ alle folgenden) wandern
-  function setGap(f, i, val) {
+  function setGap(f, i, val) { // f: Gruppe (items, n)
     const it = f.items[i], nx = f.items[i + 1];
     if (!it || !nx || !(val > 0)) return;
     const dl = val - (nx.off - it.off);
@@ -1089,24 +1115,23 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     change(() => fams.forEach(f => f.items.forEach(({ g }) => { g.name = f.vert ? String(++ni) : letter(li++); })));
     renderUi(); draw(); env.toast('Achsen neu nummeriert: 1, 2, 3 … von links, A, B, C … von unten.');
   }
-  // Mitnahme beim Verschieben einer Achse: one = nur diese, next = alle folgenden, all = ganze Richtung
+  // Mitnahme beim Verschieben einer Achse: one = nur diese, next = alle folgenden, all = ganze Gruppe
   let gMode = 'next', gdimHits = [], dimEdit = null;
-  const G_MODES = [['one', 'Nur diese Achse'], ['next', 'Alle folgenden'], ['all', 'Ganze Richtung']];
+  const G_MODES = [['one', 'Nur diese Achse'], ['next', 'Alle folgenden'], ['all', 'Ganze Gruppe']];
   // Maßketten am Raster: Abstände von Achse zu Achse und Gesamtmaß, je Schar vor dem Achsanfang
   function gridDims(z, col) {
     gdimHits = [];
     if (B.vis.off.grid) return;
     const sc = (() => { const a = P2([0, 0], z), b = P2([1000, 0], z); return Math.hypot(b[0] - a[0], b[1] - a[1]) / 1000; })();
     if (!(sc > 0)) return;
-    for (const f of gridFams()) {
+    for (const f0 of gridFams()) for (const f of gridGroups(f0)) for (const sd of f.side === 'both' ? ['a', 'b'] : f.side === 'off' ? [] : [f.side]) {
       if (f.items.length < 2) continue;
-      let t0 = Infinity;
-      f.items.forEach(({ g }) => { t0 = Math.min(t0, dot(g.a, f.d), dot(g.b, f.d)); });
+      const sg = sd === 'b' ? 1 : -1, t0 = sd === 'b' ? f.t1 : f.t0;
       const at = (t, c) => add(mul(f.d, t), mul(f.n, c));
       let narrowFlip = false;
-      const ou = (() => { const p0 = P2(at(t0, f.items[0].off), z), p1 = P2(at(t0 - 1000, f.items[0].off), z), v = [p1[0] - p0[0], p1[1] - p0[1]], l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l]; })();
+      const ou = (() => { const p0 = P2(at(t0, f.items[0].off), z), p1 = P2(at(t0 + sg * 1000, f.items[0].off), z), v = [p1[0] - p0[0], p1[1] - p0[1]], l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l]; })();
       const row = (px, i0, i1, val, hit) => {
-        const t = t0 - px / sc, A = P2(at(t, f.items[i0].off), z), Bp = P2(at(t, f.items[i1].off), z);
+        const t = t0 + sg * px / sc, A = P2(at(t, f.items[i0].off), z), Bp = P2(at(t, f.items[i1].off), z);
         ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(Bp[0], Bp[1]);
         const dd = norm(sub(Bp.slice(0, 2), A.slice(0, 2))), tk = [(dd[0] - dd[1]) * 5, (dd[1] + dd[0]) * 5];
         for (const q of [A, Bp]) { ctx.moveTo(q[0] - tk[0], q[1] - tk[1]); ctx.lineTo(q[0] + tk[0], q[1] + tk[1]); }
@@ -1140,8 +1165,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const hh = dimEdit, v = num(dimEd.querySelector('input')?.value);
     closeDimEd();
     if (!hh || !(v > 0)) return;
-    const f = gridFams().find(x => x.items.some(it => it.g.id === hh.ids[0])), i = f ? f.items.findIndex(it => it.g.id === hh.ids[0]) : -1;
-    if (f && f.items[i + 1]?.g.id === hh.ids[1]) setGap(f, i, v);
+    for (const f0 of gridFams()) for (const G of gridGroups(f0)) { const i = G.items.findIndex(it => it.g.id === hh.ids[0]); if (i >= 0 && G.items[i + 1]?.g.id === hh.ids[1]) { setGap(G, i, v); return; } }
   }
 
   // ---------- Planunterlage ----------
@@ -1892,7 +1916,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       B.els.forEach(o => { if (o === e || o.type !== 'wall' || o.storey !== e.storey) return; for (const w of ['a', 'b']) if (pts.some(p => near(o[w], p))) follow.push({ o, w, from: [...o[w]] }); });
     }
     // Achse parallel ziehen: mitwandernde Achsen merken
-    const gmove = g && h.k === 'm' ? (() => { const f = famOf(g), i = f.items.findIndex(it => it.g === g); return (gMode === 'all' ? f.items : gMode === 'next' ? f.items.slice(i) : [f.items[i]]).map(it => ({ g: it.g, a: [...it.g.a], b: [...it.g.b] })); })() : null;
+    const gmove = g && h.k === 'm' ? (() => { const f = grpOf(g), i = f.items.findIndex(it => it.g === g); return (gMode === 'all' ? f.items : gMode === 'next' ? f.items.slice(i) : [f.items[i]]).map(it => ({ g: it.g, a: [...it.g.a], b: [...it.g.b] })); })() : null;
     return { h, before, e, g, follow, gmove, a0: e?.a && [...e.a], b0: e?.b && [...e.b], ga: g && [...g.a], gb: g && [...g.b], opp: e?.type === 'shaft' && typeof h.k === 'number' ? [...e.pts[(h.k + 2) % 4]] : null };
   }
   // Magnet beim stufenlosen Ziehen: nur Bauteilecken und Stützen ganz in der Nähe
@@ -2003,7 +2027,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     });
     if (cam.plan || cmd?.t === 'grid' || sel?.grid) gridDims(z, 'rgb(200,60,60)'); else gdimHits = [];
     // gewählte Achse: Abstände zu den Nachbarn direkt an der Achse (laufen beim Ziehen mit)
-    { const g = !cmd && selGrid(), f = g && famOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1;
+    { const g = !cmd && selGrid(), f = g && grpOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1;
       if (f) { const mid = mul(add(g.a, g.b), 0.5); [f.items[i - 1], f.items[i + 1]].forEach(nb => { if (nb) { const o = nb.off - f.items[i].off; dimLine(mid, add(mid, mul(f.n, o)), fmt(Math.abs(o)), acc, z); } }); } }
     if (cmd?.t === 'grid' && cmd.base) {
       const ref = B.grids.find(g => g.id === cmd.ref) || B.grids.find(g => g.id === cmd.base);
@@ -2421,9 +2445,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         }
       }
     } else if (g) {
-      const f = famOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1, pv = f?.items[i - 1], nx = f?.items[i + 1];
+      const f = grpOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1, pv = f?.items[i - 1], nx = f?.items[i + 1];
+      const sideN = !f ? ['Anfang', 'Ende'] : Math.abs(f.d[0]) > 0.99 ? ['Links', 'Rechts'] : Math.abs(f.d[1]) > 0.99 ? ['Unten', 'Oben'] : ['Anfang', 'Ende'];
       h = `<h4>Achse ${esc(g.name)}</h4><div class="ped-grid"><label class="ped-f"><span>Name</span><input data-gname value="${esc(g.name)}" class="bau-short"></label>${dd('ghead', 'Achskopf', g.hideA && g.hideB ? 'none' : g.hideA ? 'b' : g.hideB ? 'a' : 'both', [['both', 'Beide Enden'], ['a', 'Nur Anfang'], ['b', 'Nur Ende'], ['none', 'Keiner']])}</div>
-        ${pv || nx ? `<div class="ped-grid">${pv ? fld('ggprev', f.items[i].off - pv.off, `Abstand zu ${esc(pv.g.name)}`) : ''}${nx ? fld('ggnext', nx.off - f.items[i].off, `Abstand zu ${esc(nx.g.name)}`) : ''}</div><div class="ped-acts">${dd('gshift', 'Beim Verschieben', gMode, G_MODES)}</div>` : ''}
+        ${pv || nx ? `<div class="ped-grid">${pv ? fld('ggprev', f.items[i].off - pv.off, `Abstand zu ${esc(pv.g.name)}`) : ''}${nx ? fld('ggnext', nx.off - f.items[i].off, `Abstand zu ${esc(nx.g.name)}`) : ''}</div><div class="ped-acts">${dd('gshift', 'Beim Verschieben', gMode, G_MODES)}${dd('gdside', 'Maßkette', f.side, [['a', sideN[0]], ['b', sideN[1]], ['both', 'Beide Seiten'], ['off', 'Aus']])}</div><small>Gruppe: ${f.items.length} Achsen (${esc(f.items[0].g.name)} bis ${esc(f.items.at(-1).g.name)}). Maßkette und Mitnahme gelten für diese Gruppe.</small>` : ''}
         <small>Länge ${fmt(len(sub(g.b, g.a)))} mm. Enden ziehen ändert die Länge, das Quadrat in der Mitte verschiebt parallel. Maßzahlen im Grundriss antippen ändert Abstände.</small>
         <div class="ped-acts"><button data-b="gpar" class="on">Parallele Achse anfügen</button><button data-b="grenum">Neu nummerieren</button><button data-b="delgrid">${SVG(IC.trash)} Löschen</button></div>`;
     }
@@ -2855,6 +2880,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k === 'cgdd' && C) { const [a2, b2] = v.split('x').map(Number); C.gx = a2; C.gy = b2; last.ceil.gx = a2; last.ceil.gy = b2; }
       else if (k === 'shtodd' && C) C.to = v;
       else if (k === 'gshift') { gMode = v; if (dimEdit) { const hh = dimEdit; openDimEd(hh); } else renderUi(); return; }
+      else if (k === 'gdside') { const g = selGrid(), G = g && grpOf(g); if (G) change(() => G.own.forEach(it => { it.g.dimSide = v; })); renderUi(); draw(); return; }
       else if (k === 'ghead') { const g = selGrid(); if (g) change(() => { g.hideA = v === 'b' || v === 'none'; g.hideB = v === 'a' || v === 'none'; }); renderUi(); draw(); return; }
       else if (k === 'osize' && C) { const [a2, b2] = v.split('x').map(Number); C[C.kind].w = a2; C[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; last.op.v[C.kind].w = a2; last.op.v[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; }
       else if (k === 'wkind' && C) { C.kind = v; last.wall.kind = v; C.th = WALL_KINDS.find(x => x[0] === v)[2]; last.wall.th = C.th; }
@@ -3022,7 +3048,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (el.matches('[data-gname]')) { const g = selGrid(), v = el.value.trim(); if (g && v) change(() => { g.name = v; }); renderUi(); draw(); return; }
     if (el.matches('[data-gdim]')) { if (dimEdit) dimEdit.val = num(el.value) || dimEdit.val; return; }
     if (el.matches('[data-gdist]')) { if (cmd?.t === 'grid' && cmd.base && el.value.trim()) gridSeries(el.value, cmd.side || 1); return; }
-    if (el.dataset.f === 'ggprev' || el.dataset.f === 'ggnext') { const g = selGrid(), f = g && famOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1, v = num(el.value); if (f && v > 0) setGap(f, el.dataset.f === 'ggprev' ? i - 1 : i, v); return; }
+    if (el.dataset.f === 'ggprev' || el.dataset.f === 'ggnext') { const g = selGrid(), f = g && grpOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1, v = num(el.value); if (f && v > 0) setGap(f, el.dataset.f === 'ggprev' ? i - 1 : i, v); return; }
     if (el.dataset.txt && e2) { change(() => { e2[el.dataset.txt] = el.value.trim(); }); return; }
     if (el.dataset.sel) {
       const k = el.dataset.sel, v = el.value;
