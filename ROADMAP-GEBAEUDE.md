@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 256**, siehe Abschnitt 6 bis 9. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 257**, siehe Abschnitt 6 bis 10. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -238,3 +238,11 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - Am Telefon verdeckte das Fenster das Modell → Einpassen in den freien Bereich.
 
 **Noch offen:** Treppengeländer, Brüstungen, Aufzüge als eigenes Bauteil, Dachfenster und Gauben, Schnitte, PDF-Pläne mit Maßketten, IFC-Import; Rasterdecken in schrägen Räumen nur näherungsweise (Randstreifen am umschließenden Rechteck); beim Kopieren eines Geschosses wandern auch Eingangstüren mit.
+
+## 10. Version 257: mehrere Gebäude, Startfenster
+
+- **Gebäude-Knopf** oben links neben der Liste (mit Namen, am Telefon nur Symbol) öffnet das Fenster „Gebäude“: alle gespeicherten Gebäude (antippen öffnet, Stift benennt um, Kopie dupliziert, Papierkorb löscht mit Rückfrage), „+ Neues Gebäude“, darunter Datei: „Sichern als Datei“ (JSON mit Planunterlagen), „Laden aus Datei“ (legt ein weiteres Gebäude an, ersetzt nichts), IFC, Bild. Der Knopf „Datei“ in der Liste entfällt.
+- Gespeichert wird automatisch bei jeder Änderung; das Fenster zeigt, wann zuletzt. Beim Öffnen kommt das zuletzt benutzte Gebäude.
+- **Startfenster** für neue Gebäude (und beim allerersten Öffnen): Name; Keller ja/nein, Anzahl Obergeschosse, Dachgeschoss ja/nein, Geschosshöhe; Grundlage frei, Achsraster (Anzahl und Abstand) oder Plan laden (danach öffnet das Unterlagen-Fenster); optional Umriss Länge × Breite mit Wandstärke → Außenwände in allen Geschossen, Bodenplatte unten, Decken darüber.
+- **Leeres Geschoss** zeigt, wie es losgeht (Wand zeichnen, Plan oder Raster, Decke aus Wänden).
+- Einpassen (F) berücksichtigt am Desktop ein offenes Fenster oder die Tafel rechts.

@@ -918,3 +918,13 @@ body[data-tab="tools"] .floatbar { display: flex; }
   .bau .bau-tsub { display: none; }
 }
 .bau .bau-tabs .ped-seg button.on { background: var(--accent); color: #fff; }
+.bau .bau-foot { grid-template-columns: repeat(3, 1fr); }
+.bau .bau-docbtn { display: inline-flex; align-items: center; gap: 6px; width: auto; max-width: 220px; padding: 0 10px; }
+.bau .bau-docbtn svg { width: 18px; height: 18px; flex: none; }
+.bau .bau-docname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.bau .bau-dlg .bau-row .bau-rn { min-height: 42px; }
+.bau .bau-ren { flex: 1; min-height: 38px; margin: 2px; font-size: 14px; }
+.bau .bau-wname input { width: 220px; text-align: left; }
+@media (max-width: 700px) { .bau .bau-docname { display: none; } .bau .bau-docbtn { padding: 0; width: 38px; justify-content: center; } }
+.bau .bau-wrow { justify-content: space-between; }
+.bau .bau-wrow .bprompt { font-size: 13.5px; color: var(--text); }

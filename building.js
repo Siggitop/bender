@@ -127,12 +127,17 @@ async function dbDo(store, mode, fn) {
     t.onerror = () => { d.close(); rej(t.error); };
   });
 }
-const loadB = () => dbDo('buildings', 'readonly', s => s.get('main'));
+const loadB = id => dbDo('buildings', 'readonly', s => s.get(id));
+const listB = () => dbDo('buildings', 'readonly', s => s.getAll());
+const delB = id => dbDo('buildings', 'readwrite', s => s.delete(id));
 const saveB = b => dbDo('buildings', 'readwrite', s => s.put(b));
 const putFile = (id, blob) => dbDo('files', 'readwrite', s => s.put(blob, id));
 const getFile = id => dbDo('files', 'readonly', s => s.get(id));
 const delFile = id => dbDo('files', 'readwrite', s => s.delete(id));
-const newBuilding = () => ({ id: 'main', name: 'Gebäude', ver: 1, storeys: [{ id: uid(), name: 'EG', elev: 0, height: 3000 }], grids: [], els: [], underlays: [] });
+const newBuilding = (name = 'Gebäude') => ({ id: uid(), name, ver: 1, storeys: [{ id: uid(), name: 'EG', elev: 0, height: 3000 }], grids: [], els: [], underlays: [] });
+const LAST_KEY = 'biege.bau.last';
+const lastId = () => { try { return localStorage.getItem(LAST_KEY); } catch { return null; } };
+const remember = id => { try { localStorage.setItem(LAST_KEY, id); } catch {} };
 function download(blob, name) {
   const url = URL.createObjectURL(blob), l = document.createElement('a');
   l.href = url; l.download = name; document.body.appendChild(l); l.click(); l.remove();
@@ -162,6 +167,9 @@ const IC = {
   eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a10.6 10.6 0 0 0 5.4-1.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
   chev: '<path d="m9 6 6 6-6 6"/>',
+  house: '<path d="M4 21V5l8-3v19"/><path d="M12 9h8v12"/><path d="M2 21h20"/><path d="M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2"/>',
+  pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  copy: '<rect x="9" y="9" width="11" height="12" rx="1"/><path d="M5 15V4a1 1 0 0 1 1-1h9"/>',
 };
 const TYPE_NAME = { wall: 'Wand', column: 'Stütze', beam: 'Träger', slab: 'Decke', roof: 'Dach', ceil: 'Rasterdecke', space: 'Raum', shaft: 'Schacht', stair: 'Treppe', door: 'Tür', window: 'Fenster', opening: 'Wanddurchbruch', hole: 'Deckendurchbruch' };
 // Layer: je Bauteilart ein- und ausblendbar
@@ -188,7 +196,8 @@ export async function openBuilding(env) {
   root.innerHTML = `
     <canvas class="ped-gl"></canvas><canvas class="ped-2d"></canvas>
     <div class="ped-head">
-      <button class="flbtn" data-b="list" title="Geschosse, Raster, Unterlage, Datei" aria-label="Geschosse, Raster, Unterlage, Datei">${SVG(IC.list)}</button>
+      <button class="flbtn" data-b="list" title="Projektmanager: Struktur und Layer" aria-label="Projektmanager">${SVG(IC.list)}</button>
+      <button class="flbtn bau-docbtn" data-dlg="docs" title="Gebäude: öffnen, neu, sichern, laden" aria-label="Gebäude">${SVG(IC.house)}<span class="bau-docname"></span></button>
       <button class="flbtn" data-b="undo" title="Rückgängig" aria-label="Rückgängig">${SVG(IC.undo)}</button>
       <button class="flbtn" data-b="redo" title="Wiederholen" aria-label="Wiederholen">${SVG(IC.redo)}</button>
       <button class="ped-title bau-titlebtn" data-b="stpick" title="Geschoss wechseln (Bild auf/ab)"></button>
@@ -223,7 +232,12 @@ export async function openBuilding(env) {
   const listEl = $('.ped-list'), infoEl = $('.ped-info'), cmdEl = $('.ped-cmd'), moreEl = $('.bau-more'), dlgEl = $('.bau-dlg'), stPop = $('.bau-stpop');
 
   // ---------- Zustand ----------
-  let B = (await loadB().catch(() => null)) || newBuilding();
+  // zuletzt geöffnetes Gebäude, sonst das erste vorhandene, sonst ein neues (dann Startfenster)
+  const lid = lastId();
+  let B = (lid && await loadB(lid).catch(() => null)) || (await listB().catch(() => []))[0] || null;
+  const fresh = !B;
+  if (!B) B = newBuilding();
+  remember(B.id);
   const fixB = () => { B.vis ||= { off: {}, hide: [] }; B.vis.off ||= {}; B.vis.hide ||= []; B.grids ||= []; B.underlays ||= []; };
   fixB();
   let cur = [...B.storeys].sort((a, b) => Math.abs(a.elev) - Math.abs(b.elev))[0].id;
@@ -240,8 +254,9 @@ export async function openBuilding(env) {
   const st = id => B.storeys.find(s => s.id === id), curSt = () => st(cur) || st(cur = [...B.storeys].sort((a, b) => a.elev - b.elev)[0].id);
   const sorted = () => [...B.storeys].sort((a, b) => a.elev - b.elev);
   const visible = s => !!s && (showAbove || s.elev <= curSt().elev + 1e-6);
-  let saveT = 0;
-  const persist = () => { clearTimeout(saveT); saveT = setTimeout(() => saveB(B).catch(e => env.toast(`Speichern fehlgeschlagen: ${e.message || e}`)), 250); };
+  let saveT = 0, savedAt = 0;
+  const saveNow = () => { B.updated = Date.now(); return saveB(B).then(() => { savedAt = Date.now(); if (dlg?.kind === 'docs') renderDlg(); }); };
+  const persist = () => { clearTimeout(saveT); saveT = setTimeout(() => saveNow().catch(e => env.toast(`Speichern fehlgeschlagen: ${e.message || e}`)), 250); };
   const snap = () => JSON.stringify(B);
   function change(fn) { undo.push(snap()); if (undo.length > 200) undo.shift(); redo.length = 0; fn(); syncStairs(); dirty = true; persist(); renderUi(); draw(); }
   const elById = id => B.els.find(e => e.id === id);
@@ -432,8 +447,10 @@ export async function openBuilding(env) {
     const { mn, mx } = bounds();
     mid = mn.map((v, k) => (v + mx[k]) / 2); size = Math.max(1000, len(sub(mx, mn)));
     // freier Bereich: neben der Liste (breit), über Fenster (Telefon) und Leisten
-    const { rx, ry } = basis(), x0 = listOpen && W > 700 ? 320 : 12, x1 = W - 12, y0 = 64;
-    const dr = !dlgEl.hidden && W <= 700 ? dlgEl.getBoundingClientRect() : null, y1 = dr && dr.height ? dr.top - root.getBoundingClientRect().top - 8 : H - 130;
+    const rr = root.getBoundingClientRect(), dlr = !dlgEl.hidden ? dlgEl.getBoundingClientRect() : null, ifr = !infoEl.hidden && W > 700 ? infoEl.getBoundingClientRect() : null;
+    const side = W > 700 ? (dlr?.width ? dlr : ifr?.width ? ifr : null) : null;
+    const { rx, ry } = basis(), x0 = listOpen && W > 700 ? 320 : 12, x1 = side ? side.left - rr.left - 12 : W - 12, y0 = 64;
+    const dr = dlr && W <= 700 ? dlr : null, y1 = dr && dr.height ? dr.top - rr.top - 8 : H - 130;
     const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(b => [0, 1, 2].map(k => ((b >> k) & 1 ? mx[k] : mn[k])));
     const ext = r => Math.max(1, ...corners.map(c => Math.abs(dot(r, sub(c, mid))))) * 2;
     cam.sc = Math.min((x1 - x0) / ext(rx), Math.max(80, y1 - y0) / ext(ry)) * 0.9;
@@ -1341,6 +1358,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (e.type === 'roof' && e.kind === 'pitched' && on) { const g = roofGeo(e); g.facets.forEach(F => { polyPath(F, z); ctx.stroke(); }); }
     });
     { const o = P2([0, 0], z); ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(o[0] - 6, o[1]); ctx.lineTo(o[0] + 6, o[1]); ctx.moveTo(o[0], o[1] - 6); ctx.lineTo(o[0], o[1] + 6); ctx.stroke(); }
+    // Leeres Geschoss: wie es losgeht
+    if (!cmd && !dlg && !B.els.some(e => onStorey(e, cur)) && !(curUl() && cam.plan)) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = muted;
+      ctx.font = '600 15px system-ui'; ctx.fillText(`${curSt().name} ist leer`, W / 2, H * 0.42);
+      ctx.font = '13px system-ui';
+      ['Wand (W): Außenwände Ecke für Ecke antippen, Startpunkt schließt', B.grids.length ? 'Stütze (S) → „Auf alle Achsschnitte“ besetzt das ganze Raster' : 'Plan unterlegen oder Achsraster: Liste oben links → Unterlage bzw. Raster', 'Decke (D) → „Aus Wänden“ übernimmt den Umriss'].forEach((t, i) => ctx.fillText(t, W / 2, H * 0.42 + 26 + i * 20));
+    }
     // Achsraster
     ctx.font = '600 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     (B.vis.off.grid ? [] : B.grids).forEach(g => {
@@ -1536,7 +1560,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const storeySel = (k, val, from) => `<label class="ped-f"><span>bis</span><select data-sel="${k}">${sorted().filter(s => !from || s.elev >= from.elev).map(s => `<option value="${s.id}"${s.id === val ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>`;
   function renderUi() {
     const s = curSt();
-    $('.ped-title').innerHTML = `<span class="bau-tsub">Gebäude · </span>${esc(s.name)} <span class="bau-tcar">▾</span>`;
+    $('.ped-title').innerHTML = `${esc(s.name)} <span class="bau-tcar">▾</span>`;
+    $('.bau-docname').textContent = B.name || 'Gebäude';
     root.classList.toggle('list-open', listOpen);
     const t = cmd ? cmd.t : 'sel';
     root.querySelectorAll('[data-b^="t:"]').forEach(b => b.classList.toggle('on', b.dataset.b === `t:${t}`));
@@ -1740,17 +1765,56 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const sc = listEl.querySelector('.bau-tree')?.scrollTop || 0;
     listEl.innerHTML = `<div class="bau-tabs">${seg('tab', tab, [['tree', 'Struktur'], ['layer', 'Layer']])}</div>
       <div class="bau-tree">${tab === 'tree' ? treeHtml() : layerHtml()}</div>
-      <div class="bau-foot"><button data-dlg="storeys">Geschosse</button><button data-dlg="grid">Raster</button><button data-dlg="under">Unterlage</button><button data-dlg="file">Datei</button></div>`;
+      <div class="bau-foot"><button data-dlg="storeys">Geschosse</button><button data-dlg="grid">Raster</button><button data-dlg="under">Unterlage</button></div>`;
     listEl.querySelector('.bau-tree').scrollTop = sc;
   }
 
   // ---------- Fenster (Dialoge) ----------
+  // Startfenster: Geschossfolge aus Keller, Obergeschossen, Dachgeschoss
+  function wizardStoreys(d) {
+    const og = Math.max(0, Math.min(30, Math.round(num(d.og) || 0)));
+    return [...(d.kg === '1' ? ['KG'] : []), 'EG', ...Array.from({ length: og }, (_, i) => `${i + 1}. OG`), ...(d.dg === '1' ? ['DG'] : [])];
+  }
+  async function switchTo(nb) {
+    clearTimeout(saveT); await saveNow().catch(() => {});
+    B = nb; fixB(); remember(B.id);
+    undo.length = 0; redo.length = 0;
+    cur = [...B.storeys].sort((a, c) => Math.abs(a.elev) - Math.abs(c.elev))[0].id;
+    openSt.clear(); openSt.add(cur); openGrp.clear();
+    sel = null; cmd = null; dlg = null; hover = null; dirty = true;
+    await saveNow().catch(() => {});
+    fitView(); renderUi(); draw();
+  }
+  async function createFromWizard() {
+    const d = dlg, h = num(d.h) > 0 ? num(d.h) : 2750, names = wizardStoreys(d), iEG = names.indexOf('EG'), nb = newBuilding((d.name || '').trim() || 'Gebäude');
+    nb.storeys = names.map((n, i) => ({ id: uid(), name: n, elev: (i - iEG) * h, height: h }));
+    if (d.base === 'grid') {
+      const nx = Math.max(1, Math.min(60, Math.round(num(d.gnx) || 1))), ny = Math.max(1, Math.min(60, Math.round(num(d.gny) || 1))), sx = num(d.gsx) || 6000, sy = num(d.gsy) || 6000, W2 = (nx - 1) * sx, H2 = (ny - 1) * sy, ex = 1500;
+      for (let i = 0; i < nx; i++) nb.grids.push({ id: uid(), name: String(i + 1), a: [i * sx, -ex], b: [i * sx, H2 + ex] });
+      for (let j = 0; j < ny; j++) nb.grids.push({ id: uid(), name: letter(j), a: [-ex, j * sy], b: [W2 + ex, j * sy] });
+    }
+    const L = num(d.l), Bw = num(d.b), t = d.t || 365;
+    if (L > 0 && Bw > 0) {
+      const R = [[0, 0], [L, 0], [L, Bw], [0, Bw]], outer = offsetPoly(R, -t / 2);
+      nb.storeys.forEach((s, i) => {
+        R.forEach((p, k) => nb.els.push({ id: uid(), storey: s.id, type: 'wall', a: [...p], b: [...R[(k + 1) % 4]], t, just: 'c', h: null }));
+        nb.els.push({ id: uid(), storey: s.id, type: 'slab', pts: outer.map(q => q.map(v => Math.round(v * 10) / 10)), t: i === 0 ? 300 : 250, ...(i === 0 ? { base: true } : {}) });
+      });
+    }
+    const plan = d.base === 'plan';
+    await switchTo(nb);
+    setPlan(true);
+    env.toast(`„${nb.name}“ angelegt: ${names.join(', ')}.`);
+    if (plan) openDlg('under');
+  }
   function openDlg(kind, extra = {}) {
     dlg = { kind, ...extra };
+    if (kind === 'new') Object.assign(dlg, { name: extra.first ? 'Gebäude' : 'Neues Gebäude', kg: '0', dg: '0', og: 1, h: 2750, base: 'free', gnx: 5, gsx: 6000, gny: 3, gsy: 6000, l: '', b: '', t: 365 }, extra);
+    if (kind === 'docs') listB().then(l => { if (dlg?.kind === 'docs') { dlg.list = l; renderDlg(); } }).catch(() => {});
     if (kind === 'grid') Object.assign(dlg, { gnx: 5, gsx: 6000, gny: 3, gsy: 6000 }, extra);
     moreOpen = false; stPop.hidden = true;
     renderUi();
-    if (W <= 700) requestAnimationFrame(() => { fitView(); draw(); }); // Telefon: Modell über dem Fenster
+    if (W <= 700) requestAnimationFrame(() => { fitView(); draw(); }); // Telefon: Modell über das Fenster; breit: Einpassen (F) berücksichtigt das Fenster
   }
   function closeDlg() { dlg = null; if (cmd && ['gstart', 'tiles'].includes(cmd.t)) cmd = null; renderUi(); draw(); }
   const DLG = {
@@ -1781,14 +1845,45 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           <div class="ped-acts"><button data-b="uload" class="on">${u ? 'Andere Unterlage laden' : 'Bild oder PDF laden'}</button></div>`,
       };
     },
-    file: () => ({
-      title: 'Datei',
-      body: `<div class="ped-acts"><button data-b="export">Sichern (JSON)</button><button data-b="import">Laden</button></div>
-        <p class="ped-hint">Sichern lädt das ganze Gebäude als Datei herunter, mit Planunterlagen. Laden ersetzt das Gebäude (Rückgängig möglich).</p>
-        <div class="ped-acts"><button data-b="ifc">IFC exportieren</button><button data-b="png">Ansicht als Bild</button></div>
-        <div class="ped-acts"><button data-b="newdoc">Neues Gebäude</button></div>
-        <p class="ped-hint">IFC4 für BIM-Programme und Viewer (z. B. BIMvision). Das Bild zeigt die aktuelle Ansicht mit Beschriftung.</p>`,
-    }),
+    docs: () => {
+      const list = (dlg.list || []).map(x => (x.id === B.id ? B : x)), tm = t => (t ? new Date(t).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '–');
+      if (!list.some(x => x.id === B.id)) list.unshift(B);
+      list.sort((a, c) => (c.updated || 0) - (a.updated || 0));
+      return {
+        title: 'Gebäude',
+        body: `${list.map(x => dlg.ren === x.id
+          ? `<div class="bau-row on"><input class="bau-ren" data-docname="${x.id}" value="${esc(x.name)}"></div>`
+          : `<div class="bau-row${x.id === B.id ? ' on' : ''}"><button class="bau-rn" data-doc="${x.id}"><b>${esc(x.name || 'Gebäude')}</b><small>${x.storeys.length} Geschosse · ${x.els.filter(e => !OPS.includes(e.type)).length} Bauteile · ${tm(x.updated)}</small></button><button class="icbtn" data-docren="${x.id}" title="Umbenennen" aria-label="Umbenennen">${SVG(IC.pen)}</button><button class="icbtn" data-docdup="${x.id}" title="Duplizieren" aria-label="Duplizieren">${SVG(IC.copy)}</button><button class="icbtn" data-docdel="${x.id}" title="Löschen" aria-label="Löschen">${SVG(IC.trash)}</button></div>`).join('')}
+          <div class="ped-acts"><button data-b="docnew" class="on">+ Neues Gebäude</button></div>
+          <p class="ped-hint">Gespeichert wird automatisch bei jeder Änderung${savedAt ? `, zuletzt ${new Date(savedAt).toLocaleTimeString('de-DE')}` : ''}. Die Gebäude liegen im Browser dieses Geräts.</p>
+          <h5>Datei</h5>
+          <div class="ped-acts"><button data-b="export">Sichern als Datei</button><button data-b="import">Laden aus Datei</button></div>
+          <p class="ped-hint">„Sichern als Datei“ lädt „${esc(B.name)}“ als JSON herunter, mit Planunterlagen: zur Sicherung oder für ein anderes Gerät. „Laden aus Datei“ legt daraus ein weiteres Gebäude an.</p>
+          <div class="ped-acts"><button data-b="ifc">IFC exportieren</button><button data-b="png">Ansicht als Bild</button></div>`,
+      };
+    },
+    new: () => {
+      const d = dlg, seg2 = (k, opts) => seg(`nw.${k}`, d[k], opts);
+      const names = wizardStoreys(d);
+      return {
+        title: d.first ? 'Neues Gebäude anlegen' : 'Neues Gebäude',
+        body: `<label class="ped-f bau-wname"><span>Name</span><input data-dtxt="name" value="${esc(d.name)}"></label>
+          <h5>Geschosse</h5>
+          <div class="ped-grid bau-wrow"><span class="bprompt">Keller</span>${seg2('kg', [['0', 'Nein'], ['1', 'Ja']])}</div>
+          <div class="ped-grid bau-wrow"><span class="bprompt">Dachgeschoss</span>${seg2('dg', [['0', 'Nein'], ['1', 'Ja']])}</div>
+          <div class="ped-grid">${fld('nog', d.og, 'Obergeschosse', 'Stk')}${fld('nh', d.h, 'Geschosshöhe')}</div>
+          <p class="ped-hint">${names.join(' · ')}</p>
+          <h5>Grundlage</h5>
+          <div class="ped-acts">${seg2('base', [['free', 'Frei zeichnen'], ['grid', 'Achsraster'], ['plan', 'Plan laden']])}</div>
+          ${d.base === 'grid' ? `<div class="ped-grid">${fld('ngnx', d.gnx, 'Achsen 1…', 'Stk')}${fld('ngsx', d.gsx, 'Abstand')}</div><div class="ped-grid">${fld('ngny', d.gny, 'Achsen A…', 'Stk')}${fld('ngsy', d.gsy, 'Abstand')}</div>` : ''}
+          ${d.base === 'plan' ? '<p class="ped-hint">Nach dem Anlegen öffnet sich das Fenster für die Planunterlage: Bild oder PDF laden, dann mit zwei Punkten kalibrieren.</p>' : ''}
+          <h5>Umriss (optional)</h5>
+          <div class="ped-grid">${fld('nl', d.l, 'Länge', 'mm', 'leer')}${fld('nb', d.b, 'Breite', 'mm', 'leer')}</div>
+          <div class="ped-grid"><span class="bprompt">Wand</span><span class="ped-seg">${WALL_PRESETS.map(v => `<button data-nwt="${v}"${d.t === v ? ' class="on"' : ''}>${v}</button>`).join('')}</span></div>
+          <p class="ped-hint">Mit Länge und Breite entstehen in jedem Geschoss die Außenwände, unten die Bodenplatte, darüber die Decken. Leer lassen: im Grundriss frei zeichnen.</p>
+          <div class="ped-acts"><button data-b="nwmake" class="on">Anlegen</button>${d.first ? '' : '<button data-b="dlgclose">Abbrechen</button>'}</div>`,
+      };
+    },
     ceil: () => {
       const e = elById(dlg.el);
       if (!e) return null;
@@ -1847,6 +1942,17 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   function dlgChange(el) {
     const k = el.dataset.f, v = num(el.value), fin = Number.isFinite(v), pos = fin && v > 0;
+    if (el.dataset.dtxt && dlg?.kind === 'new') { dlg[el.dataset.dtxt] = el.value; return; }
+    if (el.dataset.docname) {
+      const id = el.dataset.docname, name = el.value.trim();
+      dlg.ren = null;
+      if (name) {
+        if (id === B.id) change(() => { B.name = name; });
+        else loadB(id).then(x => { if (x) { x.name = name; return saveB(x); } }).then(() => listB()).then(l => { if (dlg?.kind === 'docs') { dlg.list = l; renderDlg(); } });
+      }
+      renderDlg(); return;
+    }
+    if (dlg?.kind === 'new' && k) { const map = { nog: 'og', nh: 'h', ngnx: 'gnx', ngsx: 'gsx', ngny: 'gny', ngsy: 'gsy', nl: 'l', nb: 'b' }; if (map[k]) dlg[map[k]] = el.value.trim() === '' ? '' : v; renderDlg(); return; }
     if (el.dataset.dst) {
       const [f, id] = el.dataset.dst.split(':'), x = st(id);
       if (!x) return;
@@ -1888,6 +1994,23 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (b.dataset.layer) { const k = b.dataset.layer; B.vis.off[k] = !B.vis.off[k]; if (B.vis.off[k]) sel = null; visPersist(); return; }
     if (b.dataset.tog) { const k = b.dataset.tog, isSt = k.startsWith('st:'), set = isSt ? openSt : openGrp, id = isSt ? k.slice(3) : k; if (set.has(id)) set.delete(id); else set.add(id); renderList(); return; }
     if (b.dataset.dlg) { openDlg(b.dataset.dlg); return; }
+    if (b.dataset.doc) { if (b.dataset.doc !== B.id) { const nb = await loadB(b.dataset.doc).catch(() => null); if (nb) { await switchTo(nb); env.toast(`„${nb.name}“ geöffnet.`); } } else closeDlg(); return; }
+    if (b.dataset.docren) { dlg.ren = b.dataset.docren; renderDlg(); dlgEl.querySelector('.bau-ren')?.focus(); return; }
+    if (b.dataset.docdup) {
+      const src = b.dataset.docdup === B.id ? structuredClone(B) : await loadB(b.dataset.docdup).catch(() => null);
+      if (!src) return;
+      if (b.dataset.docdup === B.id) await saveNow().catch(() => {});
+      const c2 = { ...src, id: uid(), name: `${src.name} (Kopie)`, updated: Date.now() };
+      await saveB(c2); dlg.list = await listB(); renderDlg(); env.toast(`Kopie „${c2.name}“ angelegt.`); return;
+    }
+    if (b.dataset.docdel) {
+      const id = b.dataset.docdel, x = id === B.id ? B : (dlg.list || []).find(q => q.id === id);
+      if (!x || !await env.ask(`Gebäude „${x.name}“ löschen? Das lässt sich nicht rückgängig machen.`, 'Löschen')) return;
+      await delB(id);
+      if (id === B.id) { clearTimeout(saveT); const rest = (await listB()).sort((a, c) => (c.updated || 0) - (a.updated || 0)); B = rest[0] || null; if (B) await switchTo(B); else { await switchTo(newBuilding()); openDlg('new', { first: true }); return; } }
+      openDlg('docs'); return;
+    }
+    if (b.dataset.nwt && dlg?.kind === 'new') { dlg.t = +b.dataset.nwt; renderDlg(); return; }
     const el = selEl(), del = dlg?.el && elById(dlg.el), tgt = del || el;
     if (b.dataset.tile && tgt?.type === 'ceil') { const [gx, gy] = b.dataset.tile.split('x').map(Number); change(() => { tgt.gx = gx; tgt.gy = gy; if (tgt.start) setCeilStart(tgt, tgt.start.k, tgt.start.rx, tgt.start.ry); else ceilEqual(tgt); }); return; }
     if (b.dataset.wpre && cmd) { cmd.th = +b.dataset.wpre; last.wall.th = cmd.th; renderUi(); draw(); return; }
@@ -1895,6 +2018,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (b.dataset.seg) {
       const [k, v] = b.dataset.seg.split(':'), C = cmd;
       if (k === 'tab') { tab = v; renderList(); return; }
+      if (k.startsWith('nw.') && dlg?.kind === 'new') { dlg[k.slice(3)] = v; renderDlg(); return; }
       if (k === 'just' && C) { C.just = v; last.wall.just = v; }
       else if (k === 'shape' && C) { C.shape = v; last.col.shape = v; }
       else if (k === 'bshape' && C) { C.shape = v; last.beam.shape = v; }
@@ -2004,15 +2128,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'export': {
         const files = {};
         for (const u of B.underlays) { const f = await getFile(u.file).catch(() => null); if (f) files[u.file] = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(f); }); }
-        download(new Blob([JSON.stringify({ ...B, files }, null, 1)], { type: 'application/json' }), `gebaeude-${new Date().toISOString().slice(0, 10)}.json`); return;
+        download(new Blob([JSON.stringify({ ...B, files }, null, 1)], { type: 'application/json' }), `${(B.name || 'gebaeude').replace(/[^\wäöüÄÖÜß-]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`); return;
       }
       case 'import': $('.bau-json').click(); return;
       case 'ifc': try { download(new Blob([ifcText()], { type: 'application/x-step' }), `gebaeude-${new Date().toISOString().slice(0, 10)}.ifc`); } catch (err) { env.toast(`IFC: ${err.message || err}`); } return;
       case 'png': viewImage(); return;
-      case 'newdoc':
-        if (!await env.ask('Neues, leeres Gebäude anfangen? Das jetzige vorher sichern (Rückgängig ist möglich).', 'Neu')) return;
-        change(() => { B = newBuilding(); fixB(); });
-        cur = B.storeys[0].id; openSt.clear(); openSt.add(cur); sel = null; dlg = null; cmd = null; fitView(); dirty = true; renderUi(); draw(); return;
+      case 'docnew': openDlg('new'); return;
+      case 'nwmake': await createFromWizard(); return;
     }
   });
   function nextStoreyName(ref, dir) {
@@ -2027,12 +2149,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     try {
       const o = JSON.parse(await f.text());
       if (!Array.isArray(o.storeys) || !o.storeys.length || !Array.isArray(o.els)) throw new Error('keine Gebäudedatei');
-      if (!await env.ask('Gebäude aus der Datei laden? Das jetzige wird ersetzt (Rückgängig möglich).', 'Laden')) return;
       const files = o.files || {}, uls = [];
       for (const u of o.underlays || []) if (files[u.file]) { await putFile(u.file, await (await fetch(files[u.file])).blob()); imgs.delete(u.file); uls.push(u); }
       delete o.files;
-      change(() => { B = { ...newBuilding(), ...o, id: 'main', grids: o.grids || [], underlays: uls }; fixB(); });
-      cur = B.storeys[0].id; sel = null; dlg = null; fitView(); dirty = true; renderUi(); draw();
+      const nb = { ...newBuilding(), ...o, id: uid(), name: o.name || f.name.replace(/\.json$/i, ''), grids: o.grids || [], underlays: uls };
+      await switchTo(nb);
+      env.toast(`„${nb.name}“ aus der Datei geladen.`);
     } catch (err) { env.toast(`Laden: ${err.message || err}`); }
   });
   root.addEventListener('input', e => {
@@ -2188,7 +2310,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   cv.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = local(e); zoomAt(x, y, Math.exp(-e.deltaY * 0.0015)); draw(); }, { passive: false });
   // Tastatur (Mac, iPad mit Tastatur): Werkzeuge mit einem Buchstaben, Bild auf/ab wechselt das Geschoss
   root.addEventListener('keydown', e => {
-    if (e.target.matches('input, select, textarea')) { if (e.key === 'Enter') e.target.blur(); return; }
+    if (e.target.matches('input, select, textarea')) { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape' && e.target.matches('.bau-ren')) { dlg.ren = null; renderDlg(); } return; }
     const k = e.key.toLowerCase();
     if (e.key === 'Escape') { if (!stPop.hidden) stPop.hidden = true; else if (cmd) endCmd(); else if (dlg) closeDlg(); else { sel = null; addMode = false; dirty = true; renderUi(); draw(); } return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { $(sel.grid ? '[data-b="delgrid"]' : '[data-b="del"]')?.click(); return; }
@@ -2216,7 +2338,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const r0 = root.getBoundingClientRect();
   W = r0.width; H = r0.height;
   fitView(); renderUi(); draw(); root.focus({ preventScroll: true });
-  if (!(await loadB().catch(() => null))) saveB(B).catch(() => {});
+  if (fresh) { saveNow().catch(() => {}); openDlg('new', { first: true }); }
   return {
     click: sel2 => root.querySelector(sel2)?.click(), field(key, val) { const el = root.querySelector(`[data-f="${key}"]`); if (!el) return false; el.value = String(val); el.dispatchEvent(new Event('change', { bubbles: true })); return true; },
     close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint, snapAt, detectRoom, ifcText, roofGeo, zOf,
