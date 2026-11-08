@@ -363,6 +363,15 @@ const BAU_CSS = `
 .bau .bau-step b { min-width: 22px; text-align: center; font-size: 17px; }
 .bau .bau-dlg .ped-grid > .bprompt { align-self: center; font-size: 13px; font-weight: 650; color: var(--text); }
 
+/* Achsabstand bearbeiten */
+.bau .bau-dimed { width: 260px; gap: 8px; padding: 10px; }
+.bau .bau-dimed .ped-f { position: relative; display: block; }
+.bau .bau-dimed .ped-f input { width: 100%; min-height: 42px; padding: 4px 36px 4px 10px; border: 1px solid var(--accent); border-radius: 10px; background: var(--bg); text-align: right; font-size: 17px; font-weight: 700; }
+.bau .bau-dimed .ped-f > i { position: absolute; right: 10px; top: 13px; font-style: normal; font-size: 12px; color: var(--muted); }
+.bau .bau-dimed .ped-seg { display: flex; }
+.bau .bau-dimed .ped-seg button { flex: 1; font-size: 12px; }
+.bau .ped-cmd input[data-gdist] { width: 130px; text-align: left; }
+
 /* Auswahlknöpfe mit Liste */
 .bau .bau-cgrp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .bau .bau-dd { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 10px 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font-size: 13px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
@@ -425,6 +434,7 @@ export async function openBuilding(env) {
     <div class="bau-dlg" hidden></div>
     <div class="bau-stpop" hidden></div>
     <div class="bau-ddpop" hidden></div>
+    <div class="bau-ddpop bau-dimed" hidden></div>
     <div class="ped-bottom">
       <div class="ped-views bau-more" hidden>${MORE.map(([t, n]) => `<button data-b="t:${t}">${n}</button>`).join('')}</div>
       <div class="ped-cmd" hidden></div>
@@ -447,7 +457,7 @@ export async function openBuilding(env) {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const glc = $('.ped-gl'), cv = $('.ped-2d'), ctx = cv.getContext('2d');
-  const listEl = $('.ped-list'), infoEl = $('.ped-info'), cmdEl = $('.ped-cmd'), moreEl = $('.bau-more'), dlgEl = $('.bau-dlg'), stPop = $('.bau-stpop'), ddPop = $('.bau-ddpop');
+  const listEl = $('.ped-list'), infoEl = $('.ped-info'), cmdEl = $('.ped-cmd'), moreEl = $('.bau-more'), dlgEl = $('.bau-dlg'), stPop = $('.bau-stpop'), ddPop = $('.bau-ddpop:not(.bau-dimed)'), dimEd = $('.bau-dimed');
 
   // ---------- Zustand ----------
   // zuletzt geöffnetes Gebäude, sonst das erste vorhandene, sonst ein neues (dann Startfenster)
@@ -740,6 +750,8 @@ export async function openBuilding(env) {
     const pts = [];
     B.els.forEach(e => { if (!visible(st(e.storey))) return; const [z0, z1] = zOf(e); footprint(e).forEach(p => pts.push([...p, z0], [...p, z1])); });
     B.grids.forEach(g => pts.push([...g.a, curSt().elev], [...g.b, curSt().elev]));
+    // Platz für Achsköpfe und Maßketten vor dem Achsanfang
+    if (B.grids.length > 1) { const e2 = Math.max(1500, 0.12 * Math.max(...B.grids.flatMap(g => [Math.abs(g.b[0] - g.a[0]), Math.abs(g.b[1] - g.a[1])]))); B.grids.forEach(g => { const d = norm(sub(g.b, g.a)); if (Number.isFinite(d[0])) pts.push([...sub(g.a, mul(d, e2)), curSt().elev], [...add(g.b, mul(d, e2)), curSt().elev]); }); }
     B.underlays.filter(u => u.storey === cur).forEach(u => ulCorners(u).forEach(p => pts.push([...p, curSt().elev])));
     if (!pts.length) pts.push([-5000, -5000, curSt().elev], [15000, 10000, curSt().elev + curSt().height]);
     return { mn: [0, 1, 2].map(k => Math.min(...pts.map(p => p[k]))), mx: [0, 1, 2].map(k => Math.max(...pts.map(p => p[k]))) };
@@ -992,14 +1004,142 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     for (let i = 0; i < 999; i++) { const n = vertical ? String(i + 1) : letter(i); if (!names.has(n)) return n; }
     return '?';
   }
-  function makeGrid(nx, sx, ny, sy) {
-    const W2 = (nx - 1) * sx, H2 = (ny - 1) * sy, ex = 1500;
+  // xs, ys: Abstände zwischen den Achsen (Liste), Achsen 1, 2, 3 … senkrecht, A, B, C … waagerecht
+  function makeGrid(xs, ys) {
+    const cum = L => L.reduce((a, v) => [...a, a.at(-1) + v], [0]), X = xs.length ? cum(xs) : [], Y = ys.length ? cum(ys) : [], ex = 1500;
+    const W2 = X.length ? X.at(-1) : 10000, H2 = Y.length ? Y.at(-1) : 10000;
     change(() => {
       B.grids = [];
-      for (let i = 0; i < nx; i++) B.grids.push({ id: uid(), name: String(i + 1), a: [i * sx, -ex], b: [i * sx, H2 + ex] });
-      for (let j = 0; j < ny; j++) B.grids.push({ id: uid(), name: letter(j), a: [-ex, j * sy], b: [W2 + ex, j * sy] });
+      X.forEach((x, i) => B.grids.push({ id: uid(), name: String(i + 1), a: [x, -ex], b: [x, H2 + ex] }));
+      Y.forEach((y, j) => B.grids.push({ id: uid(), name: letter(j), a: [-ex, y], b: [W2 + ex, y] }));
     });
     gridForm = false; fitView(); renderUi(); draw();
+  }
+  // Abstände als Liste: „6000 6000 7500“, „3x6000 7500“, „6.000; 7.500“
+  function parseSpacing(str) {
+    const out = [], t0 = String(str ?? '').replace(/(\d)\.(\d{3})(?!\d)/g, '$1$2').replace(/\s*[x×*]\s*/gi, 'x');
+    for (const t of t0.split(/[\s;+]+/).filter(Boolean)) {
+      const m = t.match(/^(\d+)x([\d,.]+)$/i);
+      if (m) { const n = +m[1], v = num(m[2]); if (n > 0 && n <= 60 && v > 0) for (let i = 0; i < n; i++) out.push(v); }
+      else { const v = num(t); if (v > 0) out.push(v); }
+    }
+    return out.slice(0, 120);
+  }
+  // Scharen paralleler Achsen; n zeigt nach rechts bzw. oben, items nach Lage quer sortiert
+  function gridFams() {
+    const fams = [];
+    for (const g of B.grids) {
+      const d0 = norm(sub(g.b, g.a));
+      if (!Number.isFinite(d0[0])) continue;
+      let ang = Math.atan2(d0[1], d0[0]);
+      if (ang < -1e-9) ang += Math.PI;
+      if (ang >= Math.PI - 1e-9) ang -= Math.PI;
+      let f = fams.find(x => Math.abs(x.ang - ang) < 0.004 || Math.abs(Math.abs(x.ang - ang) - Math.PI) < 0.004);
+      if (!f) {
+        const d = [Math.cos(ang), Math.sin(ang)]; let n = perp(d);
+        if (Math.abs(n[0]) >= Math.abs(n[1]) ? n[0] < 0 : n[1] < 0) n = mul(n, -1);
+        f = { ang, d, n, vert: Math.abs(d[1]) > Math.abs(d[0]), items: [] }; fams.push(f);
+      }
+      f.items.push({ g, off: dot(g.a, f.n) });
+    }
+    fams.forEach(f => f.items.sort((a, b) => a.off - b.off));
+    return fams;
+  }
+  const famOf = g => gridFams().find(f => f.items.some(it => it.g === g));
+  const letterIdx = t => [...t].reduce((a, c) => a * 26 + c.charCodeAt(0) - 64, 0) - 1;
+  const nextInSeq = t => (/^\d+$/.test(t) ? String(+t + 1) : /^[A-Z]+$/.test(t) ? letter(letterIdx(t) + 1) : null);
+  const prevInSeq = t => (/^\d+$/.test(t) ? (+t > 1 ? String(+t - 1) : null) : /^[A-Z]+$/.test(t) && letterIdx(t) > 0 ? letter(letterIdx(t) - 1) : null);
+  // Name für eine neue Achse der Schar an der Lage off: fortlaufend am Rand, dazwischen „2a“
+  function famName(items, off, vert) {
+    const names = new Set(B.grids.map(g => g.name)), before = [...items].reverse().find(it => it.off < off - 1), after = items.find(it => it.off > off + 1);
+    if (before && after) { for (const c of 'abcdefghijklmnopqrstuvwxyz') if (!names.has(before.g.name + c)) return before.g.name + c; }
+    if (before && !after) { const x = nextInSeq(before.g.name); if (x && !names.has(x)) return x; }
+    if (!before && after) { const x = prevInSeq(after.g.name); if (x && !names.has(x)) return x; }
+    return nextGridName(vert);
+  }
+  // Parallele Achse im Abstand off (quer, in Richtung n der Schar) zu ref, gleiche Länge
+  function addParallel(ref, off) {
+    const f = famOf(ref); if (!f) return null;
+    const o = dot(ref.a, f.n) + off;
+    if (f.items.some(it => Math.abs(it.off - o) < 1)) return null;
+    const g = { id: uid(), name: famName(f.items, o, f.vert), a: add(ref.a, mul(f.n, off)).map(v => Math.round(v * 10) / 10), b: add(ref.b, mul(f.n, off)).map(v => Math.round(v * 10) / 10) };
+    B.grids.push(g); return g;
+  }
+  function gridSeries(str, side) {
+    const L = parseSpacing(str), ref0 = B.grids.find(g => g.id === cmd.ref) || B.grids.find(g => g.id === cmd.base);
+    if (!L.length || !ref0) { env.toast('Abstand eingeben, z. B. 6000, 3x7500 oder 6000 6000 7500.'); return; }
+    let ref = ref0, n = 0;
+    change(() => { for (const v of L) { const g = addParallel(ref, side * v); if (g) { ref = g; n++; } } });
+    cmd.ref = ref.id; cmd.side = side; renderUi(); draw();
+    if (n > 1) env.toast(`${n} Achsen gesetzt.`);
+  }
+  // Abstand zwischen Achse i und i+1 einer Schar setzen: i+1 (und mit „mitschieben“ alle folgenden) wandern
+  function setGap(f, i, val) {
+    const it = f.items[i], nx = f.items[i + 1];
+    if (!it || !nx || !(val > 0)) return;
+    const dl = val - (nx.off - it.off);
+    if (Math.abs(dl) < 0.05) return;
+    const mv = gShift ? f.items.slice(i + 1) : [nx];
+    if (!gShift && f.items[i + 2] && nx.off + dl >= f.items[i + 2].off - 1) { env.toast(`Achse ${nx.g.name} würde über Achse ${f.items[i + 2].g.name} hinaus wandern. „Folgende mitschieben“ wählen.`); return; }
+    change(() => mv.forEach(({ g }) => { g.a = add(g.a, mul(f.n, dl)).map(v => Math.round(v * 10) / 10); g.b = add(g.b, mul(f.n, dl)).map(v => Math.round(v * 10) / 10); }));
+    renderUi(); draw();
+  }
+  function renumberGrids() {
+    const fams = gridFams(); let ni = 0, li = 0;
+    change(() => fams.forEach(f => f.items.forEach(({ g }) => { g.name = f.vert ? String(++ni) : letter(li++); })));
+    renderUi(); draw(); env.toast('Achsen neu nummeriert: 1, 2, 3 … von links, A, B, C … von unten.');
+  }
+  let gShift = true, gdimHits = [], dimEdit = null;
+  // Maßketten am Raster: Abstände von Achse zu Achse und Gesamtmaß, je Schar vor dem Achsanfang
+  function gridDims(z, col) {
+    gdimHits = [];
+    if (B.vis.off.grid) return;
+    const sc = (() => { const a = P2([0, 0], z), b = P2([1000, 0], z); return Math.hypot(b[0] - a[0], b[1] - a[1]) / 1000; })();
+    if (!(sc > 0)) return;
+    for (const f of gridFams()) {
+      if (f.items.length < 2) continue;
+      let t0 = Infinity;
+      f.items.forEach(({ g }) => { t0 = Math.min(t0, dot(g.a, f.d), dot(g.b, f.d)); });
+      const at = (t, c) => add(mul(f.d, t), mul(f.n, c));
+      let narrowFlip = false;
+      const ou = (() => { const p0 = P2(at(t0, f.items[0].off), z), p1 = P2(at(t0 - 1000, f.items[0].off), z), v = [p1[0] - p0[0], p1[1] - p0[1]], l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l]; })();
+      const row = (px, i0, i1, val, hit) => {
+        const t = t0 - px / sc, A = P2(at(t, f.items[i0].off), z), Bp = P2(at(t, f.items[i1].off), z);
+        ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(Bp[0], Bp[1]);
+        const dd = norm(sub(Bp.slice(0, 2), A.slice(0, 2))), tk = [(dd[0] - dd[1]) * 5, (dd[1] + dd[0]) * 5];
+        for (const q of [A, Bp]) { ctx.moveTo(q[0] - tk[0], q[1] - tk[1]); ctx.lineTo(q[0] + tk[0], q[1] + tk[1]); }
+        ctx.stroke();
+        const txt = fmt(val);
+        ctx.font = '600 12px system-ui'; const w = ctx.measureText(txt).width + 10;
+        // zu eng für die Zahl: abwechselnd weiter nach außen
+        const narrow = Math.hypot(Bp[0] - A[0], Bp[1] - A[1]) < w + 6, out2 = narrow && (narrowFlip = !narrowFlip) ? -18 : 0;
+        const m = [(A[0] + Bp[0]) / 2 + ou[0] * out2, (A[1] + Bp[1]) / 2 + ou[1] * out2];
+        ctx.fillStyle = hit ? (css('--card') || '#fff') : 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.roundRect(m[0] - w / 2, m[1] - 10, w, 20, 5); ctx.fill();
+        if (hit) { ctx.strokeStyle = 'rgba(200,60,60,.45)'; ctx.stroke(); }
+        ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, m[0], m[1] + 0.5);
+        if (hit) gdimHits.push({ x: m[0], y: m[1], w: Math.max(w, 44), ids: [f.items[i0].g.id, f.items[i1].g.id], val });
+      };
+      for (let i = 0; i < f.items.length - 1; i++) row(58, i, i + 1, f.items[i + 1].off - f.items[i].off, true);
+      if (f.items.length > 2) row(88, 0, f.items.length - 1, f.items.at(-1).off - f.items[0].off, false);
+    }
+  }
+  function openDimEd(hh) {
+    dimEdit = hh;
+    const rr = root.getBoundingClientRect(), cr = cv.getBoundingClientRect(), g2 = B.grids.find(g => g.id === hh.ids[1]);
+    const typed = dimEd.hidden ? null : dimEd.querySelector('input')?.value;
+    dimEd.innerHTML = `<div class="bau-ddh">Abstand ${esc(B.grids.find(g => g.id === hh.ids[0])?.name || '')} – ${esc(g2?.name || '')}</div><label class="ped-f"><input data-gdim inputmode="decimal" value="${fmt(hh.val)}"><i>mm</i></label>${seg('gshift', gShift ? '1' : '0', [['1', 'Folgende mitschieben'], ['0', `Nur ${esc(g2?.name || '')}`]])}<div class="ped-acts"><button data-b="gdimok" class="on">Übernehmen</button><button data-b="gdimx">Abbrechen</button></div>`;
+    dimEd.hidden = false;
+    const x = hh.x + cr.left - rr.left, y = hh.y + cr.top - rr.top;
+    dimEd.style.left = `${Math.max(8, Math.min(rr.width - 268, x - 130))}px`; dimEd.style.top = `${Math.max(8, Math.min(rr.height - 150, y + 16))}px`;
+    const i = dimEd.querySelector('input'); if (typed != null) i.value = typed; i.focus(); i.select();
+  }
+  const closeDimEd = () => { dimEd.hidden = true; dimEdit = null; };
+  function applyDimEd() {
+    const hh = dimEdit, v = num(dimEd.querySelector('input')?.value);
+    closeDimEd();
+    if (!hh || !(v > 0)) return;
+    const f = gridFams().find(x => x.items.some(it => it.g.id === hh.ids[0])), i = f ? f.items.findIndex(it => it.g.id === hh.ids[0]) : -1;
+    if (f && f.items[i + 1]?.g.id === hh.ids[1]) setGap(f, i, v);
   }
 
   // ---------- Planunterlage ----------
@@ -1049,6 +1189,16 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     } catch (e) { env.toast(`Unterlage: ${e.message || e}`); }
   }
   const curUl = () => B.underlays.find(u => u.storey === cur);
+  // Kalibrieren/Ausrichten: mit Ortho liegt der zweite Punkt waagerecht oder senkrecht zum ersten
+  const calOrtho = p => { const f = cmd?.pts?.length === 1 ? cmd.pts[0] : null; if (!f || !p || !orthoOn || cmd.t !== 'cal') return p; const v = sub(p, f); return Math.abs(v[0]) >= Math.abs(v[1]) ? [p[0], f[1]] : [f[0], p[1]]; };
+  function ulAlign(a, b) {
+    const u = curUl(), v = sub(b, a);
+    if (!u || len(v) < 1) return;
+    const ang = Math.atan2(v[1], v[0]), dl = Math.round(ang / (Math.PI / 2)) * (Math.PI / 2) - ang, c = Math.cos(dl), s2 = Math.sin(dl), deg = dl * 180 / Math.PI;
+    if (Math.abs(deg) < 0.005) { env.toast('Die Linie liegt schon gerade.'); return; }
+    change(() => { const q = sub(u.pos, a); u.pos = add(a, [q[0] * c - q[1] * s2, q[0] * s2 + q[1] * c]); u.rot = Math.round(((u.rot || 0) + deg) * 1000) / 1000; });
+    env.toast(`Plan um ${fmt2(deg)}° gedreht.`);
+  }
 
   // ---------- Fangen ----------
   // Reihenfolge: Punkte (Enden, Ecken, Achsschnitte) → Linien (Achsen, Wandachsen und -flächen) → frei.
@@ -1248,7 +1398,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     beam: { shape: 'rect', w: 300, bh: 500, prof: 'IPE 300' }, roof: { kind: 'flat', th: 250 }, ceil: { z: 2600, gx: 625, gy: 625, mode: 'room' },
     op: { kind: 'door', v: structuredClone(OP_DEF) }, copyN: 1,
   };
-  const DRAW = ['wall', 'column', 'beam', 'slab', 'grid', 'open', 'roof', 'ceil', 'space', 'shaft', 'stair', 'measure', 'gstart'];
+  const DRAW = ['wall', 'column', 'beam', 'slab', 'grid', 'open', 'roof', 'ceil', 'space', 'shaft', 'stair', 'measure', 'gstart', 'ualign'];
   function startCmd(t, extra = {}) {
     acq = []; dyn = ''; closeDD();
     if (!['move', 'copy', 'split', 'tiles', 'gstart', 'measure'].includes(t)) sel = null;
@@ -1543,6 +1693,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
 
   function onTap(x, y, shift = false) {
+    if (!dimEd.hidden) closeDimEd();
+    if (!cmd || cmd.t === 'grid') { const hh = gdimHits.find(q => Math.abs(q.x - x) < q.w / 2 + 4 && Math.abs(q.y - y) < 14); if (hh) { openDimEd(hh); return; } }
     if (!cmd) { pickSelect(x, y, shift || addMode); return; }
     const t = cmd.t;
     if (t === 'measure') { measureTap(x, y); return; }
@@ -1582,8 +1734,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const lp = cmd.pts.length ? cmd.pts.at(-1) : null;
     const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair'].includes(t) ? lp : null;
     const extra = ['wall', 'slab', 'roof', 'ceil'].includes(t) && cmd.pts.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
-    const raw = t === 'cal' || t === 'umove' && !cmd.pts.length;
-    const s = raw ? { p: onPlane(x, y) } : snapAt(x, y, { from: cmd.mid ? null : from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
+    const raw = t === 'cal' || t === 'ualign' || t === 'umove' && !cmd.pts.length;
+    const s = raw ? { p: calOrtho(onPlane(x, y)) } : snapAt(x, y, { from: cmd.mid ? null : from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
     if (!s?.p) { env.toast('In dieser Ansicht lässt sich nicht zeichnen. Grundriss oder 3D von schräg oben.'); return; }
     // Mitte zwischen zwei Punkten: erst beide Punkte, dann gilt die Mitte als getippter Punkt
     if (cmd.mid) { if (!cmd.mid.a) { cmd.mid.a = s.p; renderUi(); draw(); return; } const m = mul(add(cmd.mid.a, s.p), 0.5).map(v => Math.round(v * 10) / 10); cmd.mid = null; applyPoint(m); return; }
@@ -1625,11 +1777,27 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         cmd.pts = []; renderUi(); draw(); return;
       }
       case 'grid': {
+        const ref = cmd.base && (B.grids.find(g => g.id === cmd.ref) || B.grids.find(g => g.id === cmd.base));
+        if (ref) {
+          // Parallele durch den getippten Punkt, Abstand zur letzten Achse auf 5 mm gerundet
+          const f = famOf(ref), off = Math.round(dot(sub(p, ref.a), f.n) / 5) * 5;
+          if (Math.abs(off) < 10) return;
+          let g = null;
+          change(() => { g = addParallel(ref, off); });
+          if (g) { cmd.ref = g.id; cmd.side = Math.sign(off); }
+          renderUi(); draw(); return;
+        }
         if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
         const a = cmd.pts[0];
         if (near(a, p, 10)) return;
-        change(() => B.grids.push({ id: uid(), name: nextGridName(Math.abs(p[0] - a[0]) < Math.abs(p[1] - a[1])), a, b: p }));
-        cmd.pts = []; renderUi(); draw(); return;
+        let g = null;
+        change(() => {
+          g = { id: uid(), name: '?', a, b: p }; B.grids.push(g);
+          const f = famOf(g); g.name = famName(f.items.filter(it => it.g !== g), dot(g.a, f.n), f.vert);
+        });
+        cmd.pts = []; cmd.base = cmd.ref = g.id; cmd.side = 1; renderUi(); draw();
+        env.toast(`Achse ${g.name}. Jetzt parallele Achsen: Abstand eintippen (auch 3x7500) oder Lage tippen.`);
+        return;
       }
       case 'move': case 'copy':
         if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
@@ -1645,6 +1813,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         if (cmd.pts.length === 2) { cmd.have = len(sub(cmd.pts[1], cmd.pts[0])); cmd.real = cmd.real ?? Math.round(cmd.have); }
         if (cmd.pts.length > 2) cmd.pts = [p];
         renderUi(); draw(); return;
+      case 'ualign':
+        if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
+        ulAlign(cmd.pts[0], p); endCmd(); return;
       case 'umove':
         if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
         { const u = curUl(), d = sub(p, cmd.pts[0]); if (u) change(() => { u.pos = add(u.pos, d); }); }
@@ -1676,7 +1847,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     hits.sort((a, b) => a.pri - b.pri || a.z - b.z);
     if (hits.length) return { el: hits[0].e.id };
     const tol = touch ? 14 : 8;
-    if (!B.vis.off.grid) for (const g of B.grids) if (segD(x, y, P2(g.a), P2(g.b))[0] < tol) return { grid: g.id };
+    if (!B.vis.off.grid) for (const g of B.grids) {
+      const a = P2(g.a), b = P2(g.b), d = norm(sub(b.slice(0, 2), a.slice(0, 2)));
+      if (Number.isFinite(d[0])) for (const [q, sg, hid] of [[a, -1, g.hideA], [b, 1, g.hideB]]) if (!hid && Math.hypot(q[0] + d[0] * 13 * sg - x, q[1] + d[1] * 13 * sg - y) < 14) return { grid: g.id, head: true };
+      if (segD(x, y, a, b)[0] < tol) return { grid: g.id };
+    }
     return null;
   }
   let lastTap = null;
@@ -1687,6 +1862,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (add2 && h?.el) { const ids = selIds(); sel = { ids: ids.includes(h.el) ? ids.filter(i => i !== h.el) : [...ids, h.el] }; if (!sel.ids.length) sel = null; }
     else sel = h?.el ? { ids: [h.el] } : h?.grid ? { grid: h.grid } : null;
     dirty = true; renderUi(); draw();
+    if (h?.head) { const i = infoEl.querySelector('[data-gname]'); if (i) { i.focus(); i.select(); } }
   }
   function handles() {
     const e = selEl(), g = selGrid(), H2 = [];
@@ -1697,7 +1873,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (e?.type === 'hole') H2.push({ k: 'o', p: e.p, move: true });
     if (e?.type === 'ceil') H2.push({ k: 'g', p: ceilHandle(e), move: true, grid: true });
     if (e?.type === 'stair') H2.push({ k: 'sa', p: e.a, move: true });
-    if (g) H2.push({ k: 'a', p: g.a }, { k: 'b', p: g.b });
+    if (g) H2.push({ k: 'a', p: g.a }, { k: 'b', p: g.b }, { k: 'm', p: mul(add(g.a, g.b), 0.5), move: true });
     return H2;
   }
   const ceilHandle = e => { if (e.start) return [e.ox, e.oy]; const b = ceilBox(e); return [e.ox + Math.ceil((b.x0 - e.ox) / e.gx) * e.gx, e.oy + Math.ceil((b.y0 - e.oy) / e.gy) * e.gy]; };
@@ -1732,6 +1908,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else e.pts[h.k] = p;
     } else if (e && WALL_OPS.includes(e.type)) { const w = hostOf(e), { d, L } = wallAxis(w), half = e.w / 2; e.at = Math.max(half, Math.min(L - half, Math.round(dot(sub(p, w.a), d) / 10) * 10)); }
     else if (e?.type === 'hole') e.p = p;
+    else if (g && h.k === 'm') { const n = perp(norm(sub(D.gb, D.ga))), dd = Math.round(dot(sub(p, mul(add(D.ga, D.gb), 0.5)), n)); g.a = add(D.ga, mul(n, dd)); g.b = add(D.gb, mul(n, dd)); }
     else if (g) g[h.k] = p;
     hover = { p, label: s.label };
     dirty = true; draw();
@@ -1751,7 +1928,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
     const z = curSt().elev, acc = css('--accent') || '#0a7cbd', mark = css('--mark') || '#ff7a1a', text = css('--text') || '#222', muted = css('--muted') || '#888', card = css('--card') || '#fff';
     const u = curUl();
-    if (u && !B.vis.off.under && (cam.plan || cmd?.t === 'cal' || cmd?.t === 'umove')) {
+    if (u && !B.vis.off.under && (cam.plan || ['cal', 'umove', 'ualign'].includes(cmd?.t))) {
       const img = imgs.get(u.file);
       if (img === undefined) ulImage(u);
       if (img) {
@@ -1798,11 +1975,28 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]);
       const d = norm(sub(b.slice(0, 2), a.slice(0, 2)));
       for (const [p, sgn] of [[a, -1], [b, 1]]) {
+        if (sgn < 0 ? g.hideA : g.hideB) continue;
         const c = [p[0] + d[0] * 13 * sgn, p[1] + d[1] * 13 * sgn];
         ctx.fillStyle = card; ctx.beginPath(); ctx.arc(c[0], c[1], 12, 0, 7); ctx.fill(); ctx.stroke();
         ctx.fillStyle = on ? acc : 'rgb(200,60,60)'; ctx.fillText(g.name, c[0], c[1] + 0.5);
       }
     });
+    if (cam.plan || cmd?.t === 'grid' || sel?.grid) gridDims(z, 'rgb(200,60,60)'); else gdimHits = [];
+    if (cmd?.t === 'grid' && cmd.base) {
+      const ref = B.grids.find(g => g.id === cmd.ref) || B.grids.find(g => g.id === cmd.base);
+      if (ref) {
+        const a = P2(ref.a, z), b = P2(ref.b, z);
+        ctx.strokeStyle = mark; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+        if (hover?.p) {
+          const f = famOf(ref), off = Math.round(dot(sub(hover.p, ref.a), f.n) / 5) * 5;
+          if (Math.abs(off) >= 10) {
+            const pa = add(ref.a, mul(f.n, off)), pb = add(ref.b, mul(f.n, off)), A = P2(pa, z), Bq = P2(pb, z);
+            ctx.lineWidth = 1.5; ctx.setLineDash([10, 6]); ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(Bq[0], Bq[1]); ctx.stroke(); ctx.setLineDash([]);
+            const mid = mul(add(ref.a, ref.b), 0.5); dimLine(mid, add(mid, mul(f.n, off)), fmt(Math.abs(off)), mark, z);
+          }
+        }
+      }
+    }
     // Türen und Fenster im Grundriss
     if (cam.plan) B.els.forEach(o => {
       if (o.storey !== cur || !['door', 'window'].includes(o.type) || !shown(o)) return;
@@ -1861,10 +2055,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (cmd) {
       const pts = cmd.pts || [];
       pts.forEach((p, i) => dot2(P2(p, z), i === 0 ? 5 : 4, mark));
-      if (['slab', 'roof', 'ceil', 'cal', 'grid', 'move', 'copy', 'beam', 'shaft'].includes(cmd.t) && pts.length) {
+      if (['slab', 'roof', 'ceil', 'cal', 'ualign', 'grid', 'move', 'copy', 'beam', 'shaft'].includes(cmd.t) && pts.length) {
         ctx.strokeStyle = mark; ctx.lineWidth = 2; ctx.setLineDash(['slab', 'roof', 'ceil'].includes(cmd.t) ? [] : [6, 4]);
         ctx.beginPath(); pts.forEach((p, i) => { const s = P2(p, z); if (i) ctx.lineTo(s[0], s[1]); else ctx.moveTo(s[0], s[1]); });
-        if (hover?.p && cmd.t !== 'cal') { const s = P2(hover.p, z); ctx.lineTo(s[0], s[1]); }
+        if (hover?.p && !(['cal', 'ualign'].includes(cmd.t) && pts.length !== 1)) { const s = P2(hover.p, z); ctx.lineTo(s[0], s[1]); }
         ctx.stroke(); ctx.setLineDash([]);
       }
       // Verschieben/Kopieren: Umrisse am Ziel
@@ -1876,6 +2070,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       }
       if (hover?.op && hover.op.type !== 'hole') { const o = hover.op, w = hostOf(o), { d } = wallAxis(w); dimLine(w.a, add(w.a, mul(d, o.at - o.w / 2)), fmt(o.at - o.w / 2), mark, z); }
       if (hover?.p && pts.length && ['wall', 'grid', 'slab', 'roof', 'ceil', 'beam', 'move', 'copy'].includes(cmd.t)) dimLine(pts.at(-1), hover.p, fmt(len(sub(hover.p, pts.at(-1)))), mark, z);
+      if (cmd.t === 'cal' && pts.length === 1 && hover?.p) dimLine(pts[0], hover.p, fmt(len(sub(hover.p, pts[0]))), mark, z);
       if (cmd.t === 'cal' && pts.length === 2) dimLine(pts[0], pts[1], `${fmt(cmd.have)} → ${fmt(num(cmd.real))}`, mark, z);
     }
     if (!cmd) handles().forEach(h => { const s = P2(h.p, z); ctx.fillStyle = h.grid ? mark : card; ctx.strokeStyle = h.grid ? card : acc; ctx.lineWidth = 2; ctx.beginPath(); if (h.move) ctx.rect(s[0] - 6, s[1] - 6, 12, 12); else ctx.arc(s[0], s[1], 6, 0, 7); ctx.fill(); ctx.stroke(); if (h.grid) tag(s[0], s[1] - 20, 'Rasterstart', mark); });
@@ -1892,9 +2087,16 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       ctx.strokeStyle = hover.label ? mark : acc; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(s[0], s[1], hover.label ? 8 : 5, 0, 7); ctx.stroke();
       if (hover.label) tag(s[0], s[1] - 22, hover.label, mark);
     }
-    if (cmd && (dyn || dynNeg)) { const at = lastMouse || [W / 2, H / 2]; tag(at[0] + 70, at[1] + 26, `Länge ${dyn || '…'} mm${dynNeg ? ' · Gegenrichtung' : ''} · Enter`, acc); }
+    if (cmd && (dyn || dynNeg)) { const at = lastMouse || [W / 2, H / 2]; tag(at[0] + 70, at[1] + 26, `${cmd.t === 'grid' ? 'Abstand' : 'Länge'} ${dyn || '…'} mm${dynNeg ? ' · Gegenrichtung' : ''} · Enter`, acc); }
   }
   function placeDyn() {
+    if (cmd?.t === 'grid' && cmd.base) {
+      const str = dyn, neg = dynNeg, ref = B.grids.find(g => g.id === cmd.ref) || B.grids.find(g => g.id === cmd.base);
+      dyn = ''; dynNeg = false;
+      let side = cmd.side || 1;
+      if (hover?.p && ref) side = Math.sign(dot(sub(hover.p, ref.a), famOf(ref).n)) || side;
+      gridSeries(str, neg ? -side : side); return;
+    }
     const L = num(dyn), neg = dynNeg, from = cmd?.pts?.at(-1);
     dyn = ''; dynNeg = false;
     if (!(L > 0) || !from) { draw(); return; }
@@ -2087,13 +2289,21 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           dd('osize', 'Größe', cur2, sz.some(([a, b2]) => `${a}x${b2}` === cur2) ? sz.map(([a, b2]) => [`${a}x${b2}`, `${a} × ${b2}`]) : [...sz.map(([a, b2]) => [`${a}x${b2}`, `${a} × ${b2}`]), [cur2, `${v.w} × ${c.kind === 'hole' ? v.d : v.h}`]], `<div class="bau-ddx">${fld('ow', v.w, 'Breite')}${c.kind === 'hole' ? fld('od', v.d, 'Tiefe') : fld('oh', v.h, 'Höhe')}</div>`),
           c.kind === 'window' || c.kind === 'opening' ? fld('osill', v.sill, c.kind === 'window' ? 'Brüstung' : 'UK') : '') + done; break;
       }
-      case 'grid': h = P(c.pts.length ? 'Endpunkt der Achse' : 'Achse: zwei Punkte tippen') + `<button data-dlg="grid">Raster erzeugen …</button>${helpers}${done}`; break;
+      case 'grid': {
+        const base = c.base && B.grids.find(g => g.id === c.base), ref = base && (B.grids.find(g => g.id === c.ref) || base);
+        if (base) {
+          const f = famOf(ref), arrow = !f ? '' : f.vert ? (c.side < 0 ? '←' : '→') : Math.abs(f.d[0]) > 0.99 ? (c.side < 0 ? '↓' : '↑') : (c.side < 0 ? '−' : '+');
+          h = P(`Parallel zu Achse ${esc(ref.name)}: Lage tippen oder Abstand eingeben`) + G(`<label class="ped-f"><span>Abstand</span><input data-gdist inputmode="text" autocomplete="off" placeholder="6000 · 3x7500"><i>mm</i></label>`, `<button data-b="gside" class="bau-tg" title="Seite wechseln (oder Minus tippen)">Seite ${arrow}</button>`) + '<button data-b="gnew">Neue Richtung</button>';
+        } else h = P(c.pts.length ? 'Endpunkt der Achse' : 'Achse: zwei Punkte tippen, z. B. auf einer Achslinie im Plan') + '<button data-dlg="grid">Raster erzeugen …</button>';
+        h += helpers + done; break;
+      }
       case 'measure': h = G(dd('mmode', 'Messen', c.mode, [['dist', 'Abstand'], ['chain', 'Kette'], ['area', 'Fläche'], ['pick', 'Bauteil antippen']])) + `<span class="bprompt bau-mres">${esc(measRes())}</span>${c.pts.length || c.res ? '<button data-b="mclear">Neu</button>' : ''}${c.mode === 'pick' ? '' : helpers}${done}`; break;
       case 'move': case 'copy': h = P(c.pts.length ? 'Zielpunkt tippen oder Abstand eintippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} ${c.t === 'move' ? 'verschieben' : 'kopieren'}: Basispunkt tippen`) + (c.t === 'copy' ? fld('cn', c.n, 'Anzahl', 'Stk') : '') + helpers + cancel; break;
       case 'split': h = P('Teilungspunkt auf der Wand tippen') + cancel; break;
       case 'tiles': h = P('Platten antippen: herausnehmen oder wieder einsetzen') + done; break;
       case 'gstart': h = P('Ecke der Rasterdecke antippen, von der das Raster beginnt') + cancel; break;
-      case 'cal': h = P(c.pts.length < 2 ? `Kalibrieren: ${c.pts.length ? 'zweiten' : 'ersten'} Punkt auf dem Plan tippen` : 'Echter Abstand') + (c.pts.length === 2 ? `${fld('real', c.real, 'Abstand')}<button data-b="calok" class="on">Übernehmen</button>` : '') + cancel; break;
+      case 'cal': h = P(c.pts.length < 2 ? `Kalibrieren: ${c.pts.length ? 'zweiten' : 'ersten'} Punkt auf dem Plan tippen` : 'Echter Abstand') + (c.pts.length === 2 ? `${fld('real', c.real, 'Abstand')}<button data-b="calok" class="on">Übernehmen</button>` : '') + `<span class="bau-cgrp"><button data-b="ortho" class="bau-tg${orthoOn ? ' on' : ''}" title="Zweiter Punkt nur waagerecht oder senkrecht zum ersten (F8)">Ortho</button><button data-b="ualign" title="Plan drehen, bis eine Linie gerade liegt">Plan ausrichten</button></span>` + cancel; break;
+      case 'ualign': h = P(c.pts.length ? 'Zweiten Punkt auf derselben Linie tippen' : 'Plan ausrichten: zwei Punkte auf einer Linie tippen, die waagerecht oder senkrecht liegen soll') + cancel; break;
       case 'umove': h = P(c.pts.length ? 'Zielpunkt tippen (fängt an Achsen und Wänden)' : 'Unterlage verschieben: Punkt auf dem Plan tippen') + cancel; break;
     }
     cmdEl.innerHTML = h;
@@ -2188,8 +2398,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         }
       }
     } else if (g) {
-      h = `<h4>Achse</h4><label class="ped-f"><span>Name</span><input data-gname value="${esc(g.name)}" class="bau-short"></label><small>Länge ${fmt(len(sub(g.b, g.a)))} mm. Enden lassen sich ziehen.</small>
-        <div class="ped-acts"><button data-b="delgrid">${SVG(IC.trash)} Löschen</button></div>`;
+      const f = famOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1, pv = f?.items[i - 1], nx = f?.items[i + 1];
+      h = `<h4>Achse ${esc(g.name)}</h4><div class="ped-grid"><label class="ped-f"><span>Name</span><input data-gname value="${esc(g.name)}" class="bau-short"></label>${dd('ghead', 'Achskopf', g.hideA && g.hideB ? 'none' : g.hideA ? 'b' : g.hideB ? 'a' : 'both', [['both', 'Beide Enden'], ['a', 'Nur Anfang'], ['b', 'Nur Ende'], ['none', 'Keiner']])}</div>
+        ${pv || nx ? `<div class="ped-grid">${pv ? fld('ggprev', f.items[i].off - pv.off, `Abstand zu ${esc(pv.g.name)}`) : ''}${nx ? fld('ggnext', nx.off - f.items[i].off, `Abstand zu ${esc(nx.g.name)}`) : ''}</div><div class="ped-acts">${seg('gshift', gShift ? '1' : '0', [['1', 'Alle folgenden'], ['0', 'Nur eine Achse']])}</div>` : ''}
+        <small>Länge ${fmt(len(sub(g.b, g.a)))} mm. Enden ziehen ändert die Länge, das Quadrat in der Mitte verschiebt parallel. Maßzahlen im Grundriss antippen ändert Abstände.</small>
+        <div class="ped-acts"><button data-b="gpar" class="on">Parallele Achse anfügen</button><button data-b="grenum">Neu nummerieren</button><button data-b="delgrid">${SVG(IC.trash)} Löschen</button></div>`;
     }
     if (e && h) h = h.replace('<h4>', `<h4><i class="bau-dot" style="--c:${TYPE_COL[e.type] || '#999'}"></i>`);
     else if (n > 1 && h) h = h.replace('<h4>', '<h4><i class="bau-dot" style="--c:var(--accent)"></i>');
@@ -2309,7 +2522,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     dlg = { kind, ...extra };
     if (kind === 'new') Object.assign(dlg, { name: extra.first ? 'Gebäude' : 'Neues Gebäude', kg: '0', dg: '0', og: 1, h: 2750, base: 'free', gnx: 5, gsx: 6000, gny: 3, gsy: 6000, l: '', b: '', t: 365 }, extra);
     if (kind === 'docs') listB().then(l => { if (dlg?.kind === 'docs') { dlg.list = l; renderDlg(); } }).catch(() => {});
-    if (kind === 'grid') Object.assign(dlg, { gnx: 5, gsx: 6000, gny: 3, gsy: 6000 }, extra);
+    if (kind === 'grid') Object.assign(dlg, { gsx: '4x6000', gsy: '2x6000' }, extra);
     moreOpen = false; stPop.hidden = true;
     renderUi();
     if (W <= 700) requestAnimationFrame(() => { fitView(); draw(); }); // Telefon: Modell über das Fenster; breit: Einpassen (F) berücksichtigt das Fenster
@@ -2326,9 +2539,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     }),
     grid: () => ({
       title: 'Achsraster erzeugen',
-      body: `<p class="ped-hint">Ersetzt die vorhandenen Achsen. Achsen 1, 2, 3 … laufen senkrecht im Grundriss, A, B, C … waagerecht. Ursprung ist Achse 1/A.</p>
-        <div class="ped-grid">${fld('gnx', dlg.gnx, 'Achsen 1…', 'Stk')}${fld('gsx', dlg.gsx, 'Abstand')}</div>
-        <div class="ped-grid">${fld('gny', dlg.gny, 'Achsen A…', 'Stk')}${fld('gsy', dlg.gsy, 'Abstand')}</div>
+      body: `<p class="ped-hint">Schnellstart ohne Plan. Ersetzt die vorhandenen Achsen. Achsen 1, 2, 3 … laufen senkrecht, A, B, C … waagerecht, Ursprung ist Achse 1/A. Abstände als Liste: „6000 6000 7500“ oder „3x6000 7500“. Mit Plan besser den Befehl Achse nehmen und auf dem Plan zeichnen.</p>
+        <label class="ped-f bau-wname"><span>Abstände 1, 2, 3 … (mm)</span><input data-dtxt="gsx" value="${esc(dlg.gsx)}" autocomplete="off"></label>
+        <label class="ped-f bau-wname"><span>Abstände A, B, C … (mm)</span><input data-dtxt="gsy" value="${esc(dlg.gsy)}" autocomplete="off"></label>
+        <p class="ped-hint">${(() => { const a = parseSpacing(dlg.gsx), b2 = parseSpacing(dlg.gsy); return `${a.length + (a.length ? 1 : 0)} Achsen senkrecht, ${b2.length + (b2.length ? 1 : 0)} waagerecht · ${fmt(a.reduce((x, v) => x + v, 0))} × ${fmt(b2.reduce((x, v) => x + v, 0))} mm`; })()}</p>
         <div class="ped-acts"><button data-b="gridmake" class="on">Erzeugen</button>${B.grids.length ? `<span class="bprompt">${B.grids.length} Achsen vorhanden</span>` : ''}</div>`,
     }),
     under: () => {
@@ -2338,7 +2552,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         body: `${u ? `<p class="ped-hint">${esc(u.name || 'Bild')} · 1 Bildpunkt = ${fmt(u.s)} mm. Sichtbar im Grundriss.</p>
           <label class="ped-f bau-range"><span>Deckkraft</span><input type="range" data-ualpha min="0.1" max="1" step="0.05" value="${u.alpha ?? 0.55}"></label>
           <div class="ped-grid">${fld('urot', u.rot || 0, 'Drehung', '°')}</div>
-          <div class="ped-acts"><button data-b="cal">Kalibrieren</button><button data-b="umove">Verschieben</button><button data-b="udel">${SVG(IC.trash)} Entfernen</button></div>`
+          <div class="ped-acts"><button data-b="cal">Kalibrieren</button><button data-b="ualign">Ausrichten</button><button data-b="umove">Verschieben</button><button data-b="udel">${SVG(IC.trash)} Entfernen</button></div>`
           : '<p class="ped-hint">Architektenplan als Bild oder PDF (Seite 1) unterlegen, mit zwei Punkten kalibrieren, nachzeichnen. Jedes Geschoss hat seine eigene Unterlage.</p>'}
           <div class="ped-acts"><button data-b="uload" class="on">${u ? 'Andere Unterlage laden' : 'Bild oder PDF laden'}</button></div>`,
       };
@@ -2498,6 +2712,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function dlgChange(el) {
     const k = el.dataset.f, v = num(el.value), fin = Number.isFinite(v), pos = fin && v > 0;
     if (el.dataset.dtxt && dlg?.kind === 'new') { dlg[el.dataset.dtxt] = el.value; return; }
+    if (el.dataset.dtxt && dlg?.kind === 'grid') { dlg[el.dataset.dtxt] = el.value; renderDlg(); return; }
     if (el.dataset.docname) {
       const id = el.dataset.docname, name = el.value.trim();
       dlg.ren = null;
@@ -2555,6 +2770,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   // ---------- Bedienung ----------
   root.addEventListener('click', async e => {
     if (!ddPop.hidden && !e.target.closest('.bau-ddpop') && !e.target.closest('[data-ddk]')) closeDD();
+    if (!dimEd.hidden && e.target !== cv && !e.target.closest('.bau-dimed')) closeDimEd();
     const wf = e.target.closest('[data-wf]');
     if (wf && dlg?.kind === 'window') { dlg.field = dlg.field === wf.dataset.wf ? null : wf.dataset.wf; renderDlg(); return; }
     const b = e.target.closest('button');
@@ -2615,6 +2831,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k === 'stwdd' && C) { C.w = +v; last.stair.w = C.w; }
       else if (k === 'cgdd' && C) { const [a2, b2] = v.split('x').map(Number); C.gx = a2; C.gy = b2; last.ceil.gx = a2; last.ceil.gy = b2; }
       else if (k === 'shtodd' && C) C.to = v;
+      else if (k === 'gshift') { gShift = v === '1'; if (dimEdit) { const hh = dimEdit; openDimEd(hh); } else renderUi(); return; }
+      else if (k === 'ghead') { const g = selGrid(); if (g) change(() => { g.hideA = v === 'b' || v === 'none'; g.hideB = v === 'a' || v === 'none'; }); renderUi(); draw(); return; }
       else if (k === 'osize' && C) { const [a2, b2] = v.split('x').map(Number); C[C.kind].w = a2; C[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; last.op.v[C.kind].w = a2; last.op.v[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; }
       else if (k === 'wkind' && C) { C.kind = v; last.wall.kind = v; C.th = WALL_KINDS.find(x => x[0] === v)[2]; last.wall.th = C.th; }
       else if (k === 'ewkind' && el) change(() => { el.kind = v; });
@@ -2671,12 +2889,19 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'areaok': { const P = cmd.pts; cmd.pts = []; addArea(cmd.t, P); return; }
       case 'fromwalls': { const P = outlineFromWalls(); if (P) addArea(cmd.t, P); return; }
       case 'gridmake': {
-        const nx = Math.round(num(dlg.gnx)), ny = Math.round(num(dlg.gny)), sx = num(dlg.gsx), sy = num(dlg.gsy);
-        if (!(nx >= 1 && ny >= 1 && nx <= 60 && ny <= 60 && sx > 0 && sy > 0)) { env.toast('Anzahl 1 bis 60, Abstand größer 0.'); return; }
+        const xs = parseSpacing(dlg.gsx), ys = parseSpacing(dlg.gsy);
+        if (!xs.length && !ys.length) { env.toast('Abstände eingeben, z. B. 3x6000 7500.'); return; }
         const go = !B.grids.length || await env.ask(`Vorhandene ${B.grids.length} Achsen ersetzen?`, 'Ersetzen');
-        if (go) { makeGrid(nx, sx, ny, sy); closeDlg(); }
+        if (go) { makeGrid(xs, ys); closeDlg(); }
         return;
       }
+      case 'gpar': { const g = selGrid(); if (g) startCmd('grid', { base: g.id, ref: g.id, side: 1 }); return; }
+      case 'grenum': renumberGrids(); return;
+      case 'gdimok': applyDimEd(); return;
+      case 'gdimx': closeDimEd(); return;
+      case 'gnew': cmd.base = cmd.ref = null; cmd.pts = []; renderUi(); draw(); return;
+      case 'gside': cmd.side = -(cmd.side || 1); renderUi(); return;
+      case 'ualign': closeDlg(); startCmd('ualign'); return;
       case 'colgrid': {
         const pts = gridCross().map(q => q.p).filter(p => !B.els.some(x => x.type === 'column' && x.storey === cur && near(x.p, p, 10)));
         if (!pts.length) { env.toast('Auf allen Achsschnitten steht schon eine Stütze.'); return; }
@@ -2771,7 +2996,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const el = e.target, e2 = selEl();
     if (el.matches('[data-ualpha]')) return;
     if (el.closest('.bau-dlg')) { dlgChange(el); return; }
-    if (el.matches('[data-gname]')) { const g = selGrid(), v = el.value.trim(); if (g && v) change(() => { g.name = v; }); return; }
+    if (el.matches('[data-gname]')) { const g = selGrid(), v = el.value.trim(); if (g && v) change(() => { g.name = v; }); renderUi(); draw(); return; }
+    if (el.matches('[data-gdim]')) { if (dimEdit) dimEdit.val = num(el.value) || dimEdit.val; return; }
+    if (el.matches('[data-gdist]')) { if (cmd?.t === 'grid' && cmd.base && el.value.trim()) gridSeries(el.value, cmd.side || 1); return; }
+    if (el.dataset.f === 'ggprev' || el.dataset.f === 'ggnext') { const g = selGrid(), f = g && famOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1, v = num(el.value); if (f && v > 0) setGap(f, el.dataset.f === 'ggprev' ? i - 1 : i, v); return; }
     if (el.dataset.txt && e2) { change(() => { e2[el.dataset.txt] = el.value.trim(); }); return; }
     if (el.dataset.sel) {
       const k = el.dataset.sel, v = el.value;
@@ -2857,7 +3085,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const t = cmd.t;
     if (t === 'open') { const o = opAt(x, y); return o ? { op: o } : null; }
     if (t === 'space' || t === 'tiles' || t === 'split' || (t === 'ceil' && cmd.mode === 'room')) return null;
-    if (t === 'cal' || (t === 'umove' && !cmd.pts.length)) { const p = onPlane(x, y); return p ? { p } : null; }
+    if (t === 'cal' || t === 'ualign' || (t === 'umove' && !cmd.pts.length)) { const p = calOrtho(onPlane(x, y)); return p ? { p } : null; }
     if (t === 'measure') { if (cmd.mode === 'pick' || (cmd.mode === 'dist' && cmd.pts.length >= 2) || cmd.closed) return null; return snapAt(x, y, { from: cmd.pts.at(-1), extra: cmd.mode === 'area' && cmd.pts.length > 2 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [] }); }
     if (t === 'gstart') return null;
     const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair'].includes(t) && cmd.pts.length ? cmd.pts.at(-1) : null;
@@ -2918,11 +3146,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   // Tastatur (Mac, iPad mit Tastatur): Werkzeuge mit einem Buchstaben, Bild auf/ab wechselt das Geschoss
   root.addEventListener('keyup', e => { if (e.key === 'Shift' && freeSnap) { freeSnap = false; if (lastMouse && cmd) hover = hoverOf(...lastMouse); draw(); } });
   root.addEventListener('keydown', e => {
+    if (e.target.matches('[data-gdim]')) { if (e.key === 'Escape') closeDimEd(); if (e.key === 'Enter') { e.preventDefault(); applyDimEd(); } return; }
     if (e.target.matches('input, select, textarea')) { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape' && e.target.matches('.bau-ren')) { dlg.ren = null; renderDlg(); } return; }
     const k = e.key.toLowerCase();
     if (e.key === 'F8') { e.preventDefault(); orthoOn = !orthoOn; try { localStorage.setItem('biege.bau.ortho', orthoOn ? '1' : '0'); } catch {} if (lastMouse && cmd) hover = hoverOf(...lastMouse); renderUi(); draw(); env.toast(orthoOn ? 'Ortho an: nur waagerecht und senkrecht.' : 'Ortho aus.'); return; }
     if (e.key === 'Shift' && cmd) { freeSnap = true; if (lastMouse) hover = hoverOf(...lastMouse); draw(); return; }
-    if (cmd && DYN.includes(cmd.t) && cmd.pts?.length && !(cmd.t === 'measure' && cmd.mode === 'pick') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (cmd && DYN.includes(cmd.t) && (cmd.pts?.length || (cmd.t === 'grid' && cmd.base)) && !(cmd.t === 'measure' && cmd.mode === 'pick') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (cmd.t === 'grid' && dyn && (k === 'x' || e.key === ' ' || e.key === '*')) { dyn += e.key === ' ' ? ' ' : 'x'; e.preventDefault(); draw(); return; }
       if (/^[0-9]$/.test(e.key) || ((e.key === ',' || e.key === '.') && !dyn.includes(','))) { dyn += e.key === '.' ? ',' : e.key; e.preventDefault(); draw(); return; }
       if (e.key === '-') { dynNeg = !dynNeg; e.preventDefault(); draw(); return; }
       if (dyn && e.key === 'Backspace') { dyn = dyn.slice(0, -1); e.preventDefault(); draw(); return; }

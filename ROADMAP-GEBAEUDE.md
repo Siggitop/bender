@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 262**, siehe Abschnitt 6 bis 15. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 263**, siehe Abschnitt 6 bis 16. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -290,3 +290,14 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - **Auswahlknöpfe statt Knopfreihen:** Alle Befehlsleisten zeigen Einstellungen als Knopf „Bezeichnung: Wert ▾“. Antippen öffnet eine Liste über dem Knopf, der gewählte Wert hat einen Haken; wo sinnvoll mit Feld für einen eigenen Wert (z. B. „Andere Dicke“). Wand: Typ, Dicke, Lage. Stütze: Art, Maß/Profil, In der Wand. Träger: Art, Maß/Profil. Decke/Dach: Art, Dicke. Öffnung: Art, Größe (gängige Maße + Breite/Höhe). Treppe: Form, Breite, Wende. Rasterdecke: Fläche, Platten. Messen: Art. In der Wand-Tafel ist der Wandtyp ebenfalls ein Auswahlknopf.
 - **Fang-Menü neu:** „Fang 7/8 ▾“ öffnet eine Liste mit Schaltern (an = blau) und kurzer Erklärung je Fangart; die Liste bleibt beim Umschalten offen. Der alte Fang-Dialog ist entfernt.
 - Getestet: Stütze 240 × 240 bündig links in senkrechte Wand 300 → Drehung 90°, 30 mm aus der Achse; bündig rechts in waagerechte Wand → 30 mm nach unten; IFC ohne fehlende Bezüge; Rohr-Selbsttest 9/9; Handygröße: Liste und Felder passen.
+
+## 16. Version 263: Achsraster auf dem Plan zeichnen
+
+- **Befehl Achse (G):** erste Achse mit zwei Punkten, danach parallele Achsen: **Abstand eintippen** und Enter (Feld „Abstand“ oder direkt auf der Tastatur), auch als Liste „6000 6000 7500“ oder Serie „3x7500“; oder **Lage tippen** (Abstand zur letzten Achse, auf 5 mm gerundet, Vorschau gestrichelt mit Maß). „Seite →/←“ bzw. Minus wechselt die Seite, „Neue Richtung“ beginnt die nächste Schar.
+- **Namen:** fortlaufend je Schar (1, 2, 3 … senkrecht, A, B, C … waagerecht); eine Achse zwischen 2 und 3 heißt „2a“. „Neu nummerieren“ zählt alles neu (von links bzw. unten).
+- **Maßketten:** je Schar am Achsanfang Abstände von Achse zu Achse und Gesamtmaß (im Grundriss, beim Befehl Achse und bei gewählter Achse). **Maßzahl antippen** → Feld: neuer Abstand, „Folgende mitschieben“ oder nur die eine Achse verschieben. Zu enge Maße stehen versetzt.
+- **Achse wählen:** Enden ziehen (Länge), Quadrat in der Mitte verschiebt parallel. **Achskopf antippen** → Name gleich bearbeiten. Tafel: Name, Achskopf (beide Enden, nur Anfang, nur Ende, keiner), Abstand zur Nachbarachse links/rechts, „Parallele Achse anfügen“, „Neu nummerieren“, Löschen.
+- **Raster erzeugen** (Schnellstart ohne Plan): Abstände als Liste je Richtung statt Anzahl × gleicher Abstand, mit Vorschau „4 Achsen senkrecht, 3 waagerecht · 19.500 × 12.000 mm“.
+- **Kalibrieren:** Ortho (Knopf oder F8) – zweiter Punkt waagerecht oder senkrecht zum ersten, Maß läuft mit. **Plan ausrichten** (in der Kalibrier-Leiste und unter Unterlage): zwei Punkte auf einer Linie, die gerade liegen soll – der Plan dreht sich um den ersten Punkt auf den nächsten rechten Winkel.
+- Getestet: Achse 1 + „3x6000 7500“ + Tippen bei 33 m → Achsen 1–6; Querrichtung „6000 8000“ → A–C; Achse bei 9 m → „2a“; Maß 1–2 auf 5000 mit Mitschieben → alle folgenden −1000; Abstand 2a–3 auf 2000 nur eine Achse; Neu nummerieren; Kopf antippen fokussiert den Namen; Plan ausrichten bei 5° Schräge → Drehung −5°; Kalibrieren mit Ortho → zweiter Punkt (10000 | 0); Rohr-Selbsttest 9/9.
+- Noch offen: Stützen und Wände folgen beim Verschieben einer Achse nicht automatisch mit; Achsen gelten für alle Geschosse.
