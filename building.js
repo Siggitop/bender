@@ -179,6 +179,19 @@ const TILE_PRESETS = [[625, 625], [625, 1250], [600, 600], [1200, 600]];
 const WALL_PRESETS = [365, 300, 240, 175, 115, 100];
 const WALL_KINDS = [['aw', 'Außenwand', 365], ['iwt', 'Innenwand tragend', 240], ['iwn', 'Innenwand', 115], ['tb', 'Trockenbau', 100]];
 const kindName = k => WALL_KINDS.find(x => x[0] === k)?.[1];
+// Fenster: Öffnungsart je Feld (Band = Seite des Drehpunkts)
+const WOPS = [['f', 'Fest', 'F'], ['dk-l', 'Drehkipp links', 'DK'], ['dk-r', 'Drehkipp rechts', 'DK'], ['d-l', 'Dreh links', 'D'], ['d-r', 'Dreh rechts', 'D'], ['k', 'Kipp', 'K'], ['s', 'Schiebe', 'S']];
+const wopName = k => WOPS.find(x => x[0] === k)?.[1] || 'Fest';
+// Vorlagen: Maße null = Maße des Fensters behalten
+const WIN_TPL = [
+  ['1', '1-flügelig', null, { cols: [null], ops: { main: ['dk-r'] } }],
+  ['2', '2-flügelig', null, { cols: [null, null], ops: { main: ['dk-l', 'dk-r'] } }],
+  ['3', '3-teilig', null, { cols: [null, null, null], ops: { main: ['dk-l', 'f', 'dk-r'] } }],
+  ['ol', 'Mit Oberlicht', null, { cols: [null, null], top: { h: 500, split: false }, ops: { main: ['dk-l', 'dk-r'], top: ['k'] } }],
+  ['ft', 'Fenstertür', { w: 1010, h: 2135, sill: 0 }, { cols: [null], ops: { main: ['dk-r'] } }],
+  ['fts', 'Fenstertür + Seitenteil', { w: 1885, h: 2135, sill: 0 }, { cols: [1010, null], ops: { main: ['dk-r', 'f'] } }],
+  ['hs', 'Hebeschiebetür', { w: 2760, h: 2260, sill: 0 }, { cols: [null, null], ops: { main: ['f', 's'] } }],
+];
 const WALL_SEG = [['aw', 'Außen'], ['iwt', 'Tragend'], ['iwn', 'Innen'], ['tb', 'Trockenbau']];
 const TYPE_COL = { wall: '#d2bf98', column: '#7f98b6', beam: '#c39a64', slab: '#a9b6c6', roof: '#d0694f', ceil: '#cfc7a8', space: '#5fbf87', shaft: '#f0a050', stair: '#a995d8', door: '#4fa3e0', window: '#4fa3e0', opening: '#4fa3e0', hole: '#4fa3e0' };
 const WALL_OPS = ['door', 'window', 'opening'], OPS = [...WALL_OPS, 'hole'];
@@ -329,6 +342,27 @@ const BAU_CSS = `
 .bau .bau-tabs .ped-seg { padding: 3px; border-radius: 13px; background: var(--bg); }
 .bau .bau-tabs .ped-seg button { border-radius: 10px; font-weight: 650; }
 .bau .bau-foot button { border: 0; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.bau .bau-g3 { grid-template-columns: 1fr 1fr 1fr !important; }
+.bau .bau-win { margin: 12px 0 4px; padding: 10px; border-radius: 14px; background: var(--bg); }
+.bau .bau-winsvg { display: block; width: 100%; height: auto; max-height: 300px; }
+.bau .bau-winsvg .wf-frame { fill: #f4f5f7; stroke: #8b96a5; stroke-width: 1.5; }
+.bau .bau-winsvg .wf-bar { fill: #e7eaee; stroke: #8b96a5; stroke-width: 1; }
+.bau .bau-winsvg .wf-glass { fill: #cfe6f7; stroke: #7a9bb8; stroke-width: 1; cursor: pointer; transition: fill .12s; }
+.bau .bau-winsvg .wf-field:hover .wf-glass { fill: #b9dbf3; }
+.bau .bau-winsvg .wf-field.on .wf-glass { fill: color-mix(in srgb, var(--accent) 30%, #cfe6f7); stroke: var(--accent); stroke-width: 2.5; }
+.bau .bau-winsvg .wf-op { stroke: #3d5a78; stroke-width: 1.2; pointer-events: none; }
+.bau .bau-winsvg .wf-t { font: 700 12px system-ui; fill: #3d5a78; text-anchor: middle; pointer-events: none; }
+.bau .bau-winsvg .wf-d { font: 600 10.5px system-ui; fill: var(--muted); text-anchor: middle; }
+.bau .bau-wfield { margin: 6px 0 2px; }
+.bau .bau-wfield .bprompt { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: var(--text); }
+.bau .bau-wops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.bau .bau-wops button { min-height: 36px; padding: 0 6px; border: 0; border-radius: 10px; background: var(--bg); color: var(--text); font-size: 12.5px; font-weight: 650; }
+.bau .bau-wops button.on { background: var(--accent); color: #fff; }
+.bau .bau-step { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.bau .bau-step button { width: 38px; height: 38px; border: 0; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-size: 20px; font-weight: 700; }
+.bau .bau-step b { min-width: 22px; text-align: center; font-size: 17px; }
+.bau .bau-dlg .ped-grid > .bprompt { align-self: center; font-size: 13px; font-weight: 650; color: var(--text); }
+
 `;
 
 export async function openBuilding(env) {
@@ -514,6 +548,56 @@ export async function openBuilding(env) {
     if (!w) return [];
     const { d } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), A = add(w.a, mul(d, o.at - o.w / 2)), Bp = add(w.a, mul(d, o.at + o.w / 2));
     return [add(A, mul(n, lo)), add(Bp, mul(n, lo)), add(Bp, mul(n, hi)), add(A, mul(n, hi))];
+  }
+  // Fenster-Aufbau: Spalten (Breite fest oder automatisch), Ober- und Unterlicht, Öffnungsart je Feld; Rahmen und Pfosten
+  const winDefault = w => { const n = w <= 1300 ? 1 : w <= 2500 ? 2 : 3; return { cols: Array(n).fill(null), top: null, bot: null, ops: { main: n === 1 ? ['dk-r'] : n === 2 ? ['dk-l', 'dk-r'] : ['dk-l', 'f', 'dk-r'], top: ['k'], bot: ['f'] }, frame: 70, mull: 90 }; };
+  const winCfg = e => e.cfg || winDefault(e.w);
+  function winCols(e) {
+    const c = winCfg(e), fixed = c.cols.map(v => (v > 0 ? v : 0)), sum = fixed.reduce((a, b) => a + b, 0), nA = c.cols.filter(v => !(v > 0)).length;
+    const ws = c.cols.map(v => (v > 0 ? v : nA ? Math.max(0, e.w - sum) / nA : 0));
+    if (!nA && ws.length) ws[ws.length - 1] += e.w - sum; // ohne automatische Spalte gleicht die letzte aus
+    return ws;
+  }
+  function winLayout(e) {
+    const c = winCfg(e), W = e.w, Hh = e.h, f = c.frame ?? 70, m = c.mull ?? 90, ws = winCols(e), th = c.top?.h || 0, bh = c.bot?.h || 0;
+    const xs = [0]; ws.forEach(w => xs.push(xs.at(-1) + w));
+    const rows = [];
+    if (bh > 0) rows.push({ key: 'bot', z0: 0, z1: bh, split: !!c.bot.split });
+    rows.push({ key: 'main', z0: bh, z1: Hh - th, split: true });
+    if (th > 0) rows.push({ key: 'top', z0: Hh - th, z1: Hh, split: !!c.top.split });
+    const fields = [], bars = [];
+    rows.forEach(rw => (rw.split ? ws.map((w, i) => [xs[i], xs[i + 1], i]) : [[0, W, 0]]).forEach(([x0, x1, i]) => {
+      const gx0 = x0 + (x0 < 0.5 ? f : m / 2), gx1 = x1 - (x1 > W - 0.5 ? f : m / 2), gz0 = rw.z0 + (rw.z0 < 0.5 ? f : m / 2), gz1 = rw.z1 - (rw.z1 > Hh - 0.5 ? f : m / 2);
+      fields.push({ row: rw.key, i, x0, x1, z0: rw.z0, z1: rw.z1, op: (c.ops?.[rw.key] || [])[i] || 'f', g: { x0: gx0, x1: Math.max(gx0 + 1, gx1), z0: gz0, z1: Math.max(gz0 + 1, gz1) } });
+    }));
+    rows.slice(1).forEach(rw => bars.push({ x0: f, x1: W - f, z0: rw.z0 - m / 2, z1: rw.z0 + m / 2 }));
+    rows.forEach(rw => { if (rw.split) xs.slice(1, -1).forEach(x => bars.push({ x0: x - m / 2, x1: x + m / 2, z0: Math.max(rw.z0, f), z1: Math.min(rw.z1, Hh - f) })); });
+    return { W, Hh, f, m, xs, ws, rows, fields, bars };
+  }
+  // Öffnungszeichen (DIN): Spitze zur Bandseite; Kipp = Spitze unten. Liefert Strecken im Feld (x nach rechts, z nach oben)
+  function wopLines(op, g) {
+    const xm = (g.x0 + g.x1) / 2, zm = (g.z0 + g.z1) / 2, L = [];
+    if (op === 'd-l' || op === 'dk-l') L.push([[g.x1, g.z1], [g.x0, zm]], [[g.x0, zm], [g.x1, g.z0]]);
+    if (op === 'd-r' || op === 'dk-r') L.push([[g.x0, g.z1], [g.x1, zm]], [[g.x1, zm], [g.x0, g.z0]]);
+    if (op === 'k' || op.startsWith('dk')) L.push([[g.x0, g.z1], [xm, g.z0]], [[xm, g.z0], [g.x1, g.z1]]);
+    if (op === 's') { const a = g.x0 + (g.x1 - g.x0) * 0.2, b = g.x1 - (g.x1 - g.x0) * 0.2; L.push([[a, zm], [b, zm]], [[b, zm], [b - 80, zm + 60]], [[b, zm], [b - 80, zm - 60]]); }
+    return L;
+  }
+  const winText = e => { const L = winLayout(e), c = winCfg(e), main = L.fields.filter(x => x.row === 'main'); return `${main.length}-teilig${c.top?.h ? ' mit Oberlicht' : ''}${c.bot?.h ? ', Unterlicht' : ''} · ${main.map(x => WOPS.find(o => o[0] === x.op)?.[2] || 'F').join(' | ')}`; };
+  // 3D: Rahmen und Pfosten, Glas durchscheinend, Öffnungszeichen auf beiden Seiten
+  function winMesh(e, frameCol, out, glassOut, lines) {
+    const w = hostOf(e);
+    if (!w) return;
+    const { d } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), fd = 80, [z0] = opZ(e), L = winLayout(e);
+    const o2 = add(add(w.a, mul(d, e.at - e.w / 2)), mul(n, (lo + hi) / 2 - fd / 2)), T = { o: [o2[0], o2[1], z0], u: [d[0], d[1], 0], v: [0, 0, 1], n: [n[0], n[1], 0] };
+    const R = (x0, x1, y0, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    extrude(R(0, L.W, 0, L.Hh), [R(L.f, L.W - L.f, L.f, L.Hh - L.f)], 0, fd, frameCol, out, lines, T);
+    L.bars.forEach(b => extrude(R(b.x0, b.x1, b.z0, b.z1), [], 0, fd, frameCol, out, null, T));
+    const W3 = (x, z, k) => add(add(add(T.o, mul(T.u, x)), mul(T.v, z)), mul(T.n, k));
+    L.fields.forEach(fl => {
+      extrude(R(fl.g.x0, fl.g.x1, fl.g.z0, fl.g.z1), [], fd / 2 - 12, fd / 2 + 12, [0.55, 0.76, 0.92], glassOut, null, T);
+      if (lines) wopLines(fl.op, fl.g).forEach(([a, b]) => [fd + 1, -1].forEach(k => lines.push(W3(a[0], a[1], k), W3(b[0], b[1], k))));
+    });
   }
   const opZ = o => { if (o.type === 'hole') { const h = hostOf(o); return h ? zRange(h) : [0, 0]; } const w = hostOf(o), z0 = w ? zRange(w)[0] : st(o.storey).elev; return [z0 + (o.sill || 0), z0 + (o.sill || 0) + o.h]; };
   function footprint(e) {
@@ -769,6 +853,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const all = B.els.filter(e => !OPS.includes(e.type)).flatMap(footprint), xs = all.map(p => p[0]), ys = all.map(p => p[1]), m = 6000;
       prism([[Math.min(...xs) - m, Math.min(...ys) - m], [Math.max(...xs) + m, Math.min(...ys) - m], [Math.max(...xs) + m, Math.max(...ys) + m], [Math.min(...xs) - m, Math.max(...ys) + m]], B.terrain - 10, B.terrain, [0.52, 0.66, 0.42], trans, null);
     }
+    // Fenster mit Rahmen, Pfosten, Glas
+    if (!cam.plan) B.els.forEach(o => { if (o.type !== 'window' || !shown(o) || !visible(st(o.storey))) return; winMesh(o, isSel(o.id) ? acc : [0.95, 0.95, 0.96], tris, trans, lines); });
     // ausgewählte Öffnungen als Körper hervorheben
     selIds().map(elById).filter(o => o && OPS.includes(o.type)).forEach(o => { const [b, t] = opZ(o); prism(opPoly(o), b - 2, t + 2, acc, tris, lines); });
     triN = tris.length / 9; transN = trans.length / 9;
@@ -1305,7 +1391,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'beam': return [['Länge', `${fmt(len(sub(e.b, e.a)))} mm`]];
       case 'column': { const [z0, z1] = zRange(e); return [['Höhe', `${fmt(z1 - z0)} mm`]]; }
       case 'stair': { const g = stairGeo(e); return [['Steigungen', `${g.n} × ${fmt(g.h)} mm`], ['Auftritt', `${fmt(g.g)} mm`], ['Lauflänge', `${fmt(g.L)} mm`]]; }
-      default: return [['Größe', `${fmt(e.w)} × ${fmt(e.h ?? e.d)} mm`]];
+      default: return e.type === 'window' ? [['Größe', `${fmt(e.w)} × ${fmt(e.h)} mm`], ['Teilung', winText(e)]] : [['Größe', `${fmt(e.w)} × ${fmt(e.h ?? e.d)} mm`]];
     }
   }
   function measRes() {
@@ -1665,6 +1751,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         polyPath(opPoly(o), z); ctx.fillStyle = card; ctx.fill(); ctx.stroke();
         const m0 = P2(add(add(w.a, mul(d, o.at - o.w / 2)), mul(n, (lo + hi) / 2)), z), m1 = P2(add(add(w.a, mul(d, o.at + o.w / 2)), mul(n, (lo + hi) / 2)), z);
         ctx.beginPath(); ctx.moveTo(m0[0], m0[1]); ctx.lineTo(m1[0], m1[1]); ctx.stroke();
+        winLayout(o).xs.slice(1, -1).forEach(x => { const base = add(w.a, mul(d, o.at - o.w / 2 + x)), q0 = P2(add(base, mul(n, lo)), z), q1 = P2(add(base, mul(n, hi)), z); ctx.beginPath(); ctx.moveTo(q0[0], q0[1]); ctx.lineTo(q1[0], q1[1]); ctx.stroke(); });
         return;
       }
       const sw = o.swing ?? 1, face = sw > 0 ? hi : lo, l = (o.hinge || 'l') === 'l', hingeS = l ? o.at - o.w / 2 : o.at + o.w / 2, freeS = l ? o.at + o.w / 2 : o.at - o.w / 2;
@@ -1825,7 +1912,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           case 'shaft': id = E(`IFCSPACE(${gid()},$,${S(e.name || 'Schacht')},$,'Schacht',${lp()},${shape(meshOf(e))},'Schacht',.ELEMENT.,.SPACE.,$)`); spaces.push(id); continue;
           case 'space': id = E(`IFCSPACE(${gid()},$,${nm},$,$,${lp()},${shape(meshOf(e))},${S(e.name)},.ELEMENT.,.SPACE.,$)`); spaces.push(id); continue;
           case 'door': id = E(`IFCDOOR(${gid()},$,${nm},$,$,${lp()},${shape(plateOf(e))},$,${R(e.h)},${R(e.w)},.DOOR.,$,$)`); break;
-          case 'window': id = E(`IFCWINDOW(${gid()},$,${nm},$,$,${lp()},${shape(plateOf(e))},$,${R(e.h)},${R(e.w)},.WINDOW.,$,$)`); break;
+          case 'window': {
+            const L = winLayout(e), main = L.fields.filter(x => x.row === 'main').length, top = L.rows.some(x => x.key === 'top'), tris = [];
+            winMesh(e, [0, 0, 0], tris, tris, null);
+            const part = main === 1 && !top ? '.SINGLE_PANEL.' : main === 2 && !top ? '.DOUBLE_PANEL_VERTICAL.' : main === 3 && !top ? '.TRIPLE_PANEL_VERTICAL.' : main === 1 && top ? '.DOUBLE_PANEL_HORIZONTAL.' : main === 2 && top ? '.TRIPLE_PANEL_TOP.' : '.USERDEFINED.';
+            id = E(`IFCWINDOW(${gid()},$,${nm},$,$,${lp()},${shape(tris)},$,${R(e.h)},${R(e.w)},.WINDOW.,${part},$)`);
+            const ps = E(`IFCPROPERTYSET(${gid()},$,'Fenster',$,(${[E(`IFCPROPERTYSINGLEVALUE('Teilung',$,IFCLABEL(${S(winText(e))}),$)`), E(`IFCPROPERTYSINGLEVALUE('Felder',$,IFCLABEL(${S(L.fields.map(x => `${x.row === 'main' ? '' : x.row === 'top' ? 'Oberlicht ' : 'Unterlicht '}${wopName(x.op)}`).join(', '))}),$)`)].join(',')}))`);
+            E(`IFCRELDEFINESBYPROPERTIES(${gid()},$,$,$,(${id}),${ps})`);
+            break;
+          }
           default: id = E(`IFCOPENINGELEMENT(${gid()},$,${nm},$,$,${lp()},${shape(boxOf(e))},$,.OPENING.)`); ids.set(e.id, id); continue;
         }
         ids.set(e.id, id); contained.push(id);
@@ -1985,7 +2080,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           h = `<h4>${TYPE_NAME[e.type]}</h4><div class="ped-grid">${fld('pw', e.w, 'Breite')}${fld('ph', e.h, 'Höhe')}</div>
             <div class="ped-grid">${fld('pleft', e.at - e.w / 2, 'ab Wandanfang')}${e.type === 'door' ? '' : fld('psill', e.sill || 0, e.type === 'window' ? 'Brüstung' : 'UK')}</div>
             ${e.type === 'door' ? `<div class="ped-acts">${seg('phinge', e.hinge || 'l', [['l', 'Anschlag links'], ['r', 'rechts']])}${seg('pswing', String(e.swing ?? 1), [['1', 'Aufschlag hier'], ['-1', 'drüben']])}</div>` : ''}
-            <small>In der Wand ${fmt(L)} mm, rechts bleiben ${fmt(L - e.at - e.w / 2)} mm.</small>
+            ${e.type === 'window' ? `<div class="ped-acts"><button data-b="windlg" class="on">Fenster gestalten …</button></div><small>${esc(winText(e))}. In der Wand ${fmt(L)} mm, rechts bleiben ${fmt(L - e.at - e.w / 2)} mm.</small>` : `<small>In der Wand ${fmt(L)} mm, rechts bleiben ${fmt(L - e.at - e.w / 2)} mm.</small>`}
             <div class="ped-acts"><button data-b="hidesel" title="Ausblenden">${SVG(IC.eyeoff)}</button><button data-b="del">${SVG(IC.trash)} Löschen</button></div>`;
         }
       }
@@ -2222,6 +2317,28 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           <p class="ped-hint">First ${fmt(g.maxH)} mm über Traufe, ${elMeasure(e)[1][1]} Dachfläche. Exakt für Umrisse ohne einspringende Ecken.</p>`,
       };
     },
+    window: () => {
+      const e = elById(dlg.el);
+      if (!e || e.type !== 'window') return null;
+      const c = winCfg(e), L = winLayout(e), sel2 = dlg.field && L.fields.find(f => `${f.row}:${f.i}` === dlg.field), same = B.els.filter(x => x.type === 'window' && x !== e && Math.abs(x.w - e.w) < 1 && Math.abs(x.h - e.h) < 1).length;
+      const rowSeg = (k, v) => seg(k, v, [['0', 'aus'], ['1', 'durchgehend'], ['2', 'geteilt']]), rowVal = r2 => (!r2?.h ? '0' : r2.split ? '2' : '1');
+      return {
+        title: 'Fenster gestalten',
+        body: `<h5>Vorlage</h5><div class="ped-acts">${WIN_TPL.map(([k, n]) => `<button data-wtpl="${k}">${n}</button>`).join('')}${(B.winTpl || []).map((t, i) => `<button data-wtplc="${i}">★ ${esc(t.name)}</button>`).join('')}</div>
+          <h5>Maße</h5><div class="ped-grid bau-g3">${fld('dww', e.w, 'Breite')}${fld('dwh', e.h, 'Höhe')}${fld('dwsill', e.sill || 0, 'Brüstung')}</div>
+          <div class="bau-win">${winSvg(e, dlg.field)}</div>
+          <div class="bau-wfield">${sel2 ? `<span class="bprompt">${sel2.row === 'main' ? `Feld ${sel2.i + 1}` : sel2.row === 'top' ? 'Oberlicht' : 'Unterlicht'}${sel2.row !== 'main' && L.rows.find(x => x.key === sel2.row)?.split ? ` ${sel2.i + 1}` : ''}: Öffnungsart</span><div class="bau-wops">${WOPS.map(([k, n]) => `<button data-wop="${k}"${sel2.op === k ? ' class="on"' : ''}>${n}</button>`).join('')}</div>` : '<p class="ped-hint">Ein Feld in der Zeichnung antippen, um seine Öffnungsart zu wählen.</p>'}</div>
+          <h5>Teilung</h5>
+          <div class="ped-grid"><span class="bprompt">Felder nebeneinander</span><span class="bau-step"><button data-b="wcolm">−</button><b>${c.cols.length}</b><button data-b="wcolp">+</button></span></div>
+          <div class="ped-grid bau-g3">${c.cols.map((v, i) => fld(`dwc${i}`, v > 0 ? v : '', `Feld ${i + 1}`, 'mm', fmt(L.ws[i]))).join('')}</div>
+          <p class="ped-hint">Leere Felder teilen sich den Rest der Breite.</p>
+          <div class="ped-grid"><span class="bprompt">Oberlicht</span>${rowSeg('dwtop', rowVal(c.top))}</div>${c.top?.h ? `<div class="ped-grid">${fld('dwth', c.top.h, 'Höhe Oberlicht')}</div>` : ''}
+          <div class="ped-grid"><span class="bprompt">Unterlicht</span>${rowSeg('dwbot', rowVal(c.bot))}</div>${c.bot?.h ? `<div class="ped-grid">${fld('dwbh', c.bot.h, 'Höhe Unterlicht')}</div>` : ''}
+          <h5>Rahmen</h5><div class="ped-grid">${fld('dwf', c.frame ?? 70, 'Rahmen')}${fld('dwm', c.mull ?? 90, 'Pfosten')}</div>
+          <h5>Übertragen</h5>
+          <div class="ped-acts">${same ? `<button data-b="wsame">Auf ${same} gleich große Fenster</button>` : ''}<button data-b="wsave">Als Vorlage speichern</button></div>`,
+      };
+    },
     stair: () => {
       const e = elById(dlg.el);
       if (!e || e.type !== 'stair') return null;
@@ -2237,6 +2354,41 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       };
     },
   };
+  // Vorschau des Fensters als Zeichnung: Felder antippbar, Öffnungszeichen, Maße
+  function winSvg(e, selKey) {
+    const L = winLayout(e), sc = Math.min(300 / L.W, 230 / L.Hh), w = L.W * sc, h = L.Hh * sc, px = 14, py = 10, X = x => px + x * sc, Y = z => py + h - z * sc;
+    let s2 = `<svg viewBox="0 0 ${w + px * 2 + 46} ${h + py * 2 + 26}" class="bau-winsvg" role="img" aria-label="Fensterteilung">`;
+    s2 += `<rect class="wf-frame" x="${X(0)}" y="${Y(L.Hh)}" width="${w}" height="${h}" rx="2"/>`;
+    L.bars.forEach(b => { s2 += `<rect class="wf-bar" x="${X(b.x0)}" y="${Y(b.z1)}" width="${(b.x1 - b.x0) * sc}" height="${(b.z1 - b.z0) * sc}"/>`; });
+    L.fields.forEach(f => {
+      const g = f.g, key = `${f.row}:${f.i}`, x0 = X(g.x0), x1 = X(g.x1), y0 = Y(g.z1), y1 = Y(g.z0);
+      s2 += `<g data-wf="${key}" class="wf-field${key === selKey ? ' on' : ''}"><rect class="wf-glass" x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}"/>`;
+      wopLines(f.op, g).forEach(([a, b]) => { s2 += `<line class="wf-op" x1="${X(a[0])}" y1="${Y(a[1])}" x2="${X(b[0])}" y2="${Y(b[1])}"/>`; });
+      s2 += `<text class="wf-t" x="${(x0 + x1) / 2}" y="${(y0 + y1) / 2 + 4}">${WOPS.find(o => o[0] === f.op)?.[2] || 'F'}</text></g>`;
+    });
+    L.ws.forEach((cw, i) => { s2 += `<text class="wf-d" x="${X(L.xs[i] + cw / 2)}" y="${py + h + 18}">${fmt(cw)}</text>`; });
+    L.rows.forEach(rw => { s2 += `<text class="wf-d" x="${px + w + 6}" y="${(Y(rw.z0) + Y(rw.z1)) / 2 + 4}" text-anchor="start">${fmt(rw.z1 - rw.z0)}</text>`; });
+    return `${s2}</svg>`;
+  }
+  // Änderungen am Fensteraufbau: Kopie der Einstellungen anlegen, Felder an die Spaltenzahl anpassen
+  function winEdit(e, fn) {
+    change(() => {
+      e.cfg = structuredClone(winCfg(e));
+      fn(e.cfg, e);
+      const n = e.cfg.cols.length;
+      e.cfg.ops ||= {}; for (const k of ['main', 'top', 'bot']) { const a = e.cfg.ops[k] || []; e.cfg.ops[k] = Array.from({ length: n }, (_, i) => a[i] || (k === 'main' ? 'f' : k === 'top' ? 'k' : 'f')); }
+    });
+  }
+  function winApplyTpl(e, size, cfg) {
+    const w = hostOf(e), Lw = w ? wallAxis(w).L : e.w;
+    change(() => {
+      if (size) { e.w = Math.min(size.w, Lw); e.h = size.h; e.sill = size.sill; e.at = Math.max(e.w / 2, Math.min(Lw - e.w / 2, e.at)); }
+      e.cfg = { ...winDefault(e.w), ...structuredClone(cfg), frame: cfg.frame ?? 70, mull: cfg.mull ?? 90 };
+      e.cfg.ops = { main: [], top: ['k'], bot: ['f'], ...structuredClone(cfg.ops || {}) };
+      if (!cfg.top) e.cfg.top = null; if (!cfg.bot) e.cfg.bot = null;
+    });
+    dlg.field = null;
+  }
   function renderDlg() {
     const d = dlg && DLG[dlg.kind]?.();
     if (dlg && !d) dlg = null;
@@ -2257,6 +2409,20 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         else loadB(id).then(x => { if (x) { x.name = name; return saveB(x); } }).then(() => listB()).then(l => { if (dlg?.kind === 'docs') { dlg.list = l; renderDlg(); } });
       }
       renderDlg(); return;
+    }
+    if (dlg?.kind === 'window' && k) {
+      const e = elById(dlg.el);
+      if (!e) return;
+      const w = hostOf(e), Lw = w ? wallAxis(w).L : e.w, blank = el.value.trim() === '';
+      if (k === 'dww' && pos) { change(() => { e.w = Math.min(v, Lw); e.at = Math.max(e.w / 2, Math.min(Lw - e.w / 2, e.at)); }); return; }
+      if (k === 'dwh' && pos) { change(() => { e.h = v; }); return; }
+      if (k === 'dwsill' && fin && v >= 0) { change(() => { e.sill = v; }); return; }
+      if (/^dwc\d+$/.test(k)) { const i = +k.slice(3); winEdit(e, c => { c.cols[i] = blank ? null : pos ? v : c.cols[i]; }); return; }
+      if (k === 'dwth' && pos) { winEdit(e, c => { if (c.top) c.top.h = v; }); return; }
+      if (k === 'dwbh' && pos) { winEdit(e, c => { if (c.bot) c.bot.h = v; }); return; }
+      if (k === 'dwf' && pos) { winEdit(e, c => { c.frame = v; }); return; }
+      if (k === 'dwm' && pos) { winEdit(e, c => { c.mull = v; }); return; }
+      renderUi(); return;
     }
     if (dlg?.kind === 'new' && k) { const map = { nog: 'og', nh: 'h', ngnx: 'gnx', ngsx: 'gsx', ngny: 'gny', ngsy: 'gsy', nl: 'l', nb: 'b' }; if (map[k]) dlg[map[k]] = el.value.trim() === '' ? '' : v; renderDlg(); return; }
     if (el.dataset.dst) {
@@ -2291,8 +2457,20 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
 
   // ---------- Bedienung ----------
   root.addEventListener('click', async e => {
+    const wf = e.target.closest('[data-wf]');
+    if (wf && dlg?.kind === 'window') { dlg.field = dlg.field === wf.dataset.wf ? null : wf.dataset.wf; renderDlg(); return; }
     const b = e.target.closest('button');
     if (!b) return;
+    const we = dlg?.kind === 'window' && elById(dlg.el);
+    if (we) {
+      if (b.dataset.wtpl) { const t = WIN_TPL.find(x => x[0] === b.dataset.wtpl); winApplyTpl(we, t[2], t[3]); return; }
+      if (b.dataset.wtplc) { const t = B.winTpl[+b.dataset.wtplc]; winApplyTpl(we, { w: t.w, h: t.h, sill: t.sill }, t.cfg); return; }
+      if (b.dataset.wop && dlg.field) { const [row, i] = dlg.field.split(':'); winEdit(we, c => { c.ops[row] ||= []; c.ops[row][+i] = b.dataset.wop; }); return; }
+      if (b.dataset.b === 'wcolp' || b.dataset.b === 'wcolm') { winEdit(we, c => { if (b.dataset.b === 'wcolp') { if (c.cols.length < 6) c.cols.push(null); } else if (c.cols.length > 1) c.cols.pop(); }); dlg.field = null; return; }
+      if (b.dataset.b === 'wsame') { const cfg = structuredClone(winCfg(we)), list = B.els.filter(x => x.type === 'window' && x !== we && Math.abs(x.w - we.w) < 1 && Math.abs(x.h - we.h) < 1); change(() => list.forEach(x => { x.cfg = structuredClone(cfg); })); env.toast(`Teilung auf ${list.length} Fenster übertragen.`); return; }
+      if (b.dataset.b === 'wsave') { const name = `${fmt(we.w)} × ${fmt(we.h)} ${winText(we).split(' · ')[0]}`; change(() => { B.winTpl = [...(B.winTpl || []), { name, w: we.w, h: we.h, sill: we.sill || 0, cfg: structuredClone(winCfg(we)) }]; }); env.toast(`Vorlage „${name}“ gespeichert.`); return; }
+      if (b.dataset.seg?.startsWith('dwtop:') || b.dataset.seg?.startsWith('dwbot:')) { const [k, v] = b.dataset.seg.split(':'), key = k === 'dwtop' ? 'top' : 'bot'; winEdit(we, c => { c[key] = v === '0' ? null : { h: c[key]?.h || (key === 'top' ? 500 : 400), split: v === '2' }; }); dlg.field = null; return; }
+    }
     if (!b.closest('.bau-stpop') && b.dataset.b !== 'stpick') stPop.hidden = true;
     if (b.dataset.st) { setCurrent(b.dataset.st); stPop.hidden = true; return; }
     if (b.dataset.pick) { const x = elById(b.dataset.pick); if (x) { if (!onStorey(x, cur)) setCurrent(x.storey, true); sel = { ids: [x.id] }; addMode = false; if (cmd && cmd.t !== 'measure') cmd = null; dirty = true; renderUi(); draw(); } return; }
@@ -2413,6 +2591,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'ceildlg': openDlg('ceil', { el: el.id }); return;
       case 'roofdlg': openDlg('roof', { el: el.id }); return;
       case 'stairdlg': openDlg('stair', { el: el.id }); return;
+      case 'windlg': openDlg('window', { el: el.id }); return;
       case 'gstart': if (tgt?.type === 'ceil') { if (!cam.plan) setPlan(true); cmd = { t: 'gstart', el: tgt.id, pts: [] }; sel = { ids: [tgt.id] }; renderUi(); draw(); } return;
       case 'cequal': if (tgt?.type === 'ceil') change(() => ceilEqual(tgt)); return;
       case 'ctrot': if (tgt?.type === 'ceil') change(() => { [tgt.gx, tgt.gy] = [tgt.gy, tgt.gx]; if (tgt.start) setCeilStart(tgt, tgt.start.k, tgt.start.rx, tgt.start.ry); else ceilEqual(tgt); }); return;

@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 260**, siehe Abschnitt 6 bis 13. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 261**, siehe Abschnitt 6 bis 14. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -272,3 +272,13 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - **Ortho-Modus:** „Ortho“ in der Befehlsleiste oder F8 – nur waagerecht/senkrecht ab dem letzten Punkt, auch beim Ziehen von Enden. Aus: Richtung rastet nur nahe 15°-Schritten.
 - **Erscheinungsbild:** Tafel und Fenster mit Formular in zwei gleich breiten Spalten, Beschriftung über dem Feld, Einheit im Feld, große runde Felder mit Fokusring, Segmente als Pille mit gleich breiten Feldern, Aktionen als farbige Pillen (Löschen rot), Hinweise als Karte, farbiges Symbol je Bauteilart im Titel. Befehlsleiste kompakter, mit Ortho/Mitte/Fang als Pillen.
 - Getestet: Fang auf Wandecke (9000 | 6120) → Wand rückt auf Achsschnitt (9000 | 6000), Gehrung; T-Stoß an Wandfläche; Doppeltippen wählt 4 Außenwände, Dicke 300 für alle; Ortho zwingt schrägen Zug waagerecht.
+
+## 14. Version 261: Fenster gestalten
+
+- Fenster-Tafel → **„Fenster gestalten …“**: Gesamtmaß (Breite, Höhe, Brüstung), **Felder nebeneinander** (1–6, Breite je Feld fest oder leer = Rest gleich verteilt), **Oberlicht** und **Unterlicht** (aus, durchgehend oder wie die Felder geteilt, mit Höhe), **Rahmen** und **Pfosten**.
+- Zeichnung des Fensters mit Öffnungszeichen nach DIN (Spitze zur Bandseite, Kipp = Spitze unten) und Maßen; **Feld antippen** → Öffnungsart: Fest, Drehkipp links/rechts, Dreh links/rechts, Kipp, Schiebe.
+- **Vorlagen:** 1-flügelig, 2-flügelig, 3-teilig, mit Oberlicht, Fenstertür, Fenstertür + Seitenteil, Hebeschiebetür; eigene Vorlagen speichern (★) und auf andere Fenster anwenden; Teilung „auf gleich große Fenster“ übertragen.
+- Ohne eigene Einstellung bekommt ein Fenster eine Vorgabe nach Breite (bis 1,30 m 1-flügelig, bis 2,50 m 2-flügelig, darüber 3-teilig).
+- **3D:** Rahmen, Pfosten, Kämpfer, Glas durchscheinend, Öffnungszeichen auf beiden Seiten. **Grundriss:** Pfostenteilung im Fensterband. **Messen/Tafel:** „3-teilig mit Oberlicht · DK | F | DK“.
+- **IFC:** IfcWindow mit Rahmen- und Glasgeometrie, PartitioningType nach IFC (z. B. TRIPLE_PANEL_VERTICAL, sonst USERDEFINED) und Eigenschaftssatz „Fenster“ (Teilung, Öffnungsart je Feld).
+- Noch offen: dasselbe für Türen (Seitenteil, Oberlicht, 2-flügelig mit Gang- und Standflügel), Fensterliste als Tabelle.
