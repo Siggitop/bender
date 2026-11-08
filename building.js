@@ -341,6 +341,9 @@ export async function openBuilding(env) {
   let mid = [0, 0, 0], size = 20000, W = 1, H = 1, listOpen = innerWidth > 1000, showAbove = false, moreOpen = false;
   // sel: { ids: [...] } Bauteile oder { grid: id }; addMode: Tippen ergänzt die Auswahl
   let cmd = null, sel = null, hover = null, dirty = true, gridForm = false, addMode = false;
+  // Länge direkt eintippen (Mac): Ziffern sammeln, Enter setzt den Punkt in Zeigerrichtung, Minus = Gegenrichtung
+  let dyn = '', dynNeg = false, lastMouse = null;
+  const DYN = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair', 'measure', 'shaft'];
   const undo = [], redo = [];
   const imgs = new Map(); // Unterlage: Datei-ID → Bild
   // aktuelles Geschoss; fehlt es (gelöscht, neues Gebäude), das unterste
@@ -692,7 +695,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const attribs = () => { [[glp.aPos, 0], [glp.aNor, 12], [glp.aCol, 24]].forEach(([loc, off]) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 36, off); }); };
   const COL = { stair: [0.82, 0.80, 0.76], base: [0.70, 0.71, 0.73], wall: [0.87, 0.85, 0.81], column: [0.70, 0.73, 0.77], steel: [0.52, 0.58, 0.66], beam: [0.80, 0.78, 0.74], slab: [0.78, 0.79, 0.81], flat: [0.66, 0.67, 0.69], roof: [0.70, 0.40, 0.33], ceil: [0.95, 0.95, 0.92], shaft: [0.95, 0.62, 0.25] };
   // Grundriss: geschnittene Bauteile dunkel, Decken hell, ohne Schattierung
-  const PLAN = { wall: [0.36, 0.38, 0.41], column: [0.22, 0.24, 0.27], steel: [0.22, 0.24, 0.27], slab: [0.95, 0.95, 0.94] };
+  const PLAN = { wall: [0.36, 0.38, 0.41], column: [0.22, 0.24, 0.27], steel: [0.22, 0.24, 0.27], slab: [0.95, 0.95, 0.94], base: [0.95, 0.95, 0.94] };
   const colOf = e => (e.type === 'column' && e.shape === 'steel' ? 'steel' : e.type === 'beam' && e.shape === 'steel' ? 'steel' : e.type === 'roof' && e.kind !== 'pitched' ? 'flat' : e.type === 'slab' && e.base ? 'base' : e.type);
   function buildGeometry() {
     const tris = [], trans = [], lines = [], acc = rgb('--accent', [0.04, 0.49, 0.74]);
@@ -871,54 +874,99 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   // Fangergebnis auf 0,1 mm runden: keine Rundungsreste aus Schnittpunkten in den Daten
   function snapAt(x, y, o = {}) { const res = snapRaw(x, y, o); if (res?.p) res.p = res.p.map(v => Math.round(v * 10) / 10); return res; }
+  // ---------- Fang-Einstellungen (je Gerät) ----------
+  const SNAP_KEYS = [['end', 'Endpunkte und Ecken'], ['mid', 'Mitten'], ['grid', 'Achsen und Achsschnitte'], ['face', 'Wandflächen, Achsen, Kanten'], ['track', 'Fluchten (Spurlinien)'], ['perp', 'Lot'], ['ext', 'Verlängerungen'], ['round', 'Raster 10 mm']];
+  const snapCfg = (() => { const d = Object.fromEntries(SNAP_KEYS.map(([k]) => [k, true])); try { return { ...d, ...JSON.parse(localStorage.getItem('biege.bau.snap') || '{}') }; } catch { return d; } })();
+  const saveSnap = () => { try { localStorage.setItem('biege.bau.snap', JSON.stringify(snapCfg)); } catch {} };
+  // erfasste Punkte: Fluchten laufen von Punkten, über die der Zeiger zuletzt gefahren ist (wie in CAD üblich)
+  let acq = [], freeSnap = false;
+  const acquire = (p, label = 'Punkt') => { if (acq.some(q => near(q.p, p, 0.5))) return; acq.push({ p: [...p], label }); if (acq.length > 8) acq.shift(); };
+  function snapPoints(o) {
+    const C = snapCfg, P = [], put = (p, label, kind) => { if (p) P.push({ p, label, kind }); };
+    B.els.forEach(e => {
+      if (!onStorey(e, cur) || o.skip?.has(e.id) || !shown(e) || OPS.includes(e.type)) return;
+      if (e.type === 'stair') { if (C.end) put(e.a, 'Treppenantritt'); return; }
+      if (e.type === 'wall' || e.type === 'beam') {
+        const w = e.type === 'wall';
+        if (C.end) { put(e.a, w ? 'Wandende' : 'Trägerende'); put(e.b, w ? 'Wandende' : 'Trägerende'); if (w) wallPoly(e).forEach(q => put(q, 'Wandecke')); }
+        if (C.mid) put(mul(add(e.a, e.b), 0.5), w ? 'Wandmitte' : 'Trägermitte', 'mid');
+      } else if (e.type === 'column') { if (C.end) put(e.p, 'Stütze'); }
+      else if (e.pts) {
+        if (C.end) e.pts.forEach(q => put(q, 'Eckpunkt'));
+        if (C.mid && e.type !== 'space') e.pts.forEach((q, i) => put(mul(add(q, e.pts[(i + 1) % e.pts.length]), 0.5), 'Kantenmitte', 'mid'));
+      }
+    });
+    const below = sorted().filter(s => s.elev < curSt().elev).at(-1);
+    if (below && C.end) B.els.forEach(e => { if (e.storey === below.id && e.type === 'wall' && shown(e)) { put(e.a, 'Wandende darunter'); put(e.b, 'Wandende darunter'); } });
+    if (C.grid && !B.vis.off.grid) gridCross().forEach(q => put(q.p, q.label));
+    (o.extra || []).forEach(q => put(q.p, q.label));
+    return P;
+  }
+  // Fluchtpunkte: erfasste Punkte, Punkte der laufenden Kette, der letzte Punkt; auf dem Touchscreen zusätzlich Punkte nahe dem Finger
+  function trackPoints(o, pts, x, y, z) {
+    const T = acq.map(q => ({ p: q.p, label: q.label }));
+    (cmd?.pts || []).forEach(p => T.push({ p, label: 'Kettenpunkt' }));
+    if (o.from) T.push({ p: o.from, label: 'letzter Punkt' });
+    if (touch) pts.forEach(q => { const s2 = P2(q.p, z); if (Math.hypot(s2[0] - x, s2[1] - y) < 140) T.push(q); });
+    return T;
+  }
+  // Reihenfolge: Punkte → Linien und Konstruktionslinien (Wand, Achse, Kante, Flucht, Verlängerung, Lot) → frei.
+  // Ortho (Richtung nahe 15°-Raster ab dem letzten Punkt) bleibt erhalten; Linien schneiden dann den Ortho-Strahl.
   function snapRaw(x, y, o = {}) {
     const z = curSt().elev, tol = touch ? 20 : 11, raw = onPlane(x, y, z);
-    // Ortho: Richtung ab dem letzten Punkt rastet auf 15°, wenn sie nahe dran ist
-    let ortho = null;
-    if (o.from && raw && !o.noOrtho) {
-      const v = sub(raw, o.from);
-      if (len(v) > 1) { const ang = Math.atan2(v[1], v[0]), q = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12); if (Math.abs(ang - q) < 0.07) ortho = [Math.cos(q), Math.sin(q)]; }
-    }
-    const scr = p => P2(p, z), dpx = p => { const s = scr(p); return Math.hypot(s[0] - x, s[1] - y); };
-    // 1. Punkte
-    let best = null;
-    const consider = (p, label) => { if (!p) return; const d = dpx(p); if (d < tol && (!best || d < best.d)) best = { p: [...p], label, d }; };
-    B.els.forEach(e => {
-      if (!onStorey(e, cur) || o.skip?.has(e.id) || !shown(e)) return;
-      if (e.type === 'stair') { consider(e.a, 'Treppenantritt'); return; }
-      if (e.type === 'wall' || e.type === 'beam') { consider(e.a, e.type === 'wall' ? 'Wandende' : 'Trägerende'); consider(e.b, e.type === 'wall' ? 'Wandende' : 'Trägerende'); consider(mul(add(e.a, e.b), 0.5), e.type === 'wall' ? 'Wandmitte' : 'Trägermitte'); }
-      else if (e.type === 'column') consider(e.p, 'Stütze');
-      else if (e.pts) e.pts.forEach(q => consider(q, 'Eckpunkt'));
-    });
-    const below = sorted().filter(s => s.elev < z).at(-1);
-    if (below) B.els.forEach(e => { if (e.storey === below.id && e.type === 'wall') { consider(e.a, 'Wandende darunter'); consider(e.b, 'Wandende darunter'); } });
-    if (!B.vis.off.grid) gridCross().forEach(q => consider(q.p, q.label));
-    (o.extra || []).forEach(q => consider(q.p, q.label));
-    // Mit Ortho zählt ein Punkt nur, wenn er auf dem Strahl liegt oder der Zeiger sehr nahe ist
-    if (best && (!ortho || best.d < tol * 0.6 || Math.abs(cross2(sub(best.p, o.from), ortho)) * cam.sc < tol * 0.5)) return best;
     if (!raw) return null;
-    // 2. Linien
-    const lines = snapLines(o.skip).map(L => { const [d, t] = segD(x, y, scr(L.a), scr(L.b)); return { ...L, d, t }; }).filter(L => L.d < tol).sort((a, b) => a.d - b.d);
+    const rnd = v => (snapCfg.round ? Math.round(v / 10) * 10 : v);
+    if (freeSnap) return { p: raw, free: true, label: 'ohne Fang' };
+    const scr = p => P2(p, z), dpx = p => { const s2 = scr(p); return Math.hypot(s2[0] - x, s2[1] - y); };
+    const lineDist = (p, d) => { const a = scr(p), b = scr(add(p, mul(d, 1000))), ex = b[0] - a[0], ey = b[1] - a[1], l = Math.hypot(ex, ey) || 1; return Math.abs((x - a[0]) * ey - (y - a[1]) * ex) / l; };
+    let ortho = null;
+    if (o.from && !o.noOrtho) { const v = sub(raw, o.from); if (len(v) > 1) { const ang = Math.atan2(v[1], v[0]), q = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12); if (Math.abs(ang - q) < 0.07) ortho = [Math.cos(q), Math.sin(q)]; } }
+    // 1. Punkte
+    const pts = snapPoints(o);
+    let best = null;
+    for (const q of pts) { const d = dpx(q.p); if (d < tol && (!best || d < best.d)) best = { p: [...q.p], label: q.label, d }; }
+    if (best) { acquire(best.p, best.label); if (!ortho || best.d < tol * 0.6 || Math.abs(cross2(sub(best.p, o.from), ortho)) * cam.sc < tol * 0.5) return best; }
+    // 2. Linien: echte (Achsen, Wände, Kanten), Verlängerungen, Fluchten, Lot
+    const real = snapLines(o.skip).filter(L => (L.label.startsWith('Achse') ? snapCfg.grid : snapCfg.face));
+    const cons = [];
+    real.forEach(L => {
+      const d = norm(sub(L.b, L.a)), [sd, t] = segD(x, y, scr(L.a), scr(L.b));
+      if (sd < tol) cons.push({ p: L.a, d, label: L.label, real: true, dist: sd });
+      else if (snapCfg.ext && (t <= 0 || t >= 1)) { const ld = lineDist(L.a, d); if (ld < tol * 0.8) cons.push({ p: L.a, d, label: `Verlängerung ${L.label}`, dist: ld, guide: t <= 0 ? L.a : L.b }); }
+    });
+    if (snapCfg.track) trackPoints(o, pts, x, y, z).forEach(q => [[1, 0], [0, 1]].forEach(d => { const ld = lineDist(q.p, d); if (ld < tol * 0.8 && dpx(q.p) > tol) cons.push({ p: q.p, d, label: `Flucht ${q.label}`, dist: ld, guide: q.p, track: true }); }));
+    let perpHit = null;
+    if (o.from && snapCfg.perp) real.forEach(L => { const d = norm(sub(L.b, L.a)), f = add(L.a, mul(d, dot(sub(o.from, L.a), d))), dd = dpx(f); if (len(sub(f, o.from)) > 1 && dd < tol && (!perpHit || dd < perpHit.d)) perpHit = { p: f, label: `Lot auf ${L.label}`, d: dd }; });
+    const lines = cons.sort((a, b) => a.dist + (a.real ? 0 : 2) - (b.dist + (b.real ? 0 : 2)));
     if (ortho) {
-      let pick = null;
-      for (const L of lines) {
-        const X = lineX(o.from, ortho, L.a, norm(sub(L.b, L.a)));
-        if (X && dot(sub(X, o.from), ortho) > 1) { const d = dpx(X); if (d < tol * 1.6 && (!pick || d < pick.d)) pick = { p: X, label: `${L.label} · Ortho`, d }; }
+      let pick = perpHit && Math.abs(cross2(norm(sub(perpHit.p, o.from)), ortho)) < 0.01 ? perpHit : null;
+      for (const c of lines) {
+        const X = lineX(o.from, ortho, c.p, c.d);
+        if (!X || dot(sub(X, o.from), ortho) <= 1) continue;
+        const d = dpx(X) + (c.real ? 0 : 2);
+        if (d < tol * 1.6 && (!pick || d < pick.d)) pick = { p: X, label: `${c.label} · Ortho`, d, guides: c.guide ? [c.guide] : [] };
       }
       if (pick) return pick;
-      const Lr = Math.round(dot(sub(raw, o.from), ortho) / 10) * 10;
-      return { p: add(o.from, mul(ortho, Lr)), label: 'Ortho', ortho: true };
+      return { p: add(o.from, mul(ortho, rnd(dot(sub(raw, o.from), ortho)))), label: 'Ortho', ortho: true };
     }
+    if (perpHit) return perpHit;
     if (lines.length) {
-      // zwei Linien nahe: ihr Schnittpunkt
-      if (lines.length > 1) for (const L2 of lines.slice(1)) { const X = lineX(lines[0].a, norm(sub(lines[0].b, lines[0].a)), L2.a, norm(sub(L2.b, L2.a))); if (X && dpx(X) < tol) return { p: X, label: `${lines[0].label} × ${L2.label}` }; }
-      const L = lines[0], q = add(L.a, mul(sub(L.b, L.a), L.t));
-      if (o.from) { const v = sub(q, o.from), Ln = len(v); if (Ln > 1) { const u = norm(sub(L.b, L.a)), t0 = dot(sub(q, L.a), u); return { p: add(L.a, mul(u, Math.round(t0 / 10) * 10)), label: `auf ${L.label}` }; } }
-      return { p: q, label: `auf ${L.label}` };
+      const top = lines.slice(0, 8);
+      let bx = null;
+      for (let i = 0; i < top.length; i++) for (let j = i + 1; j < top.length; j++) {
+        if (Math.abs(cross2(top[i].d, top[j].d)) < 0.05) continue;
+        const X = lineX(top[i].p, top[i].d, top[j].p, top[j].d);
+        if (!X) continue;
+        const d = dpx(X);
+        if (d < tol * 1.2 && (!bx || d < bx.d)) bx = { p: X, label: `${top[i].label} × ${top[j].label}`, d, guides: [top[i].guide, top[j].guide].filter(Boolean) };
+      }
+      if (bx) return bx;
+      const c = lines[0], t0 = dot(sub(raw, c.p), c.d);
+      return { p: add(c.p, mul(c.d, rnd(t0))), label: c.real ? `auf ${c.label}` : c.label, guides: c.guide ? [c.guide] : [] };
     }
     // 3. frei
-    if (o.from) { const v = sub(raw, o.from), L = Math.round(len(v) / 10) * 10; return { p: add(o.from, mul(norm(v), L)), free: true }; }
-    return { p: raw.map(v => Math.round(v / 10) * 10), free: true };
+    if (o.from) { const v = sub(raw, o.from); return { p: add(o.from, mul(norm(v), rnd(len(v)))), free: true }; }
+    return { p: raw.map(rnd), free: true };
   }
 
   // ---------- Räume erkennen ----------
@@ -1004,6 +1052,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   };
   const DRAW = ['wall', 'column', 'beam', 'slab', 'grid', 'open', 'roof', 'ceil', 'space', 'shaft', 'stair', 'measure', 'gstart'];
   function startCmd(t, extra = {}) {
+    acq = []; dyn = '';
     if (!['move', 'copy', 'split', 'tiles', 'gstart', 'measure'].includes(t)) sel = null;
     hover = null; gridForm = false; addMode = false; moreOpen = false;
     if (t === 'sel') { cmd = null; dirty = true; renderUi(); draw(); return; }
@@ -1024,7 +1073,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     Object.assign(cmd, extra);
     dirty = true; renderUi(); draw();
   }
-  function endCmd() { cmd = null; hover = null; dirty = true; renderUi(); draw(); }
+  function endCmd() { cmd = null; hover = null; acq = []; dyn = ''; dirty = true; renderUi(); draw(); }
   // Vorschau des laufenden Befehls als durchsichtiger Körper
   function cmdPreview() {
     if (!cmd) return null;
@@ -1058,7 +1107,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const L = num(cmd.len);
     if (!cmd.pts.length) { env.toast('Erst den Startpunkt tippen.'); return; }
     if (!(L > 0)) { env.toast('Länge eingeben.'); return; }
-    const a = cmd.pts.at(-1), b = add(a, mul(dir, L));
+    const a = cmd.pts.at(-1), b = add(a, mul(dir, L)).map(v => Math.round(v * 10) / 10);
+    cmd.lastDir = dir;
     addEl({ type: 'wall', a: [...a], b, t: cmd.th, just: cmd.just, h: null }); cmd.pts.push(b); renderUi(); draw();
   }
   function outlineFromWalls() {
@@ -1167,10 +1217,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const c = cmd;
     if (c.mode === 'pick') { const h = pickEl(x, y); c.res = h?.el || null; renderUi(); draw(); return; }
     const done2 = (c.mode === 'dist' && c.pts.length >= 2) || c.closed;
-    const s2 = snapAt(x, y, { from: done2 ? null : c.pts.at(-1), extra: c.mode === 'area' && c.pts.length > 2 ? [{ p: c.pts[0], label: 'Startpunkt' }] : [] });
+    const s2 = snapAt(x, y, { from: done2 || c.mid ? null : c.pts.at(-1), extra: c.mode === 'area' && c.pts.length > 2 ? [{ p: c.pts[0], label: 'Startpunkt' }] : [] });
     if (!s2?.p) return;
-    if (done2) { c.pts = []; c.closed = false; }
-    if (c.mode === 'area' && c.pts.length > 2 && near(s2.p, c.pts[0], 1)) c.closed = true; else c.pts.push(s2.p);
+    if (c.mid) { if (!c.mid.a) { c.mid.a = s2.p; renderUi(); draw(); return; } const m = mul(add(c.mid.a, s2.p), 0.5); c.mid = null; measurePoint(m); return; }
+    measurePoint(s2.p);
+  }
+  function measurePoint(p) {
+    const c = cmd;
+    if ((c.mode === 'dist' && c.pts.length >= 2) || c.closed) { c.pts = []; c.closed = false; }
+    if (c.mode === 'area' && c.pts.length > 2 && near(p, c.pts[0], 1)) c.closed = true; else c.pts.push(p);
     renderUi(); draw();
   }
   function opAt(x, y) {
@@ -1284,9 +1339,16 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair'].includes(t) ? lp : null;
     const extra = ['wall', 'slab', 'roof', 'ceil'].includes(t) && cmd.pts.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
     const raw = t === 'cal' || t === 'umove' && !cmd.pts.length;
-    const s = raw ? { p: onPlane(x, y) } : snapAt(x, y, { from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
+    const s = raw ? { p: onPlane(x, y) } : snapAt(x, y, { from: cmd.mid ? null : from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
     if (!s?.p) { env.toast('In dieser Ansicht lässt sich nicht zeichnen. Grundriss oder 3D von schräg oben.'); return; }
-    const p = s.p;
+    // Mitte zwischen zwei Punkten: erst beide Punkte, dann gilt die Mitte als getippter Punkt
+    if (cmd.mid) { if (!cmd.mid.a) { cmd.mid.a = s.p; renderUi(); draw(); return; } const m = mul(add(cmd.mid.a, s.p), 0.5).map(v => Math.round(v * 10) / 10); cmd.mid = null; applyPoint(m); return; }
+    applyPoint(s.p);
+  }
+  // Ein Punkt für den laufenden Befehl (aus dem Fang, aus „Mitte“ oder aus der eingetippten Länge)
+  function applyPoint(p) {
+    const t = cmd.t;
+    if (cmd.pts.length) cmd.lastDir = len(sub(p, cmd.pts.at(-1))) > 1 ? norm(sub(p, cmd.pts.at(-1))) : cmd.lastDir;
     switch (t) {
       case 'wall': wallClick(p); return;
       case 'stair':
@@ -1320,10 +1382,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
         xform(sub(p, cmd.pts[0])); endCmd(); return;
       case 'split': {
-        const w = elById(cmd.el), q = onPlane(x, y);
-        if (w && q) splitWall(w, q);
+        const w = elById(cmd.el);
+        if (w) splitWall(w, p);
         endCmd(); return;
       }
+      case 'measure': measurePoint(p); return;
       case 'cal':
         cmd.pts.push(p);
         if (cmd.pts.length === 2) { cmd.have = len(sub(cmd.pts[1], cmd.pts[0])); cmd.real = cmd.real ?? Math.round(cmd.have); }
@@ -1558,11 +1621,31 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (cmd.t === 'cal' && pts.length === 2) dimLine(pts[0], pts[1], `${fmt(cmd.have)} → ${fmt(num(cmd.real))}`, mark, z);
     }
     if (!cmd) handles().forEach(h => { const s = P2(h.p, z); ctx.fillStyle = h.grid ? mark : card; ctx.strokeStyle = h.grid ? card : acc; ctx.lineWidth = 2; ctx.beginPath(); if (h.move) ctx.rect(s[0] - 6, s[1] - 6, 12, 12); else ctx.arc(s[0], s[1], 6, 0, 7); ctx.fill(); ctx.stroke(); if (h.grid) tag(s[0], s[1] - 20, 'Rasterstart', mark); });
+    if (cmd) {
+      // erfasste Punkte als kleine Kreuze, Spurlinien gestrichelt zum Bezugspunkt
+      ctx.strokeStyle = acc; ctx.lineWidth = 1.2;
+      acq.forEach(q => { const s2 = P2(q.p, z); ctx.beginPath(); ctx.moveTo(s2[0] - 4, s2[1] - 4); ctx.lineTo(s2[0] + 4, s2[1] + 4); ctx.moveTo(s2[0] + 4, s2[1] - 4); ctx.lineTo(s2[0] - 4, s2[1] + 4); ctx.stroke(); });
+      if (hover?.p && hover.guides?.length) { ctx.setLineDash([6, 5]); hover.guides.forEach(g => { const a = P2(g, z), b = P2(hover.p, z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }); ctx.setLineDash([]); }
+      if (hover?.ortho || hover?.label?.includes('Ortho')) { const f = cmd.pts?.at(-1); if (f && hover?.p) { const a = P2(f, z), b = P2(hover.p, z), d2 = norm(sub(b.slice(0, 2), a.slice(0, 2))); ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] + d2[0] * 2000, b[1] + d2[1] * 2000); ctx.stroke(); ctx.setLineDash([]); } }
+      if (cmd.mid?.a) { const s2 = P2(cmd.mid.a, z); dot2(s2, 4, mark); if (hover?.p) { const m = P2(mul(add(cmd.mid.a, hover.p), 0.5), z); ctx.strokeStyle = mark; ctx.beginPath(); ctx.moveTo(m[0] - 6, m[1]); ctx.lineTo(m[0] + 6, m[1]); ctx.moveTo(m[0], m[1] - 6); ctx.lineTo(m[0], m[1] + 6); ctx.stroke(); } }
+    }
     if (hover?.p) {
       const s = P2(hover.p, z);
       ctx.strokeStyle = hover.label ? mark : acc; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(s[0], s[1], hover.label ? 8 : 5, 0, 7); ctx.stroke();
       if (hover.label) tag(s[0], s[1] - 22, hover.label, mark);
     }
+    if (cmd && (dyn || dynNeg)) { const at = lastMouse || [W / 2, H / 2]; tag(at[0] + 70, at[1] + 26, `Länge ${dyn || '…'} mm${dynNeg ? ' · Gegenrichtung' : ''} · Enter`, acc); }
+  }
+  function placeDyn() {
+    const L = num(dyn), neg = dynNeg, from = cmd?.pts?.at(-1);
+    dyn = ''; dynNeg = false;
+    if (!(L > 0) || !from) { draw(); return; }
+    let dir = hover?.p && len(sub(hover.p, from)) > 1 ? norm(sub(hover.p, from)) : cmd.lastDir || [1, 0];
+    if (neg) dir = mul(dir, -1);
+    const p = add(from, mul(dir, L)).map(v => Math.round(v * 10) / 10);
+    if (cmd.t === 'measure') measurePoint(p); else applyPoint(p);
+    if (lastMouse && cmd) { hover = hoverOf(...lastMouse); }
+    draw();
   }
   function dot2(s, r, c) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(s[0], s[1], r, 0, 7); ctx.fill(); }
   function tag(x, y, t, c) {
@@ -1687,22 +1770,24 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function renderCmd() {
     cmdEl.hidden = !cmd;
     if (!cmd) { cmdEl.innerHTML = ''; return; }
+    if (cmd.mid) { cmdEl.innerHTML = `<span class="bprompt">Mitte zwischen zwei Punkten: ${cmd.mid.a ? 'zweiten' : 'ersten'} Punkt tippen</span><button data-b="midpick" class="on">Mitte aus</button>`; return; }
+    const helpers = `<button data-b="midpick" title="Punkt in der Mitte zwischen zwei Punkten">Mitte</button><button data-dlg="snap" title="Fang-Einstellungen">Fang …</button>`;
     const done = '<button data-b="end" class="on">Fertig</button>', cancel = '<button data-b="end">Abbrechen</button>', c = cmd;
     const close = c.pts.length >= 3 ? '<button data-b="areaok" class="on">Schließen</button>' : '';
     let h = '';
     switch (c.t) {
       case 'wall':
         h = `<span class="bprompt">${c.pts.length ? 'Nächster Punkt' : 'Wand: Startpunkt tippen'}</span>${fld('th', c.th, 'Dicke')}<span class="ped-seg">${WALL_PRESETS.map(v => `<button data-wpre="${v}"${c.th === v ? ' class="on"' : ''}>${v}</button>`).join('')}</span>${seg('just', c.just, JUST)}`;
-        if (c.pts.length) h += `${fld('len', c.len ?? '', 'Länge', 'mm', '0')}<span class="ped-seg">${[['1,0', '→'], ['0,1', '↑'], ['-1,0', '←'], ['0,-1', '↓']].map(([v, t]) => `<button data-dir="${v}" title="Länge in diese Richtung">${t}</button>`).join('')}</span><button data-b="chain">Neu ansetzen</button>`;
-        h += done; break;
+        if (c.pts.length) h += `${fld('len', c.len ?? '', 'Länge', 'mm', '0')}<span class="ped-seg">${c.lastDir ? '<button data-dir="last" title="Länge in Richtung der letzten Wand">↗︎ weiter</button>' : ''}${[['1,0', '→'], ['0,1', '↑'], ['-1,0', '←'], ['0,-1', '↓']].map(([v, t]) => `<button data-dir="${v}" title="Länge in diese Richtung">${t}</button>`).join('')}</span><button data-b="chain">Neu ansetzen</button>`;
+        h += helpers + done; break;
       case 'column':
-        h = `<span class="bprompt">Stütze: Punkt tippen</span>${seg('shape', c.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']])}${c.shape === 'steel' ? profSel('cprof', c.prof) : fld('w', c.w, c.shape === 'round' ? 'Ø' : 'B') + (c.shape === 'round' ? '' : fld('d', c.d, 'T'))}${B.grids.length ? '<button data-b="colgrid">Auf alle Achsschnitte</button>' : ''}${done}`; break;
+        h = `<span class="bprompt">Stütze: Punkt tippen</span>${seg('shape', c.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']])}${c.shape === 'steel' ? profSel('cprof', c.prof) : fld('w', c.w, c.shape === 'round' ? 'Ø' : 'B') + (c.shape === 'round' ? '' : fld('d', c.d, 'T'))}${B.grids.length ? '<button data-b="colgrid">Auf alle Achsschnitte</button>' : ''}${helpers}${done}`; break;
       case 'beam':
-        h = `<span class="bprompt">${c.pts.length ? 'Ende tippen' : 'Träger: Anfang tippen'}</span>${seg('bshape', c.shape, [['rect', 'Unterzug'], ['steel', 'Stahl']])}${c.shape === 'steel' ? profSel('bprof', c.prof) : fld('bw', c.w, 'B') + fld('bh', c.bh, 'H')}${fld('btop', c.top, 'OK')}${done}`; break;
+        h = `<span class="bprompt">${c.pts.length ? 'Ende tippen' : 'Träger: Anfang tippen'}</span>${seg('bshape', c.shape, [['rect', 'Unterzug'], ['steel', 'Stahl']])}${c.shape === 'steel' ? profSel('bprof', c.prof) : fld('bw', c.w, 'B') + fld('bh', c.bh, 'H')}${fld('btop', c.top, 'OK')}${helpers}${done}`; break;
       case 'slab':
-        h = `<span class="bprompt">${c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : `${c.base ? 'Bodenplatte' : 'Decke'}: Umriss tippen`}</span>${seg('skind', c.base ? 'base' : 'slab', [['slab', 'Decke'], ['base', 'Bodenplatte']])}${fld('th', c.th, 'Dicke')}<button data-b="fromwalls">Aus Wänden</button>${close}${cancel}`; break;
+        h = `<span class="bprompt">${c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : `${c.base ? 'Bodenplatte' : 'Decke'}: Umriss tippen`}</span>${seg('skind', c.base ? 'base' : 'slab', [['slab', 'Decke'], ['base', 'Bodenplatte']])}${fld('th', c.th, 'Dicke')}<button data-b="fromwalls">Aus Wänden</button>${close}${helpers}${cancel}`; break;
       case 'roof':
-        h = `<span class="bprompt">${c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : 'Dach: Umriss tippen'}</span>${seg('rkind', c.kind, [['flat', 'Flach'], ['pitched', 'Geneigt']])}${fld('rbase', c.base, 'Traufe')}${fld('th', c.th, 'Dicke')}<button data-b="fromwalls">Aus Wänden</button>${close}${cancel}`; break;
+        h = `<span class="bprompt">${c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : 'Dach: Umriss tippen'}</span>${seg('rkind', c.kind, [['flat', 'Flach'], ['pitched', 'Geneigt']])}${fld('rbase', c.base, 'Traufe')}${fld('th', c.th, 'Dicke')}<button data-b="fromwalls">Aus Wänden</button>${close}${helpers}${cancel}`; break;
       case 'stair':
         h = `<span class="bprompt">${c.pts.length ? 'Laufrichtung tippen' : 'Treppe: Antritt tippen (Mitte der ersten Stufe)'}</span>${seg('stkind', c.kind, [['straight', 'Gerade'], ['u', 'Zweiläufig']])}${fld('stw', c.w, 'Breite')}${c.kind === 'u' ? seg('stside', String(c.side), [['1', 'Wende links'], ['-1', 'rechts']]) : ''}${done}`; break;
       case 'ceil':
@@ -1714,8 +1799,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         h = `<span class="bprompt">${c.kind === 'hole' ? 'Auf eine Decke tippen' : 'Auf eine Wand tippen'}</span>${seg('okind', c.kind, [['door', 'Tür'], ['window', 'Fenster'], ['opening', 'Durchbruch'], ['hole', 'Decke']])}${fld('ow', v.w, 'B')}${c.kind === 'hole' ? fld('od', v.d, 'T') : fld('oh', v.h, 'H')}${c.kind === 'window' || c.kind === 'opening' ? fld('osill', v.sill, c.kind === 'window' ? 'Brüstung' : 'UK') : ''}${done}`; break;
       }
       case 'grid': h = `<span class="bprompt">${c.pts.length ? 'Endpunkt der Achse' : 'Achse: zwei Punkte tippen'}</span><button data-dlg="grid">Raster erzeugen …</button>${done}`; break;
-      case 'measure': h = `${seg('mmode', c.mode, [['dist', 'Abstand'], ['chain', 'Kette'], ['area', 'Fläche'], ['pick', 'Bauteil']])}<span class="bprompt bau-mres">${esc(measRes())}</span>${c.pts.length || c.res ? '<button data-b="mclear">Neu</button>' : ''}${done}`; break;
-      case 'move': case 'copy': h = `<span class="bprompt">${c.pts.length ? 'Zielpunkt tippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} ${c.t === 'move' ? 'verschieben' : 'kopieren'}: Basispunkt tippen`}</span>${c.t === 'copy' ? fld('cn', c.n, 'Anzahl', 'Stk') : ''}${cancel}`; break;
+      case 'measure': h = `${seg('mmode', c.mode, [['dist', 'Abstand'], ['chain', 'Kette'], ['area', 'Fläche'], ['pick', 'Bauteil']])}<span class="bprompt bau-mres">${esc(measRes())}</span>${c.pts.length || c.res ? '<button data-b="mclear">Neu</button>' : ''}${c.mode === 'pick' ? '' : helpers}${done}`; break;
+      case 'move': case 'copy': h = `<span class="bprompt">${c.pts.length ? 'Zielpunkt tippen oder Abstand eintippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} ${c.t === 'move' ? 'verschieben' : 'kopieren'}: Basispunkt tippen`}</span>${c.t === 'copy' ? fld('cn', c.n, 'Anzahl', 'Stk') : ''}${helpers}${cancel}`; break;
       case 'split': h = `<span class="bprompt">Teilungspunkt auf der Wand tippen</span>${cancel}`; break;
       case 'tiles': h = `<span class="bprompt">Platten antippen: herausnehmen oder wieder einsetzen</span>${done}`; break;
       case 'gstart': h = `<span class="bprompt">Ecke der Rasterdecke antippen, von der das Raster beginnt</span>${cancel}`; break;
@@ -1930,6 +2015,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         <div class="ped-add"><button data-b="stcopy">${esc(curSt().name)} oben anfügen (Kopie)</button>${B.storeys.length > 1 ? `<button data-b="stdel">${esc(curSt().name)} löschen</button>` : ''}</div>
         <h5>Gelände</h5><div class="ped-grid"><span class="ped-seg"><button data-b="terrain"${B.terrain != null ? ' class="on"' : ''}>${B.terrain != null ? 'Gelände an' : 'Gelände aus'}</button></span>${B.terrain != null ? fld('dterrain', B.terrain, 'OK Gelände') : ''}</div>
         <p class="ped-hint">OK RD = Oberkante Rohdecke. Höhe ändern schiebt die Geschosse darüber mit. Keller: „+ unten“, dann Bodenplatte mit dem Deckenwerkzeug. Wechseln: Titel oben oder Bild auf/ab.</p>`,
+    }),
+    snap: () => ({
+      title: 'Fang',
+      body: `${SNAP_KEYS.map(([k, n]) => `<div class="bau-row"><span class="bau-rn"><b>${n}</b></span><span class="ped-seg"><button data-snapk="${k}"${snapCfg[k] ? ' class="on"' : ''}>${snapCfg[k] ? 'an' : 'aus'}</button></span></div>`).join('')}
+        <p class="ped-hint">Fluchten laufen waagerecht und senkrecht durch Punkte, über die der Zeiger gefahren ist (kleines Kreuz), durch die Punkte der laufenden Kette und am Touchscreen durch Punkte nahe dem Finger. Mit Ortho schneidet die Flucht den Strahl ab dem letzten Punkt.</p>
+        <p class="ped-hint">Mac: Shift gedrückt = ohne Fang. Länge einfach eintippen und Enter, Minus kehrt die Richtung um. „Mitte“ nimmt den Punkt genau zwischen zwei Punkten.</p>`,
     }),
     grid: () => ({
       title: 'Achsraster erzeugen',
@@ -2146,9 +2237,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k.startsWith('edge') && tgt?.type === 'roof') { const i = +k.slice(4); change(() => { tgt.edges ||= roofPreset(tgt.pts, 'walm'); tgt.edges[i] = { ...(tgt.edges[i] || { pitch: 30 }), eave: v === 't' }; }); }
       renderUi(); draw(); return;
     }
-    if (b.dataset.dir && cmd?.t === 'wall') { wallLen(b.dataset.dir.split(',').map(Number)); return; }
+    if (b.dataset.dir && cmd?.t === 'wall') { wallLen(b.dataset.dir === 'last' ? cmd.lastDir || [1, 0] : b.dataset.dir.split(',').map(Number)); return; }
+    if (b.dataset.snapk) { const k = b.dataset.snapk; snapCfg[k] = !snapCfg[k]; saveSnap(); renderDlg(); return; }
     const a = b.dataset.b;
     if (!a) return;
+    if (a === 'midpick' && cmd) { cmd.mid = cmd.mid ? null : {}; renderUi(); draw(); return; }
     if (a.startsWith('t:')) { const t = a.slice(2); moreOpen = false; if (cmd?.t === t) endCmd(); else startCmd(t); return; }
     switch (a) {
       case 'done': close(); return;
@@ -2362,7 +2455,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (t === 'gstart') return null;
     const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair'].includes(t) && cmd.pts.length ? cmd.pts.at(-1) : null;
     const extra = ['wall', 'slab', 'roof', 'ceil'].includes(t) && cmd.pts.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
-    return snapAt(x, y, { from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
+    return snapAt(x, y, { from: cmd.mid ? null : from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
   };
   cv.addEventListener('pointerdown', e => {
     try { cv.setPointerCapture(e.pointerId); } catch {}
@@ -2373,11 +2466,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; if (drag?.D) dragEnd(drag.D); drag = null; return; }
     const h = !cmd && e.button === 0 && !e.shiftKey ? handleAt(x, y) : null;
     drag = { pan: e.button === 2 || e.button === 1 || (cam.plan && !h), moved: false, D: h ? dragStart(h) : null, shift: e.shiftKey };
+    freeSnap = !!(e.shiftKey && cmd);
   });
   cv.addEventListener('pointermove', e => {
     const [x, y] = local(e), p = ptrs.get(e.pointerId);
     if (!p) {
-      if (e.pointerType === 'mouse') { touch = false; const h = hoverOf(x, y), hv = !cmd && handleAt(x, y); cv.style.cursor = hv ? 'grab' : ''; if (JSON.stringify(h) !== JSON.stringify(hover)) { hover = h; if (cmd?.t === 'measure') renderCmd(); draw(); } }
+      if (e.pointerType === 'mouse') { touch = false; lastMouse = [x, y]; freeSnap = !!(e.shiftKey && cmd); const h = hoverOf(x, y), hv = !cmd && handleAt(x, y); cv.style.cursor = hv ? 'grab' : ''; if (JSON.stringify(h) !== JSON.stringify(hover)) { hover = h; if (cmd?.t === 'measure') renderCmd(); draw(); } }
       return;
     }
     const dx = x - p.x, dy = y - p.y;
@@ -2414,9 +2508,18 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   cv.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = local(e); zoomAt(x, y, Math.exp(-e.deltaY * 0.0015)); draw(); }, { passive: false });
   // Tastatur (Mac, iPad mit Tastatur): Werkzeuge mit einem Buchstaben, Bild auf/ab wechselt das Geschoss
+  root.addEventListener('keyup', e => { if (e.key === 'Shift' && freeSnap) { freeSnap = false; if (lastMouse && cmd) hover = hoverOf(...lastMouse); draw(); } });
   root.addEventListener('keydown', e => {
     if (e.target.matches('input, select, textarea')) { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape' && e.target.matches('.bau-ren')) { dlg.ren = null; renderDlg(); } return; }
     const k = e.key.toLowerCase();
+    if (e.key === 'Shift' && cmd) { freeSnap = true; if (lastMouse) hover = hoverOf(...lastMouse); draw(); return; }
+    if (cmd && DYN.includes(cmd.t) && cmd.pts?.length && !(cmd.t === 'measure' && cmd.mode === 'pick') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (/^[0-9]$/.test(e.key) || ((e.key === ',' || e.key === '.') && !dyn.includes(','))) { dyn += e.key === '.' ? ',' : e.key; e.preventDefault(); draw(); return; }
+      if (e.key === '-') { dynNeg = !dynNeg; e.preventDefault(); draw(); return; }
+      if (dyn && e.key === 'Backspace') { dyn = dyn.slice(0, -1); e.preventDefault(); draw(); return; }
+      if (dyn && e.key === 'Enter') { e.preventDefault(); placeDyn(); return; }
+      if ((dyn || dynNeg) && e.key === 'Escape') { dyn = ''; dynNeg = false; draw(); return; }
+    }
     if (e.key === 'Escape') { if (!stPop.hidden) stPop.hidden = true; else if (cmd) endCmd(); else if (dlg) closeDlg(); else { sel = null; addMode = false; dirty = true; renderUi(); draw(); } return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { $(sel.grid ? '[data-b="delgrid"]' : '[data-b="del"]')?.click(); return; }
     if ((e.metaKey || e.ctrlKey) && k === 'z') { e.preventDefault(); $(`[data-b="${e.shiftKey ? 'redo' : 'undo'}"]`).click(); return; }

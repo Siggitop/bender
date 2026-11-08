@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 258**, siehe Abschnitt 6 bis 11. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 259**, siehe Abschnitt 6 bis 12. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -253,3 +253,13 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - Stöße, an denen eine durchlaufende Wand geteilt ist, werden wie T-Stöße behandelt (keine überlappenden Wandenden mehr).
 - Stützen in Wänden werden in der Anzeige 2 mm höher gezeichnet, damit ihre Oberseite nicht mit der Wandoberseite flimmert; Mengen und IFC bleiben exakt.
 - Die Gestaltung des Gebäude-Werkzeugs steckt im Modul selbst (nicht mehr in style.css). Vorher konnte eine neue building.js auf ein noch altes Stylesheet treffen, z. B. lag dann das Gebäude-Symbol über dem Namen.
+
+## 12. Version 259: Objektfang mit Fluchten
+
+- **Fluchten (Spurlinien):** Fährt der Zeiger über einen Punkt (Wandende, Wandecke, Mitte, Stütze, Achsschnitt), wird er erfasst (kleines Kreuz). Von erfassten Punkten, den Punkten der laufenden Kette und dem letzten Punkt laufen waagerechte und senkrechte Fluchten; der Zeiger rastet darauf ein, gestrichelt zum Bezugspunkt, Beschriftung z. B. „Flucht Wandmitte“. Am Touchscreen gelten zusätzlich Punkte nahe dem Finger.
+- **Ortho + Flucht/Linie:** Mit Ortho schneidet jede Flucht, Wandfläche, Achse oder Verlängerung den Strahl ab dem letzten Punkt („Flucht Wandmitte · Ortho“). Zwei Fluchten oder Linien nahe beieinander: ihr Schnittpunkt.
+- **Lot** vom letzten Punkt auf Wandflächen, Achsen, Kanten. **Verlängerung** von Wänden, Achsen und Kanten über ihre Enden hinaus.
+- **Mitte**: Knopf in der Befehlsleiste, dann zwei Punkte; der Punkt dazwischen gilt als getippt.
+- **Länge eintippen (Mac):** während des Zeichnens einfach Ziffern, Enter setzt den Punkt in Zeigerrichtung (sonst Richtung der letzten Strecke), Minus = Gegenrichtung. Gilt für Wände, Träger, Umrisse, Achsen, Messen, Verschieben, Kopieren. Touchscreen: Längenfeld mit „↗︎ weiter“ (Richtung der letzten Wand) und Pfeilen.
+- **Fang-Fenster** („Fang …“ in der Leiste): Endpunkte, Mitten, Achsen, Wandflächen, Fluchten, Lot, Verlängerungen, Raster 10 mm einzeln an/aus (je Gerät gespeichert). **Shift** gedrückt = ohne Fang.
+- Getestet mit Maus-Erfassung: Wand endet exakt unter einer Wandmitte, eingetippte 2500 mm, Schnitt zweier Fluchten, Lot auf Wandfläche, Verlängerung, Shift frei.
