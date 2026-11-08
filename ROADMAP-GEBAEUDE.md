@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 261**, siehe Abschnitt 6 bis 14. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 262**, siehe Abschnitt 6 bis 15. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -282,3 +282,11 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - **3D:** Rahmen, Pfosten, Kämpfer, Glas durchscheinend, Öffnungszeichen auf beiden Seiten. **Grundriss:** Pfostenteilung im Fensterband. **Messen/Tafel:** „3-teilig mit Oberlicht · DK | F | DK“.
 - **IFC:** IfcWindow mit Rahmen- und Glasgeometrie, PartitioningType nach IFC (z. B. TRIPLE_PANEL_VERTICAL, sonst USERDEFINED) und Eigenschaftssatz „Fenster“ (Teilung, Öffnungsart je Feld).
 - Noch offen: dasselbe für Türen (Seitenteil, Oberlicht, 2-flügelig mit Gang- und Standflügel), Fensterliste als Tabelle.
+
+## 15. Version 262: Stützen in Wänden, aufgeräumte Befehlsleisten
+
+- **Stützen schneiden Wände:** Eine Stütze, die in einer Wand steht, spart die Wand aus (3D, Grundriss, IFC-Geometrie). Die Wand bleibt ein Bauteil. Ist die Stütze schmaler als die Wand, bleibt der Rest der Wand neben der Stütze stehen. Die Ansichtsfläche der Wand zieht durchgehende Stützen ab.
+- **Stütze in die Wand setzen:** Tippen in eine Wand übernimmt die Wandrichtung (Drehung) und setzt die Stütze quer **bündig links, mittig oder bündig rechts** (Knopf „In der Wand“, links/rechts in Zeichenrichtung der Wand).
+- **Auswahlknöpfe statt Knopfreihen:** Alle Befehlsleisten zeigen Einstellungen als Knopf „Bezeichnung: Wert ▾“. Antippen öffnet eine Liste über dem Knopf, der gewählte Wert hat einen Haken; wo sinnvoll mit Feld für einen eigenen Wert (z. B. „Andere Dicke“). Wand: Typ, Dicke, Lage. Stütze: Art, Maß/Profil, In der Wand. Träger: Art, Maß/Profil. Decke/Dach: Art, Dicke. Öffnung: Art, Größe (gängige Maße + Breite/Höhe). Treppe: Form, Breite, Wende. Rasterdecke: Fläche, Platten. Messen: Art. In der Wand-Tafel ist der Wandtyp ebenfalls ein Auswahlknopf.
+- **Fang-Menü neu:** „Fang 7/8 ▾“ öffnet eine Liste mit Schaltern (an = blau) und kurzer Erklärung je Fangart; die Liste bleibt beim Umschalten offen. Der alte Fang-Dialog ist entfernt.
+- Getestet: Stütze 240 × 240 bündig links in senkrechte Wand 300 → Drehung 90°, 30 mm aus der Achse; bündig rechts in waagerechte Wand → 30 mm nach unten; IFC ohne fehlende Bezüge; Rohr-Selbsttest 9/9; Handygröße: Liste und Felder passen.

@@ -363,6 +363,40 @@ const BAU_CSS = `
 .bau .bau-step b { min-width: 22px; text-align: center; font-size: 17px; }
 .bau .bau-dlg .ped-grid > .bprompt { align-self: center; font-size: 13px; font-weight: 650; color: var(--text); }
 
+/* Auswahlknöpfe mit Liste */
+.bau .bau-cgrp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bau .bau-dd { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 10px 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font-size: 13px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
+.bau .bau-dd span { color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.bau .bau-dd b { font-weight: 700; }
+.bau .bau-dd i { font-style: normal; font-size: 10px; color: var(--muted); }
+.bau .bau-dd:active { background: var(--accent-soft); }
+.bau .ped-info .bau-dd { width: 100%; justify-content: space-between; min-height: 42px; border-radius: 12px; background: var(--bg); }
+.bau .ped-cmd > .bau-tg, .bau .bau-cgrp > .bau-tg { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); font-weight: 700; font-size: 13px; }
+.bau .bau-cgrp > .bau-tg.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bau .bau-ddpop { position: absolute; z-index: 7; display: flex; flex-direction: column; gap: 2px; padding: 6px; overflow: auto; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 16px 44px rgba(20, 40, 70, .22); }
+.bau .bau-ddpop[hidden] { display: none; }
+.bau .bau-ddh { padding: 6px 10px 4px; font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.bau .bau-ddo { display: flex; align-items: center; min-height: 38px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font-size: 14px; font-weight: 600; text-align: left; }
+.bau .bau-ddo.on { background: var(--accent-soft); color: var(--accent); }
+.bau .bau-ddo.on::after { content: '✓'; margin-left: auto; font-weight: 800; }
+@media (hover: hover) { .bau .bau-ddo:not(.on):hover, .bau .bau-sw:hover { background: var(--bg); } }
+.bau .bau-ddx { display: flex; gap: 8px; padding: 8px 6px 4px; margin-top: 4px; border-top: 1px solid var(--line); }
+.bau .bau-ddx .ped-f { flex: 1; display: flex; flex-direction: column; gap: 3px; position: relative; font-size: 11.5px; color: var(--muted); }
+.bau .bau-ddx .ped-f > span { font-weight: 650; }
+.bau .bau-ddx .ped-f input { width: 100%; min-height: 38px; padding: 4px 30px 4px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); text-align: right; font-size: 15px; font-weight: 650; }
+.bau .bau-ddx .ped-f > i { position: absolute; right: 10px; bottom: 11px; font-style: normal; font-size: 11.5px; }
+/* Fang: Schalter mit Bezeichnung und Erklärung */
+.bau .bau-sw { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border: 0; border-radius: 12px; background: transparent; text-align: left; color: var(--text); }
+.bau .bau-sw > i { position: relative; flex: none; width: 40px; height: 24px; border-radius: 99px; background: color-mix(in srgb, var(--muted) 35%, transparent); transition: background .15s; }
+.bau .bau-sw > i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: left .15s; }
+.bau .bau-sw.on > i { background: var(--accent); }
+.bau .bau-sw.on > i::after { left: 19px; }
+.bau .bau-sw span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.bau .bau-sw b { font-size: 13.5px; font-weight: 700; }
+.bau .bau-sw small { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.bau .bau-sw:not(.on) b { color: var(--muted); }
+.bau .bau-ddhint { margin: 6px 10px 4px; font-size: 11.5px; color: var(--muted); }
+
 `;
 
 export async function openBuilding(env) {
@@ -390,6 +424,7 @@ export async function openBuilding(env) {
     <div class="ped-info" hidden></div>
     <div class="bau-dlg" hidden></div>
     <div class="bau-stpop" hidden></div>
+    <div class="bau-ddpop" hidden></div>
     <div class="ped-bottom">
       <div class="ped-views bau-more" hidden>${MORE.map(([t, n]) => `<button data-b="t:${t}">${n}</button>`).join('')}</div>
       <div class="ped-cmd" hidden></div>
@@ -412,7 +447,7 @@ export async function openBuilding(env) {
   document.body.appendChild(root);
   const $ = s => root.querySelector(s);
   const glc = $('.ped-gl'), cv = $('.ped-2d'), ctx = cv.getContext('2d');
-  const listEl = $('.ped-list'), infoEl = $('.ped-info'), cmdEl = $('.ped-cmd'), moreEl = $('.bau-more'), dlgEl = $('.bau-dlg'), stPop = $('.bau-stpop');
+  const listEl = $('.ped-list'), infoEl = $('.ped-info'), cmdEl = $('.ped-cmd'), moreEl = $('.bau-more'), dlgEl = $('.bau-dlg'), stPop = $('.bau-stpop'), ddPop = $('.bau-ddpop');
 
   // ---------- Zustand ----------
   // zuletzt geöffnetes Gebäude, sonst das erste vorhandene, sonst ein neues (dann Startfenster)
@@ -611,9 +646,22 @@ export async function openBuilding(env) {
     }
   }
   const zOf = e => (OPS.includes(e.type) ? opZ(e) : zRange(e));
+  // Stützen in einer Wand: Bereich entlang der Wand, Höhe, Lage quer (null = über die ganze Wanddicke)
+  function wallColCuts(w, poly = wallPoly(w)) {
+    const { d } = wallAxis(w), n = perp(d), [wlo, whi] = wallOffs(w), sv = p => dot(sub(p, w.a), d), lat = p => dot(sub(p, w.a), n);
+    const ws = poly.map(sv), sMin = Math.min(...ws), sMax = Math.max(...ws), out = [];
+    B.els.forEach(c => {
+      if (c.type !== 'column' || c.storey !== w.storey) return;
+      const P = colPoly(c), ss = P.map(sv), ls = P.map(lat), l0 = Math.min(...ls), l1 = Math.max(...ls), s0 = Math.min(...ss), s1 = Math.max(...ss);
+      if (l1 <= wlo + 0.5 || l0 >= whi - 0.5 || s1 <= sMin + 0.5 || s0 >= sMax - 0.5) return;
+      const [cz0, cz1] = zRange(c);
+      out.push({ s0, s1, b: cz0, t: cz1, lat: l0 <= wlo + 0.5 && l1 >= whi - 0.5 ? null : [l0, l1], col: c.id });
+    });
+    return out;
+  }
   function wallPieces(w) {
-    const poly = wallPoly(w), [z0, z1] = zRange(w), { d } = wallAxis(w);
-    const ops = B.els.filter(o => o.host === w.id && WALL_OPS.includes(o.type)).map(o => ({ s0: o.at - o.w / 2, s1: o.at + o.w / 2, b: z0 + (o.sill || 0), t: z0 + (o.sill || 0) + o.h }));
+    const poly = wallPoly(w), [z0, z1] = zRange(w), { d } = wallAxis(w), n = perp(d), lat = p => dot(sub(p, w.a), n);
+    const ops = [...B.els.filter(o => o.host === w.id && WALL_OPS.includes(o.type)).map(o => ({ s0: o.at - o.w / 2, s1: o.at + o.w / 2, b: z0 + (o.sill || 0), t: z0 + (o.sill || 0) + o.h })), ...wallColCuts(w, poly)];
     if (!ops.length) return [{ poly, z0, z1 }];
     const sv = p => dot(sub(p, w.a), d), cuts = [...new Set([-1e7, ...ops.flatMap(o => [o.s0, o.s1]), 1e7])].sort((a, b) => a - b), out = [];
     for (let i = 0; i < cuts.length - 1; i++) {
@@ -624,6 +672,11 @@ export async function openBuilding(env) {
       const lo2 = Math.min(...hit.map(o => o.b)), hi2 = Math.max(...hit.map(o => o.t));
       if (lo2 > z0 + 0.5) out.push({ poly: strip, z0, z1: Math.min(lo2, z1) });
       if (hi2 < z1 - 0.5) out.push({ poly: strip, z0: Math.max(hi2, z0), z1 });
+      // Stütze schmaler als die Wand: die Wand bleibt neben der Stütze stehen
+      if (!hit.some(o => !o.lat)) {
+        const o = hit[0], zb = Math.max(lo2, z0), zt = Math.min(hi2, z1);
+        if (zt > zb + 0.5) [clipBy(strip, p => o.lat[0] - lat(p)), clipBy(strip, p => lat(p) - o.lat[1])].forEach(Q => { if (Q.length >= 3 && Math.abs(area2(Q)) > 1) out.push({ poly: Q, z0: zb, z1: zt }); });
+      }
     }
     return out;
   }
@@ -846,7 +899,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const k = colOf(e);
       let c = isSel(e.id) ? (cam.plan ? acc : acc.map(v => v * 0.7 + 0.3)) : ((cam.plan ? PLAN[k] : null) || COL[k]);
       if (s.id !== cur && !isSel(e.id)) c = c.map(v => v * 0.92 + 0.06);
-      elemMesh(e, c, e.type === 'ceil' || e.type === 'shaft' ? trans : tris, lines, e.type === 'column' ? 2 : 0);
+      elemMesh(e, c, e.type === 'ceil' || e.type === 'shaft' ? trans : tris, lines);
     }
     // Gelände: durchscheinende Fläche um das Gebäude
     if (B.terrain != null && !B.vis.off.terrain && !cam.plan && B.els.length) {
@@ -1018,6 +1071,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function snapAt(x, y, o = {}) { const res = snapRaw(x, y, o); if (res?.p) res.p = res.p.map(v => Math.round(v * 10) / 10); return res; }
   // ---------- Fang-Einstellungen (je Gerät) ----------
   const SNAP_KEYS = [['end', 'Endpunkte und Ecken'], ['mid', 'Mitten'], ['grid', 'Achsen und Achsschnitte'], ['face', 'Wandflächen, Achsen, Kanten'], ['track', 'Fluchten (Spurlinien)'], ['perp', 'Lot'], ['ext', 'Verlängerungen'], ['round', 'Raster 10 mm']];
+  const SNAP_HELP = { end: 'Wandenden, Wand- und Raumecken, Stützen', mid: 'Mitte von Wänden, Trägern und Kanten', grid: 'Achslinien und ihre Schnittpunkte', face: 'auf Wandflächen, Wandachsen und Kanten entlang', track: 'waagerecht/senkrecht durch erfasste Punkte (Kreuz)', perp: 'senkrecht vom letzten Punkt auf eine Linie', ext: 'über Wand- und Achsenden hinaus', round: 'freie Punkte und Längen auf 10 mm' };
   const snapCfg = (() => { const d = Object.fromEntries(SNAP_KEYS.map(([k]) => [k, true])); try { return { ...d, ...JSON.parse(localStorage.getItem('biege.bau.snap') || '{}') }; } catch { return d; } })();
   const saveSnap = () => { try { localStorage.setItem('biege.bau.snap', JSON.stringify(snapCfg)); } catch {} };
   // erfasste Punkte: Fluchten laufen von Punkten, über die der Zeiger zuletzt gefahren ist (wie in CAD üblich)
@@ -1189,14 +1243,14 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
 
   // ---------- Befehle ----------
   const last = {
-    wall: { th: 240, just: 'c', kind: 'iwt' }, col: { shape: 'rect', w: 300, d: 300, prof: 'HEB 200' }, slab: { th: 250, base: false },
+    wall: { th: 240, just: 'c', kind: 'iwt' }, col: { shape: 'rect', w: 300, d: 300, prof: 'HEB 200', align: 'c' }, slab: { th: 250, base: false },
     stair: { kind: 'straight', w: 1000, g: 270, side: 1 }, meas: 'dist',
     beam: { shape: 'rect', w: 300, bh: 500, prof: 'IPE 300' }, roof: { kind: 'flat', th: 250 }, ceil: { z: 2600, gx: 625, gy: 625, mode: 'room' },
     op: { kind: 'door', v: structuredClone(OP_DEF) }, copyN: 1,
   };
   const DRAW = ['wall', 'column', 'beam', 'slab', 'grid', 'open', 'roof', 'ceil', 'space', 'shaft', 'stair', 'measure', 'gstart'];
   function startCmd(t, extra = {}) {
-    acq = []; dyn = '';
+    acq = []; dyn = ''; closeDD();
     if (!['move', 'copy', 'split', 'tiles', 'gstart', 'measure'].includes(t)) sel = null;
     hover = null; gridForm = false; addMode = false; moreOpen = false;
     if (t === 'sel') { cmd = null; dirty = true; renderUi(); draw(); return; }
@@ -1217,7 +1271,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     Object.assign(cmd, extra);
     dirty = true; renderUi(); draw();
   }
-  function endCmd() { cmd = null; hover = null; acq = []; dyn = ''; dirty = true; renderUi(); draw(); }
+  function endCmd() { closeDD(); cmd = null; hover = null; acq = []; dyn = ''; dirty = true; renderUi(); draw(); }
   // Vorschau des laufenden Befehls als durchsichtiger Körper
   function cmdPreview() {
     if (!cmd) return null;
@@ -1387,7 +1441,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'ceil': { const T = ceilTiles(e); return [['Fläche', `${fmt2(A(e.pts) - (e.holes || []).reduce((a, h) => a + A(h), 0))} m²`], ['Platten', `${T.full.filter(t => !t.off).length} voll, ${T.cut.filter(t => !t.off).length} Zuschnitt`]]; }
       case 'shaft': return [['Querschnitt', `${fmt2(A(e.pts))} m²`], ['Umfang', `${fmt(perim(e.pts))} mm`]];
       case 'roof': { const g = roofGeo(e); let roofA = A(g.outer); if (e.kind === 'pitched') roofA = g.facets.reduce((a, F) => { const lo = F.map(p => [p[0], p[1], g.H(p)]); const nn = norm(cross3(sub(lo[1], lo[0]), sub(lo[2], lo[0]))); return a + A(F) / Math.max(0.05, Math.abs(nn[2])); }, 0); return [['Grundfläche', `${fmt2(A(g.outer))} m²`], ['Dachfläche', `${fmt2(roofA)} m²`]]; }
-      case 'wall': { const L = len(sub(e.b, e.a)), [z0, z1] = zRange(e), ops = B.els.filter(o => o.host === e.id && WALL_OPS.includes(o.type)); return [['Länge', `${fmt(L)} mm`], ['Höhe', `${fmt(z1 - z0)} mm`], ['Ansichtsfläche', `${fmt2((L * (z1 - z0) - ops.reduce((a, o) => a + o.w * o.h, 0)) / 1e6)} m²`]]; }
+      case 'wall': { const L = len(sub(e.b, e.a)), [z0, z1] = zRange(e), ops = B.els.filter(o => o.host === e.id && WALL_OPS.includes(o.type)), cc = wallColCuts(e).filter(o => !o.lat).reduce((a, o) => a + (Math.min(o.s1, L) - Math.max(o.s0, 0)) * (Math.min(o.t, z1) - Math.max(o.b, z0)), 0); return [['Länge', `${fmt(L)} mm`], ['Höhe', `${fmt(z1 - z0)} mm`], ['Ansichtsfläche', `${fmt2((L * (z1 - z0) - ops.reduce((a, o) => a + o.w * o.h, 0) - Math.max(0, cc)) / 1e6)} m²`]]; }
       case 'beam': return [['Länge', `${fmt(len(sub(e.b, e.a)))} mm`]];
       case 'column': { const [z0, z1] = zRange(e); return [['Höhe', `${fmt(z1 - z0)} mm`]]; }
       case 'stair': { const g = stairGeo(e); return [['Steigungen', `${g.n} × ${fmt(g.h)} mm`], ['Auftritt', `${fmt(g.g)} mm`], ['Lauflänge', `${fmt(g.L)} mm`]]; }
@@ -1536,6 +1590,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     applyPoint(s.p);
   }
   // Ein Punkt für den laufenden Befehl (aus dem Fang, aus „Mitte“ oder aus der eingetippten Länge)
+  // Stütze in einer Wand: Richtung der Wand übernehmen, quer mittig oder bündig zur Wandfläche
+  function colInWall(p) {
+    const wl = B.els.find(w => { if (w.type !== 'wall' || w.storey !== cur) return false; const { d, L } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), s2 = dot(sub(p, w.a), d), l2 = dot(sub(p, w.a), n); return s2 > -1 && s2 < L + 1 && l2 > lo - 1 && l2 < hi + 1; });
+    if (!wl) return { p, rot: 0 };
+    const { d } = wallAxis(wl), n = perp(d), [lo, hi] = wallOffs(wl), s2 = dot(sub(p, wl.a), d), sec = cmd.shape === 'steel' ? steelSection(cmd.prof) : null, depth = cmd.shape === 'round' ? cmd.w : sec ? sec.h : cmd.d;
+    const latT = cmd.align === 'l' ? hi - depth / 2 : cmd.align === 'r' ? lo + depth / 2 : (lo + hi) / 2;
+    const rot = Math.round(Math.atan2(d[1], d[0]) * 180 / Math.PI * 100) / 100;
+    return { p: add(add(wl.a, mul(d, s2)), mul(n, latT)).map(v => Math.round(v * 10) / 10), rot: ((rot % 360) + 360) % 360, wall: wl };
+  }
   function applyPoint(p) {
     const t = cmd.t;
     if (cmd.pts.length) cmd.lastDir = len(sub(p, cmd.pts.at(-1))) > 1 ? norm(sub(p, cmd.pts.at(-1))) : cmd.lastDir;
@@ -1545,7 +1608,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
         if (near(p, cmd.pts[0], 50)) return;
         addStair(cmd.pts[0], norm(sub(p, cmd.pts[0]))); cmd.pts = []; renderUi(); draw(); return;
-      case 'column': addEl({ type: 'column', p, shape: cmd.shape, w: cmd.w, d: cmd.shape === 'round' ? cmd.w : cmd.d, prof: cmd.prof, rot: 0, h: null }); return;
+      case 'column': { const q = colInWall(p); addEl({ type: 'column', p: q.p, shape: cmd.shape, w: cmd.w, d: cmd.shape === 'round' ? cmd.w : cmd.d, prof: cmd.prof, rot: q.rot, h: null }); if (q.wall) env.toast(`Stütze in der Wand (${cmd.align === 'l' ? 'bündig links' : cmd.align === 'r' ? 'bündig rechts' : 'mittig'}), Wand ist ausgespart.`); return; }
       case 'beam':
         if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
         if (near(p, cmd.pts[0], 10)) return;
@@ -1970,48 +2033,88 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (cmd) { cmd.pts = []; if (cmd.t === 'measure') { cmd.closed = false; cmd.res = null; } }
     dirty = true; renderUi(); draw();
   }
+  // Auswahlknopf mit Liste: zeigt den aktuellen Wert, antippen öffnet die Liste darüber. k wie bei seg (Wahl läuft über denselben Weg)
+  const DD = {};
+  const dd = (k, label, val, opts, extra = '') => {
+    DD[k] = { opts, val, extra, label };
+    const curO = opts.find(o => String(o[0]) === String(val));
+    return `<button class="bau-dd" data-ddk="${k}"${label ? ` title="${esc(label)}"` : ''}>${label ? `<span>${label}</span>` : ''}<b>${esc(curO ? curO[1] : val === '' || val == null ? 'nicht festgelegt' : val)}</b><i>▾</i></button>`;
+  };
+  const mmOpts = (vs, cur) => [...vs, ...(cur != null && !vs.includes(+cur) ? [+cur] : [])].sort((a, b) => b - a).map(v => [v, `${fmt(v)} mm`]);
+  const profOpts = () => Object.keys(STEEL).map(n => [n, n]);
+  const OP_SIZES = { door: [[885, 2135], [1010, 2135], [1135, 2135], [1260, 2135], [1760, 2135], [2010, 2135]], window: [[885, 1385], [1010, 1385], [1260, 1385], [1760, 1385], [2010, 1385], [2510, 1385], [1010, 2135], [2010, 2135]], opening: [[150, 150], [200, 200], [300, 300], [400, 400], [600, 400], [1000, 500]], hole: [[200, 200], [300, 300], [600, 400], [1000, 600], [1200, 1200]] };
   function renderCmd() {
     cmdEl.hidden = !cmd;
     if (!cmd) { cmdEl.innerHTML = ''; return; }
     if (cmd.mid) { cmdEl.innerHTML = `<span class="bprompt">Mitte zwischen zwei Punkten: ${cmd.mid.a ? 'zweiten' : 'ersten'} Punkt tippen</span><button data-b="midpick" class="on">Mitte aus</button>`; return; }
-    const helpers = `<button data-b="ortho"${orthoOn ? ' class="on"' : ''} title="Ortho-Modus: nur waagerecht und senkrecht (F8)">Ortho</button><button data-b="midpick" title="Punkt in der Mitte zwischen zwei Punkten">Mitte</button><button data-dlg="snap" title="Fang-Einstellungen">Fang …</button>`;
+    const nOn = SNAP_KEYS.filter(([k]) => snapCfg[k]).length;
+    const helpers = `<span class="bau-cgrp"><button data-b="ortho" class="bau-tg${orthoOn ? ' on' : ''}" title="Ortho-Modus: nur waagerecht und senkrecht (F8)">Ortho</button><button data-b="midpick" class="bau-tg" title="Punkt in der Mitte zwischen zwei Punkten">Mitte</button><button class="bau-dd" data-ddk="snap" title="Fang-Einstellungen"><span>Fang</span><b>${nOn}/${SNAP_KEYS.length}</b><i>▾</i></button></span>`;
     const done = '<button data-b="end" class="on">Fertig</button>', cancel = '<button data-b="end">Abbrechen</button>', c = cmd;
     const close = c.pts.length >= 3 ? '<button data-b="areaok" class="on">Schließen</button>' : '';
+    const P = t => `<span class="bprompt">${t}</span>`, G = (...x) => `<span class="bau-cgrp">${x.join('')}</span>`;
     let h = '';
     switch (c.t) {
       case 'wall':
-        h = `<span class="bprompt">${c.pts.length ? 'Nächster Punkt' : 'Wand: Startpunkt tippen'}</span>${seg('wkind', c.kind, WALL_SEG)}${fld('th', c.th, 'Dicke')}<span class="ped-seg">${WALL_PRESETS.map(v => `<button data-wpre="${v}"${c.th === v ? ' class="on"' : ''}>${v}</button>`).join('')}</span>${seg('just', c.just, JUST)}`;
-        if (c.pts.length) h += `${fld('len', c.len ?? '', 'Länge', 'mm', '0')}<span class="ped-seg">${c.lastDir ? '<button data-dir="last" title="Länge in Richtung der letzten Wand">↗︎ weiter</button>' : ''}${[['1,0', '→'], ['0,1', '↑'], ['-1,0', '←'], ['0,-1', '↓']].map(([v, t]) => `<button data-dir="${v}" title="Länge in diese Richtung">${t}</button>`).join('')}</span><button data-b="chain">Neu ansetzen</button>`;
+        h = P(c.pts.length ? 'Nächster Punkt' : 'Wand: Startpunkt tippen') + G(dd('wkind', 'Typ', c.kind, WALL_KINDS.map(([k, n]) => [k, n])), dd('wth', 'Dicke', c.th, mmOpts(WALL_PRESETS, c.th), `<div class="bau-ddx">${fld('th', c.th, 'Andere Dicke')}</div>`), dd('just', 'Lage', c.just, [['l', 'Links der Achse'], ['c', 'Mittig'], ['r', 'Rechts der Achse']]));
+        if (c.pts.length) h += G(fld('len', c.len ?? '', 'Länge', 'mm', '0'), `<span class="ped-seg">${c.lastDir ? '<button data-dir="last" title="In Richtung der letzten Wand">↗︎</button>' : ''}${[['1,0', '→'], ['0,1', '↑'], ['-1,0', '←'], ['0,-1', '↓']].map(([v, t]) => `<button data-dir="${v}" title="Länge in diese Richtung">${t}</button>`).join('')}</span>`) + '<button data-b="chain">Neu ansetzen</button>';
         h += helpers + done; break;
-      case 'column':
-        h = `<span class="bprompt">Stütze: Punkt tippen</span>${seg('shape', c.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']])}${c.shape === 'steel' ? profSel('cprof', c.prof) : fld('w', c.w, c.shape === 'round' ? 'Ø' : 'B') + (c.shape === 'round' ? '' : fld('d', c.d, 'T'))}${B.grids.length ? '<button data-b="colgrid">Auf alle Achsschnitte</button>' : ''}${helpers}${done}`; break;
-      case 'beam':
-        h = `<span class="bprompt">${c.pts.length ? 'Ende tippen' : 'Träger: Anfang tippen'}</span>${seg('bshape', c.shape, [['rect', 'Unterzug'], ['steel', 'Stahl']])}${c.shape === 'steel' ? profSel('bprof', c.prof) : fld('bw', c.w, 'B') + fld('bh', c.bh, 'H')}${fld('btop', c.top, 'OK')}${helpers}${done}`; break;
-      case 'slab':
-        h = `<span class="bprompt">${c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : `${c.base ? 'Bodenplatte' : 'Decke'}: Umriss tippen`}</span>${seg('skind', c.base ? 'base' : 'slab', [['slab', 'Decke'], ['base', 'Bodenplatte']])}${fld('th', c.th, 'Dicke')}<button data-b="fromwalls">Aus Wänden</button>${close}${helpers}${cancel}`; break;
-      case 'roof':
-        h = `<span class="bprompt">${c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : 'Dach: Umriss tippen'}</span>${seg('rkind', c.kind, [['flat', 'Flach'], ['pitched', 'Geneigt']])}${fld('rbase', c.base, 'Traufe')}${fld('th', c.th, 'Dicke')}<button data-b="fromwalls">Aus Wänden</button>${close}${helpers}${cancel}`; break;
-      case 'stair':
-        h = `<span class="bprompt">${c.pts.length ? 'Laufrichtung tippen' : 'Treppe: Antritt tippen (Mitte der ersten Stufe)'}</span>${seg('stkind', c.kind, [['straight', 'Gerade'], ['u', 'Zweiläufig']])}${fld('stw', c.w, 'Breite')}${c.kind === 'u' ? seg('stside', String(c.side), [['1', 'Wende links'], ['-1', 'rechts']]) : ''}${done}`; break;
-      case 'ceil':
-        h = `<span class="bprompt">${c.mode === 'room' ? 'In einen Raum tippen' : c.pts.length ? `${c.pts.length} Punkte` : 'Umriss tippen'}</span>${seg('cmode', c.mode, [['room', 'Raum'], ['poly', 'Umriss']])}${fld('cz', c.z, 'UK')}${fld('cgx', c.gx, 'Raster')}${c.mode === 'poly' ? close : ''}${done}`; break;
-      case 'space': h = `<span class="bprompt">Raum: in einen von Wänden umschlossenen Bereich tippen</span>${done}`; break;
-      case 'shaft': h = `<span class="bprompt">${c.pts.length ? 'Gegenüberliegende Ecke' : 'Schacht: erste Ecke tippen'}</span>${storeySel('shto', c.to, curSt())}${done}`; break;
-      case 'open': {
-        const v = c[c.kind];
-        h = `<span class="bprompt">${c.kind === 'hole' ? 'Auf eine Decke tippen' : 'Auf eine Wand tippen'}</span>${seg('okind', c.kind, [['door', 'Tür'], ['window', 'Fenster'], ['opening', 'Durchbruch'], ['hole', 'Decke']])}${fld('ow', v.w, 'B')}${c.kind === 'hole' ? fld('od', v.d, 'T') : fld('oh', v.h, 'H')}${c.kind === 'window' || c.kind === 'opening' ? fld('osill', v.sill, c.kind === 'window' ? 'Brüstung' : 'UK') : ''}${done}`; break;
+      case 'column': {
+        const sizes = c.shape === 'round' ? [['r250', 'Ø 250'], ['r300', 'Ø 300'], ['r400', 'Ø 400'], ['r500', 'Ø 500']] : [['240x240', '240 × 240'], ['300x300', '300 × 300'], ['400x400', '400 × 400'], ['500x500', '500 × 500'], ['300x500', '300 × 500']];
+        const cur2 = c.shape === 'round' ? `r${c.w}` : `${c.w}x${c.d}`;
+        h = P('Stütze: Punkt tippen') + G(dd('shape', 'Art', c.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']]),
+          c.shape === 'steel' ? dd('cprofdd', 'Profil', c.prof, profOpts()) : dd('cdim', 'Maß', sizes.some(x => x[0] === cur2) ? cur2 : cur2, sizes.some(x => x[0] === cur2) ? sizes : [...sizes, [cur2, c.shape === 'round' ? `Ø ${c.w}` : `${c.w} × ${c.d}`]], `<div class="bau-ddx">${fld('w', c.w, c.shape === 'round' ? 'Ø' : 'Breite')}${c.shape === 'round' ? '' : fld('d', c.d, 'Tiefe')}</div>`),
+          dd('calign', 'In der Wand', c.align || 'c', [['l', 'Bündig links'], ['c', 'Mittig'], ['r', 'Bündig rechts']]))
+          + (B.grids.length ? '<button data-b="colgrid">Auf alle Achsschnitte</button>' : '') + helpers + done; break;
       }
-      case 'grid': h = `<span class="bprompt">${c.pts.length ? 'Endpunkt der Achse' : 'Achse: zwei Punkte tippen'}</span><button data-dlg="grid">Raster erzeugen …</button>${done}`; break;
-      case 'measure': h = `${seg('mmode', c.mode, [['dist', 'Abstand'], ['chain', 'Kette'], ['area', 'Fläche'], ['pick', 'Bauteil']])}<span class="bprompt bau-mres">${esc(measRes())}</span>${c.pts.length || c.res ? '<button data-b="mclear">Neu</button>' : ''}${c.mode === 'pick' ? '' : helpers}${done}`; break;
-      case 'move': case 'copy': h = `<span class="bprompt">${c.pts.length ? 'Zielpunkt tippen oder Abstand eintippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} ${c.t === 'move' ? 'verschieben' : 'kopieren'}: Basispunkt tippen`}</span>${c.t === 'copy' ? fld('cn', c.n, 'Anzahl', 'Stk') : ''}${helpers}${cancel}`; break;
-      case 'split': h = `<span class="bprompt">Teilungspunkt auf der Wand tippen</span>${cancel}`; break;
-      case 'tiles': h = `<span class="bprompt">Platten antippen: herausnehmen oder wieder einsetzen</span>${done}`; break;
-      case 'gstart': h = `<span class="bprompt">Ecke der Rasterdecke antippen, von der das Raster beginnt</span>${cancel}`; break;
-      case 'cal': h = `<span class="bprompt">${c.pts.length < 2 ? `Kalibrieren: ${c.pts.length ? 'zweiten' : 'ersten'} Punkt auf dem Plan tippen` : 'Echter Abstand'}</span>${c.pts.length === 2 ? `${fld('real', c.real, 'Abstand')}<button data-b="calok" class="on">Übernehmen</button>` : ''}${cancel}`; break;
-      case 'umove': h = `<span class="bprompt">${c.pts.length ? 'Zielpunkt tippen (fängt an Achsen und Wänden)' : 'Unterlage verschieben: Punkt auf dem Plan tippen'}</span>${cancel}`; break;
+      case 'beam': {
+        const sizes = [['240x400', '240 × 400'], ['300x500', '300 × 500'], ['400x600', '400 × 600'], ['400x800', '400 × 800']], cur2 = `${c.w}x${c.bh}`;
+        h = P(c.pts.length ? 'Ende tippen' : 'Träger: Anfang tippen') + G(dd('bshape', 'Art', c.shape, [['rect', 'Unterzug'], ['steel', 'Stahlträger']]),
+          c.shape === 'steel' ? dd('bprofdd', 'Profil', c.prof, profOpts()) : dd('bdim', 'Maß', cur2, sizes.some(x => x[0] === cur2) ? sizes : [...sizes, [cur2, `${c.w} × ${c.bh}`]], `<div class="bau-ddx">${fld('bw', c.w, 'Breite')}${fld('bh', c.bh, 'Höhe')}</div>`), fld('btop', c.top, 'OK')) + helpers + done; break;
+      }
+      case 'slab':
+        h = P(c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : `${c.base ? 'Bodenplatte' : 'Decke'}: Umriss tippen`) + G(dd('skind', 'Art', c.base ? 'base' : 'slab', [['slab', 'Decke'], ['base', 'Bodenplatte']]), dd('sth', 'Dicke', c.th, mmOpts([160, 180, 200, 220, 250, 300, 350, 400], c.th), `<div class="bau-ddx">${fld('th', c.th, 'Andere Dicke')}</div>`)) + `<button data-b="fromwalls">Aus Wänden</button>${close}${helpers}${cancel}`; break;
+      case 'roof':
+        h = P(c.pts.length ? `${c.pts.length} Punkte · Startpunkt schließt` : 'Dach: Umriss tippen') + G(dd('rkind', 'Art', c.kind, [['flat', 'Flachdach'], ['pitched', 'Geneigt']]), dd('sth', 'Dicke', c.th, mmOpts([200, 250, 300, 350], c.th), `<div class="bau-ddx">${fld('th', c.th, 'Andere Dicke')}</div>`), fld('rbase', c.base, 'Traufe')) + `<button data-b="fromwalls">Aus Wänden</button>${close}${helpers}${cancel}`; break;
+      case 'stair':
+        h = P(c.pts.length ? 'Laufrichtung tippen' : 'Treppe: Antritt tippen (Mitte der ersten Stufe)') + G(dd('stkind', 'Form', c.kind, [['straight', 'Gerade'], ['u', 'Zweiläufig mit Podest']]), dd('stwdd', 'Breite', c.w, mmOpts([900, 1000, 1100, 1200, 1250], c.w), `<div class="bau-ddx">${fld('stw', c.w, 'Andere Breite')}</div>`), c.kind === 'u' ? dd('stside', 'Wende', String(c.side), [['1', 'Links herum'], ['-1', 'Rechts herum']]) : '') + done; break;
+      case 'ceil':
+        h = P(c.mode === 'room' ? 'In einen Raum tippen' : c.pts.length ? `${c.pts.length} Punkte` : 'Umriss tippen') + G(dd('cmode', 'Fläche', c.mode, [['room', 'Ganzer Raum'], ['poly', 'Umriss zeichnen']]), dd('cgdd', 'Platten', `${c.gx}x${c.gy}`, TILE_PRESETS.map(([a, b2]) => [`${a}x${b2}`, `${a} × ${b2}`])), fld('cz', c.z, 'UK')) + `${c.mode === 'poly' ? close : ''}${done}`; break;
+      case 'space': h = P('Raum: in einen von Wänden umschlossenen Bereich tippen') + done; break;
+      case 'shaft': h = P(c.pts.length ? 'Gegenüberliegende Ecke' : 'Schacht: erste Ecke tippen') + G(dd('shtodd', 'Bis', c.to, [...sorted()].filter(s => s.elev >= curSt().elev).reverse().map(s => [s.id, s.name]))) + done; break;
+      case 'open': {
+        const v = c[c.kind], sz = OP_SIZES[c.kind], cur2 = `${v.w}x${c.kind === 'hole' ? v.d : v.h}`;
+        h = P(c.kind === 'hole' ? 'Auf eine Decke tippen' : 'Auf eine Wand tippen') + G(dd('okind', 'Art', c.kind, [['door', 'Tür'], ['window', 'Fenster'], ['opening', 'Wanddurchbruch'], ['hole', 'Deckendurchbruch']]),
+          dd('osize', 'Größe', cur2, sz.some(([a, b2]) => `${a}x${b2}` === cur2) ? sz.map(([a, b2]) => [`${a}x${b2}`, `${a} × ${b2}`]) : [...sz.map(([a, b2]) => [`${a}x${b2}`, `${a} × ${b2}`]), [cur2, `${v.w} × ${c.kind === 'hole' ? v.d : v.h}`]], `<div class="bau-ddx">${fld('ow', v.w, 'Breite')}${c.kind === 'hole' ? fld('od', v.d, 'Tiefe') : fld('oh', v.h, 'Höhe')}</div>`),
+          c.kind === 'window' || c.kind === 'opening' ? fld('osill', v.sill, c.kind === 'window' ? 'Brüstung' : 'UK') : '') + done; break;
+      }
+      case 'grid': h = P(c.pts.length ? 'Endpunkt der Achse' : 'Achse: zwei Punkte tippen') + `<button data-dlg="grid">Raster erzeugen …</button>${helpers}${done}`; break;
+      case 'measure': h = G(dd('mmode', 'Messen', c.mode, [['dist', 'Abstand'], ['chain', 'Kette'], ['area', 'Fläche'], ['pick', 'Bauteil antippen']])) + `<span class="bprompt bau-mres">${esc(measRes())}</span>${c.pts.length || c.res ? '<button data-b="mclear">Neu</button>' : ''}${c.mode === 'pick' ? '' : helpers}${done}`; break;
+      case 'move': case 'copy': h = P(c.pts.length ? 'Zielpunkt tippen oder Abstand eintippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} ${c.t === 'move' ? 'verschieben' : 'kopieren'}: Basispunkt tippen`) + (c.t === 'copy' ? fld('cn', c.n, 'Anzahl', 'Stk') : '') + helpers + cancel; break;
+      case 'split': h = P('Teilungspunkt auf der Wand tippen') + cancel; break;
+      case 'tiles': h = P('Platten antippen: herausnehmen oder wieder einsetzen') + done; break;
+      case 'gstart': h = P('Ecke der Rasterdecke antippen, von der das Raster beginnt') + cancel; break;
+      case 'cal': h = P(c.pts.length < 2 ? `Kalibrieren: ${c.pts.length ? 'zweiten' : 'ersten'} Punkt auf dem Plan tippen` : 'Echter Abstand') + (c.pts.length === 2 ? `${fld('real', c.real, 'Abstand')}<button data-b="calok" class="on">Übernehmen</button>` : '') + cancel; break;
+      case 'umove': h = P(c.pts.length ? 'Zielpunkt tippen (fängt an Achsen und Wänden)' : 'Unterlage verschieben: Punkt auf dem Plan tippen') + cancel; break;
     }
     cmdEl.innerHTML = h;
+    if (ddPop.dataset.k) openDD(ddPop.dataset.k, true);
   }
+  // Liste eines Auswahlknopfs bzw. das Fang-Menü öffnen (über dem Knopf)
+  function openDD(k, keep) {
+    const btn = root.querySelector(`[data-ddk="${k}"]`);
+    if (!btn) { ddPop.hidden = true; delete ddPop.dataset.k; return; }
+    if (!keep && ddPop.dataset.k === k && !ddPop.hidden) { ddPop.hidden = true; delete ddPop.dataset.k; return; }
+    let h = '';
+    if (k === 'snap') h = `<div class="bau-ddh">Fang</div>${SNAP_KEYS.map(([sk, n]) => `<button class="bau-sw${snapCfg[sk] ? ' on' : ''}" data-snapk="${sk}"><i></i><span><b>${n}</b><small>${SNAP_HELP[sk]}</small></span></button>`).join('')}<p class="bau-ddhint">Shift gedrückt (Mac): ohne Fang. F8: Ortho an/aus.</p>`;
+    else { const d = DD[k]; h = `${d.label ? `<div class="bau-ddh">${d.label}</div>` : ''}${d.opts.map(([v, t]) => `<button class="bau-ddo${String(v) === String(d.val) ? ' on' : ''}" data-ddv="${k}:${v}">${esc(t)}</button>`).join('')}${d.extra}`; }
+    ddPop.innerHTML = h; ddPop.dataset.k = k; ddPop.hidden = false;
+    const rr = root.getBoundingClientRect(), br = btn.getBoundingClientRect(), pw = Math.min(300, rr.width - 16);
+    ddPop.style.width = `${k === 'snap' ? pw : Math.max(br.width, 240)}px`;
+    ddPop.style.left = `${Math.max(8, Math.min(rr.width - (k === 'snap' ? pw : Math.max(br.width, 240)) - 8, br.left - rr.left))}px`;
+    ddPop.style.bottom = `${rr.bottom - br.top + 6}px`; ddPop.style.top = 'auto';
+    ddPop.style.maxHeight = `${Math.max(160, br.top - rr.top - 70)}px`;
+  }
+  const closeDD = () => { ddPop.hidden = true; delete ddPop.dataset.k; };
   const acts = (extra = '') => `<div class="ped-acts"><button data-b="xmove">Verschieben</button><button data-b="xcopy">Kopieren</button>${extra}<button data-b="addsel"${addMode ? ' class="on"' : ''}>+ Weitere</button><button data-b="hidesel" title="Ausblenden">${SVG(IC.eyeoff)}</button><button data-b="del">${SVG(IC.trash)} Löschen</button></div>`;
   function renderInfo() {
     const e = selEl(), g = selGrid(), n = selIds().length;
@@ -2030,7 +2133,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const s = st(e.storey);
       switch (e.type) {
         case 'wall':
-          h = `<h4>${esc(kindName(e.kind) || 'Wand')}</h4><div class="ped-acts">${seg('ewkind', e.kind || '', WALL_SEG)}</div><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
+          h = `<h4>${esc(kindName(e.kind) || 'Wand')}</h4><div class="ped-acts">${dd('ewkind', 'Wandtyp', e.kind || '', WALL_KINDS.map(([k, n]) => [k, n]))}</div><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
             <div class="ped-grid">${fld('wh', e.h ?? '', 'Höhe', 'mm', fmt(autoTop(e, s) - s.elev))}${fld('wbase', e.base || 0, 'Fuß')}</div>
             <div class="ped-acts"><span class="bprompt">Lage zur Achse</span>${seg('wjust', e.just, JUST)}</div>
             <small>Länge ändert das Ende, der Anfang bleibt. Höhe leer: ${slabOver(e, s) ? `bis UK Decke ${esc(nextName(s))}` : `bis OK Rohdecke ${esc(nextName(s))}`}, jetzt ${fmt(zRange(e)[1] - zRange(e)[0])} mm.</small>${acts(`<button data-b="split">Teilen</button>${wallChain(e).length > 1 ? `<button data-b="chainsel">Wandzug (${wallChain(e).length})</button>` : ''}<button data-b="joinall">Ecken verbinden</button>`)}`; break;
@@ -2220,12 +2323,6 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         <div class="ped-add"><button data-b="stcopy">${esc(curSt().name)} oben anfügen (Kopie)</button>${B.storeys.length > 1 ? `<button data-b="stdel">${esc(curSt().name)} löschen</button>` : ''}</div>
         <h5>Gelände</h5><div class="ped-grid"><span class="ped-seg"><button data-b="terrain"${B.terrain != null ? ' class="on"' : ''}>${B.terrain != null ? 'Gelände an' : 'Gelände aus'}</button></span>${B.terrain != null ? fld('dterrain', B.terrain, 'OK Gelände') : ''}</div>
         <p class="ped-hint">OK RD = Oberkante Rohdecke. Höhe ändern schiebt die Geschosse darüber mit. Keller: „+ unten“, dann Bodenplatte mit dem Deckenwerkzeug. Wechseln: Titel oben oder Bild auf/ab.</p>`,
-    }),
-    snap: () => ({
-      title: 'Fang',
-      body: `${SNAP_KEYS.map(([k, n]) => `<div class="bau-row"><span class="bau-rn"><b>${n}</b></span><span class="ped-seg"><button data-snapk="${k}"${snapCfg[k] ? ' class="on"' : ''}>${snapCfg[k] ? 'an' : 'aus'}</button></span></div>`).join('')}
-        <p class="ped-hint">Fluchten laufen waagerecht und senkrecht durch Punkte, über die der Zeiger gefahren ist (kleines Kreuz), durch die Punkte der laufenden Kette und am Touchscreen durch Punkte nahe dem Finger. Mit Ortho schneidet die Flucht den Strahl ab dem letzten Punkt.</p>
-        <p class="ped-hint">Mac: Shift gedrückt = ohne Fang. Länge einfach eintippen und Enter, Minus kehrt die Richtung um. „Mitte“ nimmt den Punkt genau zwischen zwei Punkten.</p>`,
     }),
     grid: () => ({
       title: 'Achsraster erzeugen',
@@ -2457,6 +2554,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
 
   // ---------- Bedienung ----------
   root.addEventListener('click', async e => {
+    if (!ddPop.hidden && !e.target.closest('.bau-ddpop') && !e.target.closest('[data-ddk]')) closeDD();
     const wf = e.target.closest('[data-wf]');
     if (wf && dlg?.kind === 'window') { dlg.field = dlg.field === wf.dataset.wf ? null : wf.dataset.wf; renderDlg(); return; }
     const b = e.target.closest('button');
@@ -2499,11 +2597,25 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (b.dataset.tile && tgt?.type === 'ceil') { const [gx, gy] = b.dataset.tile.split('x').map(Number); change(() => { tgt.gx = gx; tgt.gy = gy; if (tgt.start) setCeilStart(tgt, tgt.start.k, tgt.start.rx, tgt.start.ry); else ceilEqual(tgt); }); return; }
     if (b.dataset.wpre && cmd) { cmd.th = +b.dataset.wpre; last.wall.th = cmd.th; renderUi(); draw(); return; }
     if (b.dataset.preset && tgt?.type === 'roof') { change(() => { tgt.edges = roofPreset(tgt.pts, b.dataset.preset); }); return; }
-    if (b.dataset.seg) {
-      const [k, v] = b.dataset.seg.split(':'), C = cmd;
+    if (b.dataset.ddk) { if (b.dataset.ddk === 'snap' || DD[b.dataset.ddk]) openDD(b.dataset.ddk); return; }
+    const segv = b.dataset.seg || b.dataset.ddv;
+    if (b.dataset.ddv) closeDD();
+    if (segv) {
+      const [k, v] = segv.split(/:(.*)/s), C = cmd;
       if (k === 'tab') { tab = v; renderList(); return; }
       if (k.startsWith('nw.') && dlg?.kind === 'new') { dlg[k.slice(3)] = v; renderDlg(); return; }
       if (k === 'just' && C) { C.just = v; last.wall.just = v; }
+      else if (k === 'wth' && C) { C.th = +v; last.wall.th = C.th; }
+      else if (k === 'sth' && C) { C.th = +v; if (C.t === 'roof') last.roof.th = C.th; else last.slab.th = C.th; }
+      else if (k === 'calign' && C) { C.align = v; last.col.align = v; }
+      else if (k === 'cdim' && C) { if (v[0] === 'r') { C.w = C.d = +v.slice(1); } else { const [a2, b2] = v.split('x').map(Number); C.w = a2; C.d = b2; } last.col.w = C.w; last.col.d = C.d; }
+      else if (k === 'cprofdd' && C) { C.prof = v; last.col.prof = v; }
+      else if (k === 'bdim' && C) { const [a2, b2] = v.split('x').map(Number); C.w = a2; C.bh = b2; last.beam.w = a2; last.beam.bh = b2; }
+      else if (k === 'bprofdd' && C) { C.prof = v; last.beam.prof = v; }
+      else if (k === 'stwdd' && C) { C.w = +v; last.stair.w = C.w; }
+      else if (k === 'cgdd' && C) { const [a2, b2] = v.split('x').map(Number); C.gx = a2; C.gy = b2; last.ceil.gx = a2; last.ceil.gy = b2; }
+      else if (k === 'shtodd' && C) C.to = v;
+      else if (k === 'osize' && C) { const [a2, b2] = v.split('x').map(Number); C[C.kind].w = a2; C[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; last.op.v[C.kind].w = a2; last.op.v[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; }
       else if (k === 'wkind' && C) { C.kind = v; last.wall.kind = v; C.th = WALL_KINDS.find(x => x[0] === v)[2]; last.wall.th = C.th; }
       else if (k === 'ewkind' && el) change(() => { el.kind = v; });
       else if (k === 'mwkind') { const els = selIds().map(elById).filter(x => x?.type === 'wall'); change(() => els.forEach(x => { x.kind = v; })); }
@@ -2529,7 +2641,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       renderUi(); draw(); return;
     }
     if (b.dataset.dir && cmd?.t === 'wall') { wallLen(b.dataset.dir === 'last' ? cmd.lastDir || [1, 0] : b.dataset.dir.split(',').map(Number)); return; }
-    if (b.dataset.snapk) { const k = b.dataset.snapk; snapCfg[k] = !snapCfg[k]; saveSnap(); renderDlg(); return; }
+    if (b.dataset.snapk) { const k = b.dataset.snapk; snapCfg[k] = !snapCfg[k]; saveSnap(); renderCmd(); openDD('snap', true); if (lastMouse && cmd) hover = hoverOf(...lastMouse); draw(); return; }
     const a = b.dataset.b;
     if (!a) return;
     if (a === 'midpick' && cmd) { cmd.mid = cmd.mid ? null : {}; renderUi(); draw(); return; }
@@ -2673,7 +2785,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const k = el.dataset.f;
     if (!k) return;
     const v = num(el.value), pos = x => Number.isFinite(x) && x > 0, fin = Number.isFinite(v);
-    if (cmd && el.closest('.ped-cmd')) {
+    if (cmd && el.closest('.ped-cmd, .bau-ddpop')) {
       const C = cmd;
       if (k === 'th' && pos(v)) { C.th = v; if (C.t === 'wall') last.wall.th = v; else if (C.t === 'roof') last.roof.th = v; else last.slab.th = v; }
       else if (k === 'len') C.len = fin ? v : null;
@@ -2758,6 +2870,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const [x, y] = local(e);
     ptrs.set(e.pointerId, { x, y, x0: x, y0: y });
     if (moreOpen || !stPop.hidden) { moreOpen = false; stPop.hidden = true; renderUi(); }
+    if (!ddPop.hidden) closeDD();
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; if (drag?.D) dragEnd(drag.D); drag = null; return; }
     const h = !cmd && e.button === 0 && !e.shiftKey ? handleAt(x, y) : null;
     drag = { pan: e.button === 2 || e.button === 1 || (cam.plan && !h), moved: false, D: h ? dragStart(h) : null, shift: e.shiftKey };
