@@ -185,7 +185,100 @@ const MORE = [['stair', 'Treppe'], ['roof', 'Dach'], ['ceil', 'Rasterdecke'], ['
 const ABOVE = ['beam', 'roof', 'ceil', 'shaft', 'stair'];
 const layerOf = e => (OPS.includes(e.type) ? 'ops' : e.type);
 
+// Gestaltung des Gebäude-Werkzeugs: kommt mit dem Modul, damit nie altes CSS auf neues Markup trifft
+const BAU_CSS = `
+.bau .bau-st { padding: 4px 4px 0; }
+.bau .ped-info .ped-f input[data-gname] { width: 90px; text-align: left; }
+.bau .bau-range { padding: 4px; }
+.bau .bau-range input { width: 140px; min-height: 0; padding: 0; }
+.bau .ped-list .ped-grid { padding: 2px 4px; }
+.bau .ped-cmd .ped-f input { width: 64px; }
+.bau .ped-info .ped-acts .bprompt { font-size: 12px; color: var(--muted); padding-right: 4px; }
+.bau .ped-info .ped-acts button svg { width: 16px; height: 16px; vertical-align: -3px; }
+.bau .ped-add button { white-space: nowrap; }
+.bau .ped-add button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bau .ped-f select { min-height: 34px; max-width: 150px; padding: 3px 6px; font-size: 14px; }
+.bau .bau-more { flex-wrap: wrap; justify-content: center; }
+.bau .bau-edges { max-height: 34vh; overflow: auto; margin: 4px 0; }
+.bau .bau-edges .ped-grid { align-items: center; padding: 2px 0; }
+.bau .ped-info { max-height: calc(100% - 220px - env(safe-area-inset-top)); overflow: auto; }
+.bau .ped-info .ped-grid .ped-f input[data-txt] { width: 110px; text-align: left; }
+.bau .ped-seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (max-width: 440px) { .bau .ped-tools .nvb { width: 35px; } .bau .ped-tools { gap: 0; } }
+/* Gebäude: Titel mit Geschosswahl, Projektmanager (Struktur, Layer), Fenster */
+.bau .bau-titlebtn { flex: 1; min-width: 0; min-height: 38px; border: 0; background: transparent; font-size: 15px; font-weight: 700; color: var(--text); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; }
+.bau .bau-tsub { font-weight: 500; color: var(--muted); }
+.bau .bau-tcar { font-size: 11px; color: var(--muted); }
+.bau .bau-stpop { position: absolute; top: calc(58px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 6; display: flex; flex-direction: column; gap: 2px; min-width: 240px; padding: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .2); }
+.bau .bau-stpop[hidden] { display: none; }
+.bau .bau-stpop button { display: flex; justify-content: space-between; align-items: center; gap: 16px; border: 0; background: transparent; padding: 8px 10px; border-radius: 8px; text-align: left; font-size: 14px; }
+.bau .bau-stpop button.on { background: var(--accent-soft); }
+.bau .bau-stpop small { color: var(--muted); font-size: 12px; }
+.bau .ped-list { flex-direction: column; padding: 6px; overflow: hidden; max-height: calc(100% - 150px - env(safe-area-inset-top)); }
+.bau.list-open .ped-list { display: flex; }
+.bau .bau-tabs { padding: 2px 2px 6px; }
+.bau .bau-tabs .ped-seg { display: flex; }
+.bau .bau-tabs .ped-seg button { flex: 1; min-height: 32px; border: 0; background: transparent; font-size: 13px; }
+.bau .bau-tree { flex: 1 1 auto; overflow: auto; min-height: 60px; }
+.bau .bau-row { display: flex; align-items: center; gap: 2px; padding-left: calc(var(--d, 0) * 14px); border-radius: 8px; }
+.bau .bau-row.on { background: var(--accent-soft); }
+.bau .bau-row.off { opacity: .5; }
+.bau .bau-row.cur .bau-rn b { color: var(--accent); }
+.bau .bau-tree .ped-hint { padding-left: calc(var(--d, 0) * 14px + 30px); }
+.bau .bau-rn { flex: 1; min-width: 0; min-height: 34px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 3px 6px; border: 0; background: transparent; text-align: left; color: var(--text); }
+.bau .bau-rn b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.bau .bau-rn small { font-size: 11.5px; color: var(--muted); }
+.bau .bau-sthead .bau-rn b { font-size: 14.5px; font-weight: 700; }
+.bau .bau-grp .bau-rn { flex-direction: row; align-items: center; justify-content: flex-start; gap: 6px; }
+.bau .bau-car, .bau .bau-eye { min-width: 30px; min-height: 30px; padding: 0; color: var(--muted); }
+.bau .bau-car svg, .bau .bau-eye svg { width: 16px; height: 16px; }
+.bau .bau-car svg { transition: transform .15s; }
+.bau .bau-car.open svg { transform: rotate(90deg); }
+.bau .bau-sp { display: inline-block; width: 30px; flex: none; }
+.bau .bau-foot { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+.bau .bau-foot button { min-height: 34px; padding: 4px 2px; font-size: 12.5px; }
+.bau .bau-dlg { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 12px; z-index: 4; display: flex; flex-direction: column; width: min(380px, calc(100vw - 24px)); max-height: calc(100% - 170px - env(safe-area-inset-top)); background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 34px rgba(0, 0, 0, .22); }
+.bau .bau-dlg[hidden] { display: none; }
+.bau .bau-dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 6px 14px; border-bottom: 1px solid var(--line); }
+.bau .bau-dlg-head b { font-size: 15px; }
+.bau .bau-dlg-body { overflow: auto; padding: 6px 12px 12px; font-size: 14px; }
+.bau .bau-dlg h5 { margin: 12px 0 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.bau .bau-dlg .ped-grid { align-items: center; margin: 4px 0; }
+.bau .bau-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bau .bau-tab th { padding: 2px 4px; text-align: left; font-weight: 600; color: var(--muted); }
+.bau .bau-tab td { padding: 2px; }
+.bau .bau-tab input { width: 100%; min-height: 32px; padding: 2px 6px; font-size: 14px; }
+.bau .bau-tab td:nth-child(2) input, .bau .bau-tab td:nth-child(3) input { max-width: 84px; text-align: right; }
+.bau .bau-tab tr.on input { border-color: var(--accent); }
+.bau .bau-kv { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bau .bau-kv td { padding: 3px 4px; }
+.bau .bau-kv td:nth-child(even) { text-align: right; font-weight: 600; }
+.bau .bau-kv td.warn, .bau .ped-hint.warn { color: var(--err); }
+.bau .bau-mres { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bau input.bau-short { width: 64px; }
+.bau .ped-info .ped-f input[data-txt] { width: 130px; text-align: left; }
+@media (min-width: 1000px) { .bau .ped-list { width: 300px; } .bau .bau-dlg { width: 360px; } }
+@media (max-width: 700px) {
+  .bau .bau-dlg { top: auto; left: 8px; right: 8px; bottom: calc(118px + env(safe-area-inset-bottom)); width: auto; max-height: 58vh; }
+  .bau .bau-tsub { display: none; }
+}
+.bau .bau-tabs .ped-seg button.on { background: var(--accent); color: #fff; }
+.bau .bau-foot { grid-template-columns: repeat(3, 1fr); }
+.bau .ped-head .bau-docbtn { display: inline-flex; align-items: center; gap: 6px; width: auto; max-width: 220px; padding: 0 10px; }
+.bau .ped-head .bau-docbtn svg { width: 18px; height: 18px; flex: none; }
+.bau .bau-docname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.bau .bau-dlg .bau-row .bau-rn { min-height: 42px; }
+.bau .bau-ren { flex: 1; min-height: 38px; margin: 2px; font-size: 14px; }
+.bau .bau-wname input { width: 220px; text-align: left; }
+@media (max-width: 700px) { .bau .bau-docname { display: none; } .bau .ped-head .bau-docbtn { padding: 0; width: 38px; justify-content: center; } }
+.bau .bau-wrow { justify-content: space-between; }
+.bau .bau-wrow .bprompt { font-size: 13.5px; color: var(--text); }
+`;
+
 export async function openBuilding(env) {
+  let styleEl = document.getElementById('bau-css');
+  if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'bau-css'; document.head.appendChild(styleEl); }
+  styleEl.textContent = BAU_CSS;
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const rgb = (h, fb) => { h = css(h); return h.startsWith('#') ? [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255) : fb; };
   const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
@@ -294,6 +387,14 @@ export async function openBuilding(env) {
     walk.push(P(0, 0), P(L1 + land / 2, 0), P(L1 + land / 2, off), P(L1 - (n2 - 1) * g, off));
     return { steps, land: landing, foot: R(Math.min(0, L1 - (n2 - 1) * g), L1 + land, -w / 2, off + w / 2), h, n, H, g, L: L1 + land, walk };
   }
+  // Wände und Stützen ohne eigene Höhe: bis Unterkante der Decke darüber (die Decke liegt auf), ohne Decke bis OK Rohdecke darüber
+  function slabOver(e, s) {
+    const up = nextAbove(s);
+    if (!up || !['wall', 'column'].includes(e.type)) return null;
+    const p = e.type === 'wall' ? mul(add(e.a, e.b), 0.5) : e.p;
+    return B.els.find(o => o.type === 'slab' && o.storey === up.id && pip(p[0], p[1], o.pts)) || null;
+  }
+  const autoTop = (e, s) => { const up = nextAbove(s), sl = slabOver(e, s); return (up ? up.elev : s.elev + s.height) - (sl ? sl.t : 0); };
   function zRange(e) {
     const s = st(e.storey);
     switch (e.type) {
@@ -304,7 +405,7 @@ export async function openBuilding(env) {
       case 'ceil': return [s.elev + e.z, s.elev + e.z + (e.t || 20)];
       case 'space': return [s.elev, s.elev + s.height];
       case 'shaft': return shaftRange(e);
-      default: return [s.elev + (e.base || 0), s.elev + (e.h ?? s.height)];
+      default: return [s.elev + (e.base || 0), e.h != null ? s.elev + e.h : autoTop(e, s)];
     }
   }
   // Grundriss einer Wand: L-Ecken auf Gehrung, T-Stöße enden an der Fläche der durchgehenden Wand
@@ -314,6 +415,10 @@ export async function openBuilding(env) {
       const P = w[end], away = end === 'a' ? d : mul(d, -1);
       const others = B.els.filter(o => o !== w && o.type === 'wall' && o.storey === w.storey && (near(o.a, P) || near(o.b, P)));
       let m = null, face = null;
+      if (others.length >= 2) { // zwei fluchtende Wände laufen durch: wie ein T-Stoß an deren Fläche enden
+        const pair = others.flatMap((o1, i) => others.slice(i + 1).map(o2 => [o1, o2])).find(([o1, o2]) => { const d1 = norm(sub(o1.b, o1.a)), d2 = norm(sub(o2.b, o2.a)); return Math.abs(cross2(d1, d2)) < 0.02 && Math.abs(cross2(d1, d)) > 0.02; });
+        if (pair) { const host = pair[0], hd = norm(sub(host.b, host.a)), hn = perp(hd), [hlo, hhi] = wallOffs(host), side = dot(sub(w[end === 'a' ? 'b' : 'a'], host.a), hn); face = { p: add(host.a, mul(hn, side > 0 ? hhi : hlo)), d: hd }; }
+      }
       if (!others.length) {
         const host = B.els.find(o => { if (o === w || o.type !== 'wall' || o.storey !== w.storey) return false; const [dd, t] = segD(P[0], P[1], o.a, o.b); return dd < 1 && t > 0.001 && t < 0.999; });
         if (host) {
@@ -530,7 +635,7 @@ export async function openBuilding(env) {
     });
   }
   // Ein Bauteil als Dreiecke (9 Zahlen je Ecke), Kanten als Punktpaare
-  function elemMesh(e, col, out, lines) {
+  function elemMesh(e, col, out, lines, lift = 0) {
     const s = st(e.storey);
     if (!s) return;
     const [z0, z1] = zRange(e);
@@ -544,8 +649,8 @@ export async function openBuilding(env) {
         return;
       }
       case 'column':
-        if (e.shape === 'steel') steelAlong(steelSection(e.prof), [e.p[0], e.p[1], z0], [e.p[0], e.p[1], z1], [Math.cos(((e.rot || 0) + 90) * Math.PI / 180), Math.sin(((e.rot || 0) + 90) * Math.PI / 180), 0], 0, col, out, lines);
-        else prism(colPoly(e), z0, z1, col, out, lines);
+        if (e.shape === 'steel') steelAlong(steelSection(e.prof), [e.p[0], e.p[1], z0], [e.p[0], e.p[1], z1 + lift], [Math.cos(((e.rot || 0) + 90) * Math.PI / 180), Math.sin(((e.rot || 0) + 90) * Math.PI / 180), 0], 0, col, out, lines);
+        else prism(colPoly(e), z0 + lift, z1 + lift, col, out, lines);
         return;
       case 'beam': {
         if (e.shape === 'steel') { const c = z1 - beamDims(e).h / 2; steelAlong(steelSection(e.prof), [e.a[0], e.a[1], c], [e.b[0], e.b[1], c], [0, 0, 1], e.rot90 ? 90 : 0, col, out, lines); }
@@ -598,7 +703,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const k = colOf(e);
       let c = isSel(e.id) ? (cam.plan ? acc : acc.map(v => v * 0.7 + 0.3)) : ((cam.plan ? PLAN[k] : null) || COL[k]);
       if (s.id !== cur && !isSel(e.id)) c = c.map(v => v * 0.92 + 0.06);
-      elemMesh(e, c, e.type === 'ceil' || e.type === 'shaft' ? trans : tris, lines);
+      elemMesh(e, c, e.type === 'ceil' || e.type === 'shaft' ? trans : tris, lines, e.type === 'column' ? 2 : 0);
     }
     // Gelände: durchscheinende Fläche um das Gebäude
     if (B.terrain != null && !B.vis.off.terrain && !cam.plan && B.els.length) {
@@ -1638,13 +1743,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       switch (e.type) {
         case 'wall':
           h = `<h4>Wand</h4><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
-            <div class="ped-grid">${fld('wh', e.h ?? '', 'Höhe', 'mm', fmt(s.height))}${fld('wbase', e.base || 0, 'Fuß')}</div>
+            <div class="ped-grid">${fld('wh', e.h ?? '', 'Höhe', 'mm', fmt(autoTop(e, s) - s.elev))}${fld('wbase', e.base || 0, 'Fuß')}</div>
             <div class="ped-acts"><span class="bprompt">Lage zur Achse</span>${seg('wjust', e.just, JUST)}</div>
-            <small>Länge ändert das Ende, der Anfang bleibt. Höhe leer: bis OK Rohdecke ${esc(nextName(s))}.</small>${acts('<button data-b="split">Teilen</button>')}`; break;
+            <small>Länge ändert das Ende, der Anfang bleibt. Höhe leer: ${slabOver(e, s) ? `bis UK Decke ${esc(nextName(s))}` : `bis OK Rohdecke ${esc(nextName(s))}`}, jetzt ${fmt(zRange(e)[1] - zRange(e)[0])} mm.</small>${acts('<button data-b="split">Teilen</button>')}`; break;
         case 'column':
           h = `<h4>Stütze</h4><div class="ped-acts">${seg('cshape', e.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']])}</div>
             <div class="ped-grid">${e.shape === 'steel' ? profSel('eprof', e.prof) : fld('cw', e.w, e.shape === 'round' ? 'Ø' : 'B') + (e.shape === 'round' ? '' : fld('cd', e.d, 'T'))}${e.shape === 'round' ? '' : fld('crot', e.rot || 0, 'Drehung', '°')}</div>
-            <div class="ped-grid">${fld('ch', e.h ?? '', 'Höhe', 'mm', fmt(s.height))}</div><small>Höhe leer: bis OK Rohdecke ${esc(nextName(s))}.</small>${acts()}`; break;
+            <div class="ped-grid">${fld('ch', e.h ?? '', 'Höhe', 'mm', fmt(autoTop(e, s) - s.elev))}</div><small>Höhe leer: ${slabOver(e, s) ? `bis UK Decke ${esc(nextName(s))}` : `bis OK Rohdecke ${esc(nextName(s))}`}, jetzt ${fmt(zRange(e)[1] - zRange(e)[0])} mm.</small>${acts()}`; break;
         case 'beam': {
           const dm = beamDims(e);
           h = `<h4>${e.shape === 'steel' ? 'Stahlträger' : 'Unterzug'}</h4><div class="ped-acts">${seg('ebshape', e.shape, [['rect', 'Unterzug'], ['steel', 'Stahl']])}</div>

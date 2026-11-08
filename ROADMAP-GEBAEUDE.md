@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 257**, siehe Abschnitt 6 bis 10. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 258**, siehe Abschnitt 6 bis 11. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -246,3 +246,10 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - **Startfenster** für neue Gebäude (und beim allerersten Öffnen): Name; Keller ja/nein, Anzahl Obergeschosse, Dachgeschoss ja/nein, Geschosshöhe; Grundlage frei, Achsraster (Anzahl und Abstand) oder Plan laden (danach öffnet das Unterlagen-Fenster); optional Umriss Länge × Breite mit Wandstärke → Außenwände in allen Geschossen, Bodenplatte unten, Decken darüber.
 - **Leeres Geschoss** zeigt, wie es losgeht (Wand zeichnen, Plan oder Raster, Decke aus Wänden).
 - Einpassen (F) berücksichtigt am Desktop ein offenes Fenster oder die Tafel rechts.
+
+## 11. Version 258: Decken liegen auf, kein Flimmern
+
+- Wände und Stützen ohne eigene Höhe gehen bis zur **Unterkante der Decke darüber** (OK Rohdecke darüber minus Deckendicke an dieser Stelle); ohne Decke darüber bis OK Rohdecke. Vorher liefen sie durch die Decke, gleiche Flächen lagen aufeinander und flimmerten (Z-Fighting). Die Tafel zeigt die tatsächliche Höhe. Wände mit festem Wert bleiben unverändert.
+- Stöße, an denen eine durchlaufende Wand geteilt ist, werden wie T-Stöße behandelt (keine überlappenden Wandenden mehr).
+- Stützen in Wänden werden in der Anzeige 2 mm höher gezeichnet, damit ihre Oberseite nicht mit der Wandoberseite flimmert; Mengen und IFC bleiben exakt.
+- Die Gestaltung des Gebäude-Werkzeugs steckt im Modul selbst (nicht mehr in style.css). Vorher konnte eine neue building.js auf ein noch altes Stylesheet treffen, z. B. lag dann das Gebäude-Symbol über dem Namen.
