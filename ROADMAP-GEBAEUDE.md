@@ -1,0 +1,143 @@
+# Roadmap: Gebäude-Experiment
+
+Stand: 08.11.2026. **Phase 0 bis 2 umgesetzt in Version 253** (siehe Abschnitt 6), Phasen 3 bis 8 offen. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+
+## 1. Leitlinien
+
+1. **Versteckt und getrennt.** Ohne Experiment-Schalter ändert sich nichts: kein Menüeintrag, kein Code geladen, keine Daten angefasst. Der Schalter „Experimente“ erscheint in den Einstellungen erst, wenn man die App mit `?exp` öffnet.
+2. **Eigener Datenspeicher.** Das Gebäude liegt in IndexedDB, nicht in `biege.v1`. Ein Fehler im Experiment kann die Rohrprojekte nicht beschädigen. Verknüpft wird nur über IDs („Szene X liegt in Geschoss 2“). localStorage (rund 5 MB) reicht für Geschosse und Planunterlagen nicht.
+3. **Eigenes Modul.** Neue Datei (zum Beispiel `building.js`), nachgeladen nur bei eingeschaltetem Experiment, wie heute der Bauteil-Editor. Gemeinsam mit dem Rohrteil: Ansicht, Gizmo, Maße, Fangpunkte, Rückgängig.
+4. **Datenmodell vor Darstellung.** Reines JSON: Gebäude → Geschoss → Bauteile, jedes mit stabiler ID, Typ und Parametern. Einheit mm, Z nach oben, wie im Rohrteil.
+5. **IFC-nah.** Typen angelehnt an IFC (Storey, Column, Beam, Wall, Slab, Covering, Roof, Door, Window, Opening, Space), damit ein späterer IFC-Export eine Übersetzung ist und kein Umbau.
+6. **Bedienung wie im Rohrteil:** Fusion 360 als Vorbild, Regeln aus DESIGN.md und KONZEPT.md (Referenz, Sperren, Gimbal, Maße im Bild). Zeichnen realistisch am Mac oder iPad, auf dem iPhone vor allem ansehen und messen.
+
+## 2. Vier Bauteil-Arten statt vieler Einzelfälle
+
+Fast jedes Bauteil ist eine von vier Grundformen. Sind diese sauber gebaut, ist ein neues Bauteil nur noch Parameter und Darstellung.
+
+| Art | Wird gezeichnet als | Bauteile |
+|---|---|---|
+| **Punktbauteil** | Punkt + Profil + Höhe | Stützen (Beton, Stahl), Einzelfundamente |
+| **Linienbauteil** | Achse von A nach B + Profil | Wände, Unterzüge, Stahlträger, Attika/Sims, Brüstungen |
+| **Flächenbauteil** | Umriss + Dicke + Höhenlage | Geschossdecken, Bodenplatte, Rasterdecken, Flachdach, Dachflächen |
+| **Gehostetes Bauteil** | sitzt in einem anderen Bauteil | Fenster, Türen, Durchbrüche in Wand oder Decke |
+
+**Bezüge:** Achsraster und Geschosse mit Höhen. Jedes Bauteil hängt an ihnen, zum Beispiel „Stütze auf Achse B/3, von OK Rohdecke EG bis UK Decke 1. OG“. Ändert sich eine Geschosshöhe, wandert alles mit.
+
+## 3. Phasen
+
+### Phase 0: Fundament
+- Experiment-Schalter, IndexedDB-Speicher, Modul `building.js`
+- Datenmodell mit IDs, Typen, Parametern, Bezügen
+- Darstellung: WebGL-Ansicht für das Gebäude, damit auch viele Bauteile auf dem iPhone flüssig bleiben
+- Rückgängig, Speichern, Export/Import als Datei
+
+**Fertig, wenn:** ein leeres Gebäude angelegt, gespeichert, geladen und rückgängig gemacht werden kann, ohne dass die Rohrdaten berührt werden.
+
+### Phase 1: Bezüge und Planunterlage
+- **Geschosse:** Name, OK Rohdecke, Geschosshöhe, Fußbodenaufbau, daraus OKFF und UK Decke
+- **Achsraster:** Achsen mit Abständen (1, 2, 3 … / A, B, C …), Schnittpunkte als Fangpunkte, auch schräge Achsen
+- **Planunterlage:** PDF oder Bild je Geschoss laden, an zwei Punkten mit bekanntem Maß kalibrieren, blass darunterlegen
+- **Grundriss-Ansicht** je Geschoss neben der 3D-Ansicht
+
+**Fertig, wenn:** der Architektenplan eingelegt, kalibriert und das Raster darübergelegt ist.
+
+### Phase 2: Rohbau-Grundformen
+- **Wände:** Achse, Dicke, Lage zur Achse (innen, Mitte, außen), Höhe von Geschoss zu Geschoss oder frei. Ecken und T-Stöße werden automatisch verschnitten.
+- **Stützen:** rund oder rechteckig, fangen auf Rasterpunkte
+- **Geschossdecken:** Umriss zeichnen oder aus Wänden übernehmen, Dicke, Aussparungen
+- **Bodenplatte** als Sonderfall der Decke
+- Ausgangspunkt: das Raum-Werkzeug aus `site.js` (Grundriss → Wände, Boden, Decke)
+
+**Fertig, wenn:** ein Geschoss mit Stützen, Wänden und Decke steht und eine geänderte Geschosshöhe alles mitnimmt.
+
+### Phase 3: Öffnungen
+- **Türen:** Breite, Höhe, Anschlag links/rechts, Aufschlagrichtung, Symbol im Grundriss
+- **Fenster:** Breite, Höhe, Brüstungshöhe
+- **Durchbrüche** in Wand und Decke, rechteckig oder rund (wichtig für Rohre und Kanäle)
+- Öffnungen wandern mit ihrem Bauteil, schneiden es aus, Verschieben nur längs der Wand
+
+**Fertig, wenn:** Türen und Fenster in Wände gesetzt, verschoben und bemaßt werden können.
+
+### Phase 4: Tragwerk
+- **Unterzüge:** Linienbauteil unter der Decke, Breite × Höhe, Bezug UK Decke
+- **Stahlträger und Stahlstützen** mit Profilkatalog (HEA, HEB, IPE, U, Rundrohr, Rechteckrohr), Drehung um die eigene Achse. Vorbild ist der Fitting-Katalog.
+- Fangpunkte an Trägerkanten und Flanschen (später für Rohrhalter)
+
+**Fertig, wenn:** eine Stahlbühne aus Stützen und Trägern gebaut werden kann.
+
+### Phase 5: Dächer
+- **Flachdach:** Flächenbauteil, optional mit Gefälle. **Attika/Sims** als Linienbauteil auf dem Rand mit Querschnitt (Höhe, Breite, Überstand), Kante einfach wählen.
+- **Schräge Dächer:** Jede Umrisskante bekommt eine Neigung oder „Giebel“, daraus entstehen Pult-, Sattel- und Walmdach automatisch. Dazu Traufhöhe und Überstand.
+- Rechnerisch die kniffligste Phase, deshalb nach den Grundformen.
+
+**Fertig, wenn:** ein Flachdach mit Attika und ein Satteldach mit Überstand entstehen.
+
+### Phase 6: Ausbau
+- **Rasterdecken (abgehängt):** Fläche je Raum, Abhanghöhe, Raster (zum Beispiel 625 × 625), Startpunkt ausrichtbar, einzelne Platten entfernbar für Revisionsöffnungen. Der Raum darüber ist der HLK-Bereich.
+- **Räume:** aus Wänden erkannt, mit Name, Nummer, Fläche
+- **Schächte und Technikzentralen** als markierte Zonen über mehrere Geschosse
+
+### Phase 7: Verbindung zum Rohrbiege-Assistenten
+- Rohr-Szenen werden einem Geschoss oder Raum zugeordnet und erscheinen im Gebäude.
+- Wände, Decken und Unterzüge ersetzen die heutigen Ebenen: Abstände, Fangpunkte und Schatten beziehen sich auf echte Bauteile.
+- Kreuzt ein Rohr eine Wand oder Decke, gibt es einen Durchbruch-Vorschlag.
+- Kollisionsprüfung Rohr gegen Bauteil.
+
+### Phase 8: Austausch und Pläne
+- IFC-Export, danach IFC-Import der Gebäudehülle vom Architekten
+- Schnitte und Ansichten, Grundriss als PDF
+
+### Später
+Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, Fundamente im Detail, Geländer, Materialien und Schichtaufbauten. DWG/DXF als Planunterlage (braucht eine fremde Bibliothek).
+
+## 4. Reihenfolge und Aufwand (grob)
+
+| Phase | Umfang | Nutzen allein |
+|---|---|---|
+| 0 Fundament | mittel | keiner, aber Pflicht |
+| 1 Bezüge + Planunterlage | mittel | hoch: Plan einlegen und nachzeichnen |
+| 2 Wände, Stützen, Decken | groß | hoch: erstes echtes Gebäude |
+| 3 Öffnungen | mittel | mittel |
+| 4 Tragwerk / Stahl | mittel | hoch für HLK-Befestigung |
+| 5 Dächer | groß | mittel |
+| 6 Ausbau / Rasterdecke | mittel | hoch für HLK |
+| 7 Verbindung Rohrteil | mittel | sehr hoch |
+| 8 IFC / Pläne | groß | je nach Bedarf |
+
+**Empfehlung:** Phase 0 bis 2 als erster Block. Danach Phase 7 vorziehen, also die Rohre ins Gebäude holen, bevor Dächer und IFC kommen. Dort liegt der eigentliche Mehrwert, und man merkt früh, ob das Zusammenspiel trägt.
+
+## 5. Risiken
+
+- **Darstellung:** Die heutige 3D-Ansicht reicht für Rohre in einem Raum. Ein ganzes Gebäude braucht wahrscheinlich WebGL. Das ist der größte Einzelbrocken und betrifft später auch den Rohrteil.
+- **Größe von `app.js`:** Schon rund 8000 Zeilen. Das Gebäude kommt deshalb in ein eigenes Modul, gemeinsame Teile werden bei Bedarf herausgelöst.
+- **Bedienung auf dem iPhone:** Gebäude zeichnen ist dort mühsam. Schwerpunkt Mac und iPad, iPhone zum Ansehen, Messen und für den Rohrteil.
+- **Speicher:** Planunterlagen (PDF, Bilder) sind groß. Ohne IndexedDB und Export als Datei ist Datenverlust durch Safari möglich.
+
+## 6. Umgesetzt (Version 253)
+
+**Einschalten:** App mit `?exp` in der Adresse öffnen → Einstellungen → Experimente → „Gebäude“. Danach erscheint der Tab „Gebäude“ (auch ohne `?exp`). Ausschalten blendet ihn wieder aus, die Daten bleiben.
+
+**Technik:** `building.js`, nachgeladen erst beim Öffnen. Speicher in IndexedDB `biege-bau` (Gebäude unter `buildings/main`, Unterlagen als Bilddateien unter `files`). Eigene Kamera und eigenes WebGL nach dem Muster des Bauteil-Editors. Rückgängig/Wiederholen über Schnappschüsse.
+
+**Phase 0:** Experiment-Schalter, eigener Speicher, Sichern als JSON-Datei und Laden (ohne Unterlagen), 3D und Grundriss (Grundriss: Wände und Stützen dunkel, Decken hell).
+
+**Phase 1:**
+- Geschosse mit Name, OK Rohdecke, Höhe; „+ darüber“ / „+ darunter“ mit Namensvorschlag (EG → 1. OG, UG …); Löschen mit Rückfrage. In 3D sind die Geschosse über dem aktuellen ausgeblendet (Schalter „Geschosse darüber“).
+- Achsraster: „Raster erzeugen“ (Anzahl und Abstand in beiden Richtungen, 1, 2, 3 … und A, B, C …) oder einzelne Achse mit zwei Punkten. Achsschnittpunkte und Achsen sind Fangpunkte. Name und Enden änderbar.
+- Planunterlage je Geschoss: Bild oder PDF (Seite 1, pdf.js wird dafür einmalig aus dem Netz geladen). Kalibrieren (zwei Punkte, echter Abstand), Verschieben (Punkt auf dem Plan → Zielpunkt mit Fangen), Drehung, Deckkraft.
+
+**Phase 2:**
+- Wände: Kette von Punkten, Startpunkt schließt den Umriss. Dicke, Lage zur Achse (links, Mitte, rechts in Zeichenrichtung), Länge per Feld und Richtungspfeil (→ ↑ ← ↓). Höhe leer = bis OK Rohdecke des Geschosses darüber, sonst fest; Fuß-Versatz. L-Ecken auf Gehrung.
+- Stützen: eckig (B × T, Drehung) oder rund (Ø), auf Achsschnittpunkte fangend.
+- Decken: Umriss tippen oder „Aus Wänden“ (geschlossener Wandumriss, Außenkante der Wände). Oberkante = OK Rohdecke des Geschosses, Dicke nach unten.
+- Auswählen, Werte im Feld ändern, Löschen. Ziehen an Anfassern: Wandenden (verbundene Wände laufen mit), Wand verschieben, Stütze verschieben, Deckenecken, Achsenden.
+- Fangen: Wandenden und -mitten, Wandenden des Geschosses darunter, Stützen, Deckenecken, Achsschnittpunkte, Achsen; sonst 15°-Winkel und 10-mm-Raster.
+
+**Bekannte Lücken:**
+- T-Stöße werden nicht verschnitten (die Wände überlappen, sichtbar nur an den Kanten).
+- Geschosshöhen ändern verschiebt die Bauteile mit, aber nicht automatisch die darüberliegenden Geschosse.
+- Unterlagen gehen beim Sichern als JSON nicht mit.
+- PDF: nur Seite 1, braucht beim Laden Internet. Nicht getestet (kein Netz im Testserver), Bilder getestet.
+- Wände lassen sich nur im aktuellen Geschoss auswählen.
+- Noch keine Maßketten außer der Länge der gewählten Wand.

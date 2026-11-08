@@ -239,6 +239,7 @@ Jede Geste hat einen sichtbaren Knopf als Gegenstück. Niemand muss eine Geste k
 - **Fittings in der Biegeanleitung:** Der Zuschnitt zeigt, welches Fitting an welchem Ende sitzt.
 - **Materialprüfung:** Warnung bei offenen Rohrenden und unverbundenen Anschlüssen.
 - **Zwei-Finger-Tipp für Rückgängig,** aus Zeichen-Apps bekannt. Nur als Zugabe, auf dem Baustellen-iPhone kann es stören.
+- **Gebäude als Rahmen:** Tragwerk, Wände, Decken, Öffnungen und Dächer als verstecktes Experiment, später geht der Rohrteil darin auf. Siehe [ROADMAP-GEBAEUDE.md](ROADMAP-GEBAEUDE.md).
 - **Bewusst nicht:** Gruppen. Sie erzeugen bei den Vorbildern genau die Überraschungen, die hier vermieden werden sollen.
 
 ## 16. Reihenfolge der Umsetzung

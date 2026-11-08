@@ -1463,6 +1463,10 @@ function renderTools() {
       <div class="swrow"><label class="chk sswitch">Eigener Zahlenblock<input type="checkbox" data-svis="numPad"${vis.numPad !== false ? ' checked' : ''}></label></div>
       <small class="shint">Auf dem Handy und Tablet statt der Zifferntastatur: rechnen (1200 − 35), ±, zuletzt verwendete Werte, weiter zum nächsten Feld.</small>
     </div></div></section>
+    ${EXP_URL || vis.expBau ? `<section><h2>Experimente</h2><div class="slist"><div class="spad">
+      <div class="swrow"><label class="chk sswitch">Gebäude<input type="checkbox" data-svis="expBau"${vis.expBau ? ' checked' : ''}></label></div>
+      <small class="shint">Geschosse, Achsraster, Planunterlage, Wände, Stützen, Decken. Eigener Speicher, die Rohrprojekte bleiben unberührt. Unfertig.</small>
+    </div></div></section>` : ''}
     <section><h2>App</h2><div class="slist"><div class="spad sapp"><span>Version <b>${APP_VERSION}</b> vom ${APP_DATE}</span><span id="appStatus">${updateStatus()}</span><button id="reloadBtn">Neu laden</button></div></div></section>
   </div>`;
   const ren = $('.srename');
@@ -1668,7 +1672,7 @@ $('#tab-tools').addEventListener('input', e => {
   afterToolChange();
 });
 $('#tab-tools').addEventListener('change', e => {
-  if (e.target.dataset.svis) { vis[e.target.dataset.svis] = e.target.checked; saveVis(); draw(); return; }
+  if (e.target.dataset.svis) { vis[e.target.dataset.svis] = e.target.checked; saveVis(); expSync(); draw(); return; }
   if (e.target.id === 'fitFile') { const f = e.target.files?.[0]; if (f) importFit(f); return; }
   const id = e.target.dataset.st;
   if (!id) return;
@@ -5270,7 +5274,21 @@ function showTab(t) {
   window.scrollTo(0, 0);
   draw();
 }
-$('.tabbar').addEventListener('click', e => { const t = e.target.closest('button')?.dataset.tab; if (t) showTab(t); });
+$('.tabbar').addEventListener('click', e => { const b = e.target.closest('button'); if (b?.dataset.bau != null) { openBau(); return; } const t = b?.dataset.tab; if (t) showTab(t); });
+// Experiment Gebäude: nur sichtbar, wenn in den Einstellungen eingeschaltet (der Schalter erscheint erst mit ?exp in der Adresse)
+var EXP_URL = new URLSearchParams(location.search).has('exp');
+function expSync() { const b = $('.tabbar [data-bau]'); if (b) b.hidden = !vis.expBau; }
+var bauOpen = false;
+async function openBau() {
+  if (bauOpen) return;
+  bauOpen = true;
+  try {
+    const m = await import('./building.js');
+    const ed = await m.openBuilding({ toast, ask, onClose: () => { bauOpen = false; if (window.biegeDebug) delete window.biegeDebug.bau; } });
+    if (window.biegeDebug) window.biegeDebug.bau = ed;
+  } catch (err) { bauOpen = false; toast(`Gebäude lässt sich nicht öffnen: ${err.message || err}`); }
+}
+expSync();
 document.body.dataset.tab = 'view';
 
 // ---------- Versatz / Etage ----------

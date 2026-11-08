@@ -13,6 +13,7 @@ Läuft im Browser, auch offline, und lässt sich auf dem iPhone über „Zum Hom
 | `geometry.js` | Biegerechnung (Tangente, Bogen, Zuschnitt, Strichpositionen, Kollisionen) |
 | `fittings.js` | Fittings: GLB lesen, Modelle im Browser speichern |
 | `partgeom.js` | Geometrie eines Bauteils als Fanghilfe: Kanten, Kreise, ebene Flächen, Fangpunkte, Strahltest |
+| `building.js` | Gebäude (Experiment): Geschosse, Achsraster, Planunterlage, Wände, Stützen, Decken. Eigener Speicher in IndexedDB |
 | `partedit.js` | Bauteil-Editor: Achsen, Punkte, Drehpunkt, Anschlüsse von Hand festlegen, Messen |
 | `site.js` | Baustelle: Raum (Grundriss → Wände, Boden, Decke), Schellen nach Abstandsregeln, Bohrpunkte, Rohrbündel (Parallelrohre), Zuschnitt aus Stangen |
 | `version.js` | Versionsnummer (bei jeder Änderung erhöhen) |
@@ -45,6 +46,7 @@ Reiter: **3D · Biegen · Einstellungen**. Ein Projekt ist eine Szene mit mehrer
 - **Oberfläche:** Projekt und neues Projekt liegen im Menü hinter den drei Strichen oben links, Rückgängig und Wiederholen schweben daneben. Die App selbst zoomt nicht, Pinch wirkt nur in der 3D-Ansicht.
 - **Projekte verwalten:** Das ⋮ neben einem Projekt im Menü benennt um, dupliziert oder löscht.
 - **Designrichtlinien:** Stehen in [DESIGN.md](DESIGN.md), Vorbild ist Fusion 360.
+- **Gebäude-Experiment:** Versteckt. App mit `?exp` öffnen, in den Einstellungen unter Experimente „Gebäude“ einschalten, dann gibt es den Tab „Gebäude“. Geschosse, Achsraster, Planunterlage (Bild/PDF kalibrieren), Wände, Stützen, Decken in 3D und Grundriss. Eigener Speicher, die Rohrprojekte bleiben unberührt. Stand und Lücken in [ROADMAP-GEBAEUDE.md](ROADMAP-GEBAEUDE.md).
 - **Aussehen:** Neutrale Grautöne und Fusion-Blau, Linien-Symbole in den Reitern. Mit der Maus hebt sich hervor, was man gleich anklickt, und jeder Knopf zeigt das Antippen.
 - **Projektmanager:** Das Baum-Symbol oben links öffnet die Liste von Projekt, Rohren, Punkten, Schenkeln, Parallelrohren und Ebenen. Antippen wählt aus, das Auge blendet aus. Ausgeblendetes zählt beim Biegen weiter. Das ⋯ einer Zeile benennt um, löscht, dupliziert ein Projekt oder macht ein Parallelrohr zum eigenen Rohr.
 - **Navigationsleiste:** Unten in der Mitte wie in Fusion: Verschieben und Zoomen schalten um, sodass ein Finger überall navigiert und Griffe ruhen; gedreht wird auf der freien Fläche oder am Würfel; nochmal antippen oder Esc beendet das. Dazu Einpassen, Anzeige und „+“.
