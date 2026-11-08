@@ -177,6 +177,10 @@ const LAYERS = [['wall', 'Wände'], ['column', 'Stützen'], ['beam', 'Träger'],
 const ROOM_NAMES = ['Wohnen', 'Essen', 'Kochen', 'Wohnen/Essen', 'Schlafen', 'Kind', 'Arbeiten', 'Bad', 'Dusche', 'WC', 'Flur', 'Diele', 'Abstellraum', 'Hausanschluss', 'Technik', 'Heizung', 'Keller', 'Waschen', 'Büro', 'Besprechung', 'Teeküche', 'Treppenhaus', 'Aufzug', 'Archiv', 'Server', 'Lager', 'Empfang', 'Sanitär'];
 const TILE_PRESETS = [[625, 625], [625, 1250], [600, 600], [1200, 600]];
 const WALL_PRESETS = [365, 300, 240, 175, 115, 100];
+const WALL_KINDS = [['aw', 'Außenwand', 365], ['iwt', 'Innenwand tragend', 240], ['iwn', 'Innenwand', 115], ['tb', 'Trockenbau', 100]];
+const kindName = k => WALL_KINDS.find(x => x[0] === k)?.[1];
+const WALL_SEG = [['aw', 'Außen'], ['iwt', 'Tragend'], ['iwn', 'Innen'], ['tb', 'Trockenbau']];
+const TYPE_COL = { wall: '#d2bf98', column: '#7f98b6', beam: '#c39a64', slab: '#a9b6c6', roof: '#d0694f', ceil: '#cfc7a8', space: '#5fbf87', shaft: '#f0a050', stair: '#a995d8', door: '#4fa3e0', window: '#4fa3e0', opening: '#4fa3e0', hole: '#4fa3e0' };
 const WALL_OPS = ['door', 'window', 'opening'], OPS = [...WALL_OPS, 'hole'];
 const OP_DEF = { door: { w: 1010, h: 2135, sill: 0 }, window: { w: 1260, h: 1385, sill: 900 }, opening: { w: 300, h: 300, sill: 2300 }, hole: { w: 600, d: 400 } };
 const JUST = [['l', 'Links'], ['c', 'Mitte'], ['r', 'Rechts']];
@@ -273,6 +277,58 @@ const BAU_CSS = `
 @media (max-width: 700px) { .bau .bau-docname { display: none; } .bau .ped-head .bau-docbtn { padding: 0; width: 38px; justify-content: center; } }
 .bau .bau-wrow { justify-content: space-between; }
 .bau .bau-wrow .bprompt { font-size: 13.5px; color: var(--text); }
+/* ---- Neues Erscheinungsbild (Version 260): Tafel, Fenster, Leiste ---- */
+.bau .ped-info, .bau .bau-dlg { border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 14px 42px rgba(20, 40, 70, .16), 0 2px 6px rgba(20, 40, 70, .06); }
+.bau .ped-info { width: min(340px, calc(100vw - 24px)); padding: 14px 14px 12px; }
+.bau .ped-info h4 { display: flex; align-items: center; gap: 9px; margin: 0 0 10px; font-size: 16.5px; font-weight: 750; letter-spacing: -.01em; }
+.bau .bau-dot { width: 22px; height: 22px; flex: none; border-radius: 7px; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08), 0 2px 6px color-mix(in srgb, var(--c) 45%, transparent); }
+.bau .bau-dlg-head { padding: 10px 8px 10px 16px; }
+.bau .bau-dlg-head b { font-size: 16.5px; font-weight: 750; letter-spacing: -.01em; }
+.bau .bau-dlg-body { padding: 4px 16px 16px; }
+.bau .bau-dlg h5 { margin: 16px 0 6px; font-size: 11px; font-weight: 750; letter-spacing: .06em; color: var(--accent); }
+/* Formular: zwei gleich breite Spalten, Beschriftung über dem Feld, Einheit im Feld */
+.bau .ped-info .ped-grid, .bau .bau-dlg .ped-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; align-items: end; }
+.bau .ped-info .ped-f, .bau .bau-dlg .ped-f { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; margin: 0; padding: 0; font-size: 12px; }
+.bau .ped-info .ped-f > span, .bau .bau-dlg .ped-f > span { font-size: 11.5px; font-weight: 650; color: var(--muted); letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bau .ped-info .ped-f input, .bau .bau-dlg .ped-f input, .bau .ped-info .ped-f select, .bau .bau-dlg .ped-f select { width: 100%; max-width: none; min-height: 42px; margin: 0; padding: 6px 36px 6px 12px; font-size: 15.5px; font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); border: 1px solid var(--line); border-radius: 12px; background: var(--bg); transition: border-color .12s, box-shadow .12s, background .12s; }
+.bau .ped-info .ped-f select, .bau .bau-dlg .ped-f select { text-align: left; padding-right: 10px; font-size: 14px; }
+.bau .ped-info .ped-f input:focus, .bau .bau-dlg .ped-f input:focus, .bau .ped-f select:focus { outline: none; border-color: var(--accent); background: var(--card); box-shadow: 0 0 0 4px var(--accent-soft); }
+.bau .ped-info .ped-f input::placeholder, .bau .bau-dlg .ped-f input::placeholder { color: var(--muted); font-weight: 500; opacity: .8; }
+.bau .ped-info .ped-f > i, .bau .bau-dlg .ped-f > i { position: absolute; right: 12px; bottom: 13px; font-size: 12px; font-style: normal; font-weight: 600; color: var(--muted); pointer-events: none; }
+.bau .ped-info .ped-f input[data-txt], .bau .ped-info .ped-f input[data-gname], .bau .bau-dlg .ped-f input[data-dtxt], .bau .ped-info input.bau-short { width: 100%; text-align: left; padding-right: 12px; }
+.bau .bau-dlg .bau-wname { grid-column: 1 / -1; }
+.bau .bau-dlg .bau-wname input { width: 100%; }
+/* Segmente: gleich breite Felder in einer Pille */
+.bau .ped-info .ped-seg, .bau .bau-dlg .ped-seg { display: flex; flex: 1 1 100%; width: 100%; gap: 3px; padding: 3px; border-radius: 13px; background: var(--bg); }
+.bau .ped-info .ped-seg button, .bau .bau-dlg .ped-seg button { flex: 1 1 0; min-width: 0; min-height: 36px; padding: 0 6px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bau .ped-seg button.on { background: var(--accent); color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
+.bau .ped-info .ped-acts, .bau .bau-dlg .ped-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 0; }
+.bau .ped-info .ped-acts > .bprompt, .bau .bau-dlg .ped-acts > .bprompt { flex: 1 1 100%; padding: 0; font-size: 11.5px; font-weight: 650; color: var(--muted); }
+/* Aktionsknöpfe als Pillen; Löschen rot */
+.bau .ped-info .ped-acts > button, .bau .bau-dlg .ped-acts > button, .bau .bau-dlg .ped-add > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; }
+.bau .ped-info .ped-acts > button.on, .bau .bau-dlg .ped-acts > button.on, .bau .bau-dlg .ped-add > button.on { background: var(--accent); color: #fff; box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 35%, transparent); }
+.bau .ped-info .ped-acts > button[data-b="del"] { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
+.bau .ped-info .ped-acts > button svg { width: 16px; height: 16px; }
+.bau .ped-info .ped-acts > button:active, .bau .bau-dlg .ped-acts > button:active { transform: scale(.97); }
+@media (hover: hover) { .bau .ped-info .ped-acts > button:not(.on):hover, .bau .bau-dlg .ped-acts > button:not(.on):hover { filter: brightness(.96); } }
+.bau .ped-info small { display: block; margin: 10px 0 0; padding: 9px 11px; border-radius: 12px; background: var(--bg); color: var(--muted); font-size: 12px; line-height: 1.5; }
+.bau .bau-dlg .ped-hint { margin: 8px 0 0; font-size: 12px; line-height: 1.5; }
+/* Befehlsleiste: kompakt, Felder in einer Zeile, gleiche Höhen */
+.bau .ped-cmd { gap: 6px 8px; padding: 8px 10px; border-radius: 18px; box-shadow: 0 10px 30px rgba(20, 40, 70, .14); }
+.bau .ped-cmd .bprompt { font-size: 13px; font-weight: 700; color: var(--text); }
+.bau .ped-cmd .ped-f { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.bau .ped-cmd .ped-f > span { font-weight: 650; }
+.bau .ped-cmd .ped-f input { width: 76px; min-height: 36px; padding: 4px 10px; border-radius: 10px; text-align: right; font-size: 15px; font-weight: 650; background: var(--bg); border: 1px solid var(--line); }
+.bau .ped-cmd .ped-f input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.bau .ped-cmd .ped-seg { padding: 3px; gap: 2px; border-radius: 12px; background: var(--bg); }
+.bau .ped-cmd .ped-seg button { min-height: 32px; padding: 0 10px; border-radius: 9px; font-weight: 650; }
+.bau .ped-cmd > button { min-height: 36px; padding: 0 13px; border: 0; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; }
+.bau .ped-cmd > button.on { background: var(--accent); color: #fff; }
+/* Liste */
+.bau .ped-list { border-radius: 18px; }
+.bau .bau-tabs .ped-seg { padding: 3px; border-radius: 13px; background: var(--bg); }
+.bau .bau-tabs .ped-seg button { border-radius: 10px; font-weight: 650; }
+.bau .bau-foot button { border: 0; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 `;
 
 export async function openBuilding(env) {
@@ -880,6 +936,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const saveSnap = () => { try { localStorage.setItem('biege.bau.snap', JSON.stringify(snapCfg)); } catch {} };
   // erfasste Punkte: Fluchten laufen von Punkten, über die der Zeiger zuletzt gefahren ist (wie in CAD üblich)
   let acq = [], freeSnap = false;
+  // Ortho-Modus: nur waagerecht und senkrecht (F8 oder Knopf); aus: Richtung rastet nur nahe 15°-Schritten
+  let orthoOn = (() => { try { return localStorage.getItem('biege.bau.ortho') === '1'; } catch { return false; } })();
   const acquire = (p, label = 'Punkt') => { if (acq.some(q => near(q.p, p, 0.5))) return; acq.push({ p: [...p], label }); if (acq.length > 8) acq.shift(); };
   function snapPoints(o) {
     const C = snapCfg, P = [], put = (p, label, kind) => { if (p) P.push({ p, label, kind }); };
@@ -920,7 +978,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const scr = p => P2(p, z), dpx = p => { const s2 = scr(p); return Math.hypot(s2[0] - x, s2[1] - y); };
     const lineDist = (p, d) => { const a = scr(p), b = scr(add(p, mul(d, 1000))), ex = b[0] - a[0], ey = b[1] - a[1], l = Math.hypot(ex, ey) || 1; return Math.abs((x - a[0]) * ey - (y - a[1]) * ex) / l; };
     let ortho = null;
-    if (o.from && !o.noOrtho) { const v = sub(raw, o.from); if (len(v) > 1) { const ang = Math.atan2(v[1], v[0]), q = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12); if (Math.abs(ang - q) < 0.07) ortho = [Math.cos(q), Math.sin(q)]; } }
+    if (o.from && !o.noOrtho) { const v = sub(raw, o.from); if (len(v) > 1) { const ang = Math.atan2(v[1], v[0]); if (orthoOn) { const q = Math.round(ang / (Math.PI / 2)) * (Math.PI / 2); ortho = [Math.round(Math.cos(q)), Math.round(Math.sin(q))]; } else { const q = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12); if (Math.abs(ang - q) < 0.07) ortho = [Math.cos(q), Math.sin(q)]; } } }
     // 1. Punkte
     const pts = snapPoints(o);
     let best = null;
@@ -1045,7 +1103,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
 
   // ---------- Befehle ----------
   const last = {
-    wall: { th: 240, just: 'c' }, col: { shape: 'rect', w: 300, d: 300, prof: 'HEB 200' }, slab: { th: 250, base: false },
+    wall: { th: 240, just: 'c', kind: 'iwt' }, col: { shape: 'rect', w: 300, d: 300, prof: 'HEB 200' }, slab: { th: 250, base: false },
     stair: { kind: 'straight', w: 1000, g: 270, side: 1 }, meas: 'dist',
     beam: { shape: 'rect', w: 300, bh: 500, prof: 'IPE 300' }, roof: { kind: 'flat', th: 250 }, ceil: { z: 2600, gx: 625, gy: 625, mode: 'room' },
     op: { kind: 'door', v: structuredClone(OP_DEF) }, copyN: 1,
@@ -1059,7 +1117,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if ([...DRAW, 'move', 'copy', 'split', 'tiles'].includes(t) && Math.abs(basis().rz[2]) < 0.12) setPlan(true);
     cmd = { t, pts: [] };
     const s = curSt();
-    if (t === 'wall') Object.assign(cmd, { th: last.wall.th, just: last.wall.just });
+    if (t === 'wall') Object.assign(cmd, { th: last.wall.th, just: last.wall.just, kind: last.wall.kind });
     if (t === 'column') Object.assign(cmd, { ...last.col });
     if (t === 'slab') Object.assign(cmd, { th: last.slab.th, base: last.slab.base });
     if (t === 'stair') Object.assign(cmd, { ...last.stair });
@@ -1094,13 +1152,57 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   const newEl = o => ({ id: uid(), storey: cur, ...o });
   function addEl(o) { const e = newEl(o); change(() => B.els.push(e)); return e; }
+  // Wandenden an andere Wände anschließen: Liegt ein Ende im Bereich einer anderen Wand oder kurz davor, rückt es auf den Schnitt der Achsen.
+  // Trifft es dort deren Ende, rückt auch dieses mit (L-Ecke auf Gehrung), sonst entsteht ein T-Stoß.
+  function joinWall(w, ends = ['a', 'b']) {
+    let moved = false;
+    for (const end of ends) {
+      const P = w[end], d = norm(sub(w.b, w.a)), other = w[end === 'a' ? 'b' : 'a'];
+      if (B.els.some(o => o !== w && o.type === 'wall' && o.storey === w.storey && (near(o.a, P, 0.5) || near(o.b, P, 0.5)))) continue; // schon verbunden
+      let best = null;
+      for (const o of B.els) {
+        if (o === w || o.type !== 'wall' || o.storey !== w.storey) continue;
+        const od = norm(sub(o.b, o.a));
+        if (Math.abs(cross2(d, od)) < 0.05) continue;
+        const X = lineX(P, d, o.a, od);
+        if (!X) continue;
+        const reach = (o.t + w.t) / 2 + 80, mv = len(sub(X, P)), Lo = len(sub(o.b, o.a)), sv = dot(sub(X, o.a), od);
+        if (mv > reach || sv < -reach || sv > Lo + reach || len(sub(X, other)) < 50) continue;
+        const oEnd = sv < (o.t + w.t) / 2 + 80 ? 'a' : sv > Lo - (o.t + w.t) / 2 - 80 ? 'b' : null;
+        if (!best || mv < best.mv) best = { o, X: X.map(v => Math.round(v * 10) / 10), oEnd, mv };
+      }
+      if (!best) continue;
+      if (!near(w[end], best.X, 0.05)) { w[end] = best.X; moved = true; }
+      const o = best.o, oe = best.oEnd;
+      // L-Ecke: das nahe Ende der anderen Wand rückt mit, sofern dort keine dritte Wand hängt
+      if (oe && !near(o[oe], best.X, 0.05) && !B.els.some(q => q !== o && q !== w && q.type === 'wall' && q.storey === o.storey && (near(q.a, o[oe], 0.5) || near(q.b, o[oe], 0.5)))) { o[oe] = best.X; moved = true; }
+    }
+    return moved;
+  }
+  function joinAll() { let n = 0; for (let k = 0; k < 2; k++) B.els.filter(e => e.type === 'wall' && e.storey === cur).forEach(w => { if (joinWall(w)) n++; }); return n; }
+  // Wandzug: über gemeinsame Enden verbundene Wände (gleiche Wandart, falls gesetzt)
+  function wallChain(w) {
+    const res = new Set([w.id]), queue = [w];
+    while (queue.length) {
+      const x = queue.pop();
+      B.els.forEach(o => { if (o.type !== 'wall' || o.storey !== x.storey || res.has(o.id) || (w.kind && o.kind !== w.kind)) return; if ([x.a, x.b].some(p => near(o.a, p, 1) || near(o.b, p, 1))) { res.add(o.id); queue.push(o); } });
+    }
+    return [...res];
+  }
+  function newWall(a, b, first) {
+    const e = newEl({ type: 'wall', a: [...a], b: [...b], t: cmd.th, just: cmd.just, kind: cmd.kind, h: null });
+    change(() => { B.els.push(e); joinWall(e, first ? ['a', 'b'] : ['b']); });
+    return e;
+  }
   function wallClick(p) {
     if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
     const a = cmd.pts.at(-1);
     if (near(p, a, 1)) return;
-    addEl({ type: 'wall', a: [...a], b: [...p], t: cmd.th, just: cmd.just, h: null });
-    if (cmd.pts.length > 1 && near(p, cmd.pts[0], 1)) { cmd.pts = []; env.toast('Umriss geschlossen.'); }
-    else cmd.pts.push(p);
+    const closing = cmd.pts.length > 1 && near(p, cmd.pts[0], 1), first = cmd.pts.length === 1;
+    const e = newWall(a, closing ? cmd.pts[0] : p, first && !closing);
+    if (first) cmd.pts[0] = [...e.a];
+    if (closing) { cmd.pts = []; env.toast('Umriss geschlossen.'); }
+    else cmd.pts.push([...e.b]);
     renderUi(); draw();
   }
   function wallLen(dir) {
@@ -1109,7 +1211,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (!(L > 0)) { env.toast('Länge eingeben.'); return; }
     const a = cmd.pts.at(-1), b = add(a, mul(dir, L)).map(v => Math.round(v * 10) / 10);
     cmd.lastDir = dir;
-    addEl({ type: 'wall', a: [...a], b, t: cmd.th, just: cmd.just, h: null }); cmd.pts.push(b); renderUi(); draw();
+    const first = cmd.pts.length === 1, e = newWall(a, b, first);
+    if (first) cmd.pts[0] = [...e.a];
+    cmd.pts.push([...e.b]); renderUi(); draw();
   }
   function outlineFromWalls() {
     const W2 = B.els.filter(e => e.type === 'wall' && e.storey === cur);
@@ -1426,8 +1530,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (!B.vis.off.grid) for (const g of B.grids) if (segD(x, y, P2(g.a), P2(g.b))[0] < tol) return { grid: g.id };
     return null;
   }
+  let lastTap = null;
   function pickSelect(x, y, add2) {
-    const h = pickEl(x, y);
+    const h = pickEl(x, y), now = Date.now(), we = h?.el && elById(h.el);
+    if (!add2 && we?.type === 'wall' && lastTap && now - lastTap.t < 450 && lastTap.id === h.el) { sel = { ids: wallChain(we) }; lastTap = null; dirty = true; renderUi(); draw(); if (sel.ids.length > 1) env.toast(`Wandzug: ${sel.ids.length} Wände gewählt.`); return; }
+    lastTap = { t: now, id: h?.el };
     if (add2 && h?.el) { const ids = selIds(); sel = { ids: ids.includes(h.el) ? ids.filter(i => i !== h.el) : [...ids, h.el] }; if (!sel.ids.length) sel = null; }
     else sel = h?.el ? { ids: [h.el] } : h?.grid ? { grid: h.grid } : null;
     dirty = true; renderUi(); draw();
@@ -1482,6 +1589,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   function dragEnd(D) {
     if (D.e?.type === 'stair') stairHole(D.e);
+    if (D.e?.type === 'wall' && D.moved !== false) joinWall(D.e, D.h.k === 'm' ? ['a', 'b'] : [D.h.k]);
     if (snap() === D.before) return;
     undo.push(D.before); redo.length = 0; persist(); renderUi();
   }
@@ -1707,7 +1815,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         const nm = S(e.type === 'space' ? e.no || 'Raum' : e.type === 'column' || e.type === 'beam' ? (e.shape === 'steel' ? e.prof : TYPE_NAME[e.type]) : TYPE_NAME[e.type]);
         let id;
         switch (e.type) {
-          case 'wall': id = E(`IFCWALL(${gid()},$,${nm},$,$,${lp()},${shape(meshOf(e))},$,.STANDARD.)`); break;
+          case 'wall': id = E(`IFCWALL(${gid()},$,${S(kindName(e.kind) || 'Wand')},$,$,${lp()},${shape(meshOf(e))},$,${e.kind === 'tb' ? '.PARTITIONING.' : '.STANDARD.'})`); break;
           case 'column': id = E(`IFCCOLUMN(${gid()},$,${nm},$,$,${lp()},${shape(meshOf(e))},$,.COLUMN.)`); break;
           case 'beam': id = E(`IFCBEAM(${gid()},$,${nm},$,$,${lp()},${shape(meshOf(e))},$,.BEAM.)`); break;
           case 'slab': id = E(`IFCSLAB(${gid()},$,${e.base ? "'Bodenplatte'" : nm},$,$,${lp()},${shape(meshOf(e))},$,${e.base ? '.BASESLAB.' : '.FLOOR.'})`); break;
@@ -1771,13 +1879,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     cmdEl.hidden = !cmd;
     if (!cmd) { cmdEl.innerHTML = ''; return; }
     if (cmd.mid) { cmdEl.innerHTML = `<span class="bprompt">Mitte zwischen zwei Punkten: ${cmd.mid.a ? 'zweiten' : 'ersten'} Punkt tippen</span><button data-b="midpick" class="on">Mitte aus</button>`; return; }
-    const helpers = `<button data-b="midpick" title="Punkt in der Mitte zwischen zwei Punkten">Mitte</button><button data-dlg="snap" title="Fang-Einstellungen">Fang …</button>`;
+    const helpers = `<button data-b="ortho"${orthoOn ? ' class="on"' : ''} title="Ortho-Modus: nur waagerecht und senkrecht (F8)">Ortho</button><button data-b="midpick" title="Punkt in der Mitte zwischen zwei Punkten">Mitte</button><button data-dlg="snap" title="Fang-Einstellungen">Fang …</button>`;
     const done = '<button data-b="end" class="on">Fertig</button>', cancel = '<button data-b="end">Abbrechen</button>', c = cmd;
     const close = c.pts.length >= 3 ? '<button data-b="areaok" class="on">Schließen</button>' : '';
     let h = '';
     switch (c.t) {
       case 'wall':
-        h = `<span class="bprompt">${c.pts.length ? 'Nächster Punkt' : 'Wand: Startpunkt tippen'}</span>${fld('th', c.th, 'Dicke')}<span class="ped-seg">${WALL_PRESETS.map(v => `<button data-wpre="${v}"${c.th === v ? ' class="on"' : ''}>${v}</button>`).join('')}</span>${seg('just', c.just, JUST)}`;
+        h = `<span class="bprompt">${c.pts.length ? 'Nächster Punkt' : 'Wand: Startpunkt tippen'}</span>${seg('wkind', c.kind, WALL_SEG)}${fld('th', c.th, 'Dicke')}<span class="ped-seg">${WALL_PRESETS.map(v => `<button data-wpre="${v}"${c.th === v ? ' class="on"' : ''}>${v}</button>`).join('')}</span>${seg('just', c.just, JUST)}`;
         if (c.pts.length) h += `${fld('len', c.len ?? '', 'Länge', 'mm', '0')}<span class="ped-seg">${c.lastDir ? '<button data-dir="last" title="Länge in Richtung der letzten Wand">↗︎ weiter</button>' : ''}${[['1,0', '→'], ['0,1', '↑'], ['-1,0', '←'], ['0,-1', '↓']].map(([v, t]) => `<button data-dir="${v}" title="Länge in diese Richtung">${t}</button>`).join('')}</span><button data-b="chain">Neu ansetzen</button>`;
         h += helpers + done; break;
       case 'column':
@@ -1817,7 +1925,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const cnt = {}; selIds().map(elById).filter(Boolean).forEach(x => { cnt[TYPE_NAME[x.type]] = (cnt[TYPE_NAME[x.type]] || 0) + 1; });
       const els = selIds().map(elById).filter(Boolean), ty = els.every(x => x.type === els[0].type) ? els[0].type : null, same = f => (els.every(x => (x[f] ?? null) === (els[0][f] ?? null)) ? els[0][f] : '');
       let common = '';
-      if (ty === 'wall') common = `<div class="ped-grid">${fld('mt', same('t'), 'Dicke')}${fld('mh', same('h') ?? '', 'Höhe', 'mm', 'Geschoss')}${fld('mbase', same('base') || 0, 'Fuß')}</div>`;
+      if (ty === 'wall') common = `<div class="ped-acts">${seg('mwkind', same('kind') || '', WALL_SEG)}</div><div class="ped-grid">${fld('mt', same('t'), 'Dicke')}${fld('mh', same('h') ?? '', 'Höhe', 'mm', 'Geschoss')}${fld('mbase', same('base') || 0, 'Fuß')}</div>`;
       else if (ty === 'column') common = `<div class="ped-grid">${fld('mh', same('h') ?? '', 'Höhe', 'mm', 'Geschoss')}</div>`;
       else if (ty === 'beam') common = `<div class="ped-grid">${fld('mtop', same('top'), 'OK')}</div>`;
       else if (ty === 'slab') common = `<div class="ped-grid">${fld('mt', same('t'), 'Dicke')}</div>`;
@@ -1827,10 +1935,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const s = st(e.storey);
       switch (e.type) {
         case 'wall':
-          h = `<h4>Wand</h4><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
+          h = `<h4>${esc(kindName(e.kind) || 'Wand')}</h4><div class="ped-acts">${seg('ewkind', e.kind || '', WALL_SEG)}</div><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
             <div class="ped-grid">${fld('wh', e.h ?? '', 'Höhe', 'mm', fmt(autoTop(e, s) - s.elev))}${fld('wbase', e.base || 0, 'Fuß')}</div>
             <div class="ped-acts"><span class="bprompt">Lage zur Achse</span>${seg('wjust', e.just, JUST)}</div>
-            <small>Länge ändert das Ende, der Anfang bleibt. Höhe leer: ${slabOver(e, s) ? `bis UK Decke ${esc(nextName(s))}` : `bis OK Rohdecke ${esc(nextName(s))}`}, jetzt ${fmt(zRange(e)[1] - zRange(e)[0])} mm.</small>${acts('<button data-b="split">Teilen</button>')}`; break;
+            <small>Länge ändert das Ende, der Anfang bleibt. Höhe leer: ${slabOver(e, s) ? `bis UK Decke ${esc(nextName(s))}` : `bis OK Rohdecke ${esc(nextName(s))}`}, jetzt ${fmt(zRange(e)[1] - zRange(e)[0])} mm.</small>${acts(`<button data-b="split">Teilen</button>${wallChain(e).length > 1 ? `<button data-b="chainsel">Wandzug (${wallChain(e).length})</button>` : ''}<button data-b="joinall">Ecken verbinden</button>`)}`; break;
         case 'column':
           h = `<h4>Stütze</h4><div class="ped-acts">${seg('cshape', e.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']])}</div>
             <div class="ped-grid">${e.shape === 'steel' ? profSel('eprof', e.prof) : fld('cw', e.w, e.shape === 'round' ? 'Ø' : 'B') + (e.shape === 'round' ? '' : fld('cd', e.d, 'T'))}${e.shape === 'round' ? '' : fld('crot', e.rot || 0, 'Drehung', '°')}</div>
@@ -1885,13 +1993,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       h = `<h4>Achse</h4><label class="ped-f"><span>Name</span><input data-gname value="${esc(g.name)}" class="bau-short"></label><small>Länge ${fmt(len(sub(g.b, g.a)))} mm. Enden lassen sich ziehen.</small>
         <div class="ped-acts"><button data-b="delgrid">${SVG(IC.trash)} Löschen</button></div>`;
     }
+    if (e && h) h = h.replace('<h4>', `<h4><i class="bau-dot" style="--c:${TYPE_COL[e.type] || '#999'}"></i>`);
+    else if (n > 1 && h) h = h.replace('<h4>', '<h4><i class="bau-dot" style="--c:var(--accent)"></i>');
     infoEl.hidden = !h || !!dlg; infoEl.innerHTML = h;
   }
 
   // ---------- Projektmanager: Struktur und Layer ----------
   function elLabel(e) {
     switch (e.type) {
-      case 'wall': return `Wand ${fmt(e.t)}`;
+      case 'wall': return `${kindName(e.kind) || 'Wand'} ${fmt(e.t)}`;
       case 'column': return e.shape === 'steel' ? `Stütze ${e.prof}` : e.shape === 'round' ? `Stütze Ø ${fmt(e.w)}` : `Stütze ${fmt(e.w)} × ${fmt(e.d)}`;
       case 'beam': return e.shape === 'steel' ? `Träger ${e.prof}` : `Unterzug ${fmt(e.w)} × ${fmt(e.bh)}`;
       case 'slab': return e.base ? 'Bodenplatte' : 'Decke';
@@ -1934,8 +2044,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         if (o) kids.forEach(e => { h += elRow(e, 2); });
       });
       const rest = all.filter(e => e.type !== 'space' && !m.has(e.id));
-      LAYERS.forEach(([k, name]) => {
-        const items = rest.filter(e => layerOf(e) === k);
+      [...LAYERS.flatMap(([k, name]) => (k === 'wall' ? [...WALL_KINDS.map(([wk, wn]) => [`wall:${wk}`, `${wn.replace('wand', 'wände').replace('Trockenbau', 'Trockenbauwände')}`]), ['wall:', 'Wände']] : [[k, name]]))].forEach(([k, name]) => {
+        const items = rest.filter(e => (k.startsWith('wall:') ? e.type === 'wall' && (e.kind || '') === k.slice(5) : layerOf(e) === k));
         if (!items.length) return;
         const key = `g:${s.id}:${k}`, o = openGrp.has(key);
         h += `<div class="bau-row bau-grp${B.vis.off[k] ? ' off' : ''}" style="--d:1">${car(key, o)}<button class="bau-rn" data-tog="${key}"><b>${name}</b><small>${items.length}</small></button></div>`;
@@ -1987,7 +2097,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (L > 0 && Bw > 0) {
       const R = [[0, 0], [L, 0], [L, Bw], [0, Bw]], outer = offsetPoly(R, -t / 2);
       nb.storeys.forEach((s, i) => {
-        R.forEach((p, k) => nb.els.push({ id: uid(), storey: s.id, type: 'wall', a: [...p], b: [...R[(k + 1) % 4]], t, just: 'c', h: null }));
+        R.forEach((p, k) => nb.els.push({ id: uid(), storey: s.id, type: 'wall', a: [...p], b: [...R[(k + 1) % 4]], t, just: 'c', kind: 'aw', h: null }));
         nb.els.push({ id: uid(), storey: s.id, type: 'slab', pts: outer.map(q => q.map(v => Math.round(v * 10) / 10)), t: i === 0 ? 300 : 250, ...(i === 0 ? { base: true } : {}) });
       });
     }
@@ -2216,6 +2326,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (k === 'tab') { tab = v; renderList(); return; }
       if (k.startsWith('nw.') && dlg?.kind === 'new') { dlg[k.slice(3)] = v; renderDlg(); return; }
       if (k === 'just' && C) { C.just = v; last.wall.just = v; }
+      else if (k === 'wkind' && C) { C.kind = v; last.wall.kind = v; C.th = WALL_KINDS.find(x => x[0] === v)[2]; last.wall.th = C.th; }
+      else if (k === 'ewkind' && el) change(() => { el.kind = v; });
+      else if (k === 'mwkind') { const els = selIds().map(elById).filter(x => x?.type === 'wall'); change(() => els.forEach(x => { x.kind = v; })); }
       else if (k === 'shape' && C) { C.shape = v; last.col.shape = v; }
       else if (k === 'bshape' && C) { C.shape = v; last.beam.shape = v; }
       else if (k === 'rkind' && C) { C.kind = v; last.roof.kind = v; }
@@ -2290,6 +2403,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'delgrid': { const g = selGrid(); if (g) { change(() => { B.grids = B.grids.filter(x => x !== g); }); sel = null; renderUi(); draw(); } return; }
       case 'hidesel': { B.vis.hide = [...new Set([...B.vis.hide, ...selIds()])]; sel = null; visPersist(); env.toast('Ausgeblendet. Wieder einblenden im Projektmanager.'); return; }
       case 'showall': B.vis = { off: {}, hide: [] }; visPersist(); return;
+      case 'chainsel': if (el?.type === 'wall') { sel = { ids: wallChain(el) }; dirty = true; renderUi(); draw(); } return;
+      case 'joinall': { let n = 0; change(() => { n = joinAll(); }); env.toast(n ? `${n} Wandenden angeschlossen.` : 'Alle Ecken waren schon verbunden.'); return; }
+      case 'ortho': orthoOn = !orthoOn; try { localStorage.setItem('biege.bau.ortho', orthoOn ? '1' : '0'); } catch {} if (lastMouse && cmd) hover = hoverOf(...lastMouse); renderUi(); draw(); return;
       case 'xmove': case 'xcopy': startCmd(a === 'xmove' ? 'move' : 'copy'); return;
       case 'addsel': addMode = !addMode; renderUi(); if (addMode) env.toast('Weitere Bauteile antippen. Am Mac geht das auch mit Shift.'); return;
       case 'selnone': sel = null; addMode = false; dirty = true; renderUi(); draw(); return;
@@ -2512,6 +2628,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   root.addEventListener('keydown', e => {
     if (e.target.matches('input, select, textarea')) { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape' && e.target.matches('.bau-ren')) { dlg.ren = null; renderDlg(); } return; }
     const k = e.key.toLowerCase();
+    if (e.key === 'F8') { e.preventDefault(); orthoOn = !orthoOn; try { localStorage.setItem('biege.bau.ortho', orthoOn ? '1' : '0'); } catch {} if (lastMouse && cmd) hover = hoverOf(...lastMouse); renderUi(); draw(); env.toast(orthoOn ? 'Ortho an: nur waagerecht und senkrecht.' : 'Ortho aus.'); return; }
     if (e.key === 'Shift' && cmd) { freeSnap = true; if (lastMouse) hover = hoverOf(...lastMouse); draw(); return; }
     if (cmd && DYN.includes(cmd.t) && cmd.pts?.length && !(cmd.t === 'measure' && cmd.mode === 'pick') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (/^[0-9]$/.test(e.key) || ((e.key === ',' || e.key === '.') && !dyn.includes(','))) { dyn += e.key === '.' ? ',' : e.key; e.preventDefault(); draw(); return; }

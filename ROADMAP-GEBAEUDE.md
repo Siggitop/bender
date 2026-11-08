@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 259**, siehe Abschnitt 6 bis 12. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 260**, siehe Abschnitt 6 bis 13. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -263,3 +263,12 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - **Länge eintippen (Mac):** während des Zeichnens einfach Ziffern, Enter setzt den Punkt in Zeigerrichtung (sonst Richtung der letzten Strecke), Minus = Gegenrichtung. Gilt für Wände, Träger, Umrisse, Achsen, Messen, Verschieben, Kopieren. Touchscreen: Längenfeld mit „↗︎ weiter“ (Richtung der letzten Wand) und Pfeilen.
 - **Fang-Fenster** („Fang …“ in der Leiste): Endpunkte, Mitten, Achsen, Wandflächen, Fluchten, Lot, Verlängerungen, Raster 10 mm einzeln an/aus (je Gerät gespeichert). **Shift** gedrückt = ohne Fang.
 - Getestet mit Maus-Erfassung: Wand endet exakt unter einer Wandmitte, eingetippte 2500 mm, Schnitt zweier Fluchten, Lot auf Wandfläche, Verlängerung, Shift frei.
+
+## 13. Version 260: Wandverbindungen, Wandzug, Ortho-Modus, neues Erscheinungsbild
+
+- **Wände verbinden sich automatisch:** Endet eine Wand im Bereich einer anderen oder kurz davor (z. B. Fang auf Wandecke oder Wandfläche), rückt das Ende auf den Schnitt der Achsen. Trifft es dort das Ende der anderen Wand, rückt dieses mit → L-Ecke auf Gehrung; sonst T-Stoß an der Fläche. Gilt beim Zeichnen (auch Länge per Feld/Tastatur) und beim Ziehen von Wandenden. „Ecken verbinden“ in der Wand-Tafel repariert bestehende Ecken im Geschoss. Lösen: Ende wegziehen.
+- **Wandzug:** über Enden verbundene Wände (gleicher Wandart) bilden einen Zug. Doppeltippen auf eine Wand oder „Wandzug (n)“ wählt ihn; die Mehrfachauswahl ändert Wandart, Dicke, Höhe, Fuß für alle.
+- **Wandart:** Außenwand (365), Innenwand tragend (240), Innenwand (115), Trockenbau (100) mit Vorgabe-Dicke; in Leiste und Tafel wählbar. Der Projektmanager gruppiert Wände nach Art. IFC: Name nach Art, Trockenbau als PARTITIONING. Das Startfenster legt Außenwände an.
+- **Ortho-Modus:** „Ortho“ in der Befehlsleiste oder F8 – nur waagerecht/senkrecht ab dem letzten Punkt, auch beim Ziehen von Enden. Aus: Richtung rastet nur nahe 15°-Schritten.
+- **Erscheinungsbild:** Tafel und Fenster mit Formular in zwei gleich breiten Spalten, Beschriftung über dem Feld, Einheit im Feld, große runde Felder mit Fokusring, Segmente als Pille mit gleich breiten Feldern, Aktionen als farbige Pillen (Löschen rot), Hinweise als Karte, farbiges Symbol je Bauteilart im Titel. Befehlsleiste kompakter, mit Ortho/Mitte/Fang als Pillen.
+- Getestet: Fang auf Wandecke (9000 | 6120) → Wand rückt auf Achsschnitt (9000 | 6000), Gehrung; T-Stoß an Wandfläche; Doppeltippen wählt 4 Außenwände, Dicke 300 für alle; Ortho zwingt schrägen Zug waagerecht.
