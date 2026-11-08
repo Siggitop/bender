@@ -1405,7 +1405,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function detectRoom(p) {
     const walls = B.els.filter(e => e.type === 'wall' && e.storey === cur);
     if (!walls.length) return { err: 'Keine Wände in diesem Geschoss.' };
-    const polys = walls.map(wallPoly), all = polys.flat();
+    // Stützen schließen Lücken zwischen Wänden mit
+    const polys = [...walls.map(wallPoly), ...B.els.filter(e => e.type === 'column' && onStorey(e, cur)).map(colPoly)], all = polys.flat();
     const x0 = Math.min(...all.map(q => q[0])) - 300, y0 = Math.min(...all.map(q => q[1])) - 300, x1 = Math.max(...all.map(q => q[0])) + 300, y1 = Math.max(...all.map(q => q[1])) + 300;
     if (p[0] < x0 || p[0] > x1 || p[1] < y0 || p[1] > y1) return { err: 'Außerhalb der Wände.' };
     const c = Math.max(20, Math.ceil(Math.sqrt((x1 - x0) * (y1 - y0) / 1.2e6))), nx = Math.ceil((x1 - x0) / c), ny = Math.ceil((y1 - y0) / c), G = new Uint8Array(nx * ny);
@@ -1460,6 +1461,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     let pts = clean.length >= 3 ? offsetPoly(clean, -c * 0.72) : clean;
     // Ecken exakt auf die Wandflächen ziehen: Schnitt der zwei nächsten Flächen, sonst Lot auf eine
     const faces = walls.flatMap(w => { const d = norm(sub(w.b, w.a)), n = perp(d), [lo, hi] = wallOffs(w); return [lo, hi].map(o => ({ p: add(w.a, mul(n, o)), d })); });
+    B.els.filter(e => e.type === 'column' && e.shape !== 'round' && onStorey(e, cur)).forEach(e => { const K = colPoly(e); K.forEach((q, i) => faces.push({ p: q, d: norm(sub(K[(i + 1) % 4], q)) })); });
     const dist = (q, f) => Math.abs(cross2(f.d, sub(q, f.p)));
     pts = pts.map(q => {
       const nearF = faces.map(f => ({ f, d: dist(q, f) })).filter(x => x.d < c * 3).sort((a2, b2) => a2.d - b2.d);
