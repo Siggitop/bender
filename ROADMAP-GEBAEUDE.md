@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 266**, siehe Abschnitt 6 bis 19. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 267**, siehe Abschnitt 6 bis 20. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -321,3 +321,12 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - Stützen fangen nicht mehr nur in der Mitte: **Stützenecke** (Außenkontur, mit Drehung; Stahl: Profilumriss), **Stützenkante Mitte** (bei „Mitten“), **Stützenfläche** als Fanglinie (bei „Flächen“) – damit auch Lot, Fluchten und Verlängerungen an Stützenflächen. Runde Stützen: vier Randpunkte und ein umschreibendes Quadrat als **Stützenflucht**.
 - Fang-Erklärungen im Fang-Menü ergänzt.
 - Getestet (Stütze 400 × 400): Ecke (70200 | 5200), Kantenmitte (70200 | 5000), auf Fläche (70200 | 5120), Lot von (69000 | 4500) auf die Fläche → (70200 | 4500); rund Ø 400: Randpunkt und Flucht; eine neue Stütze rastete auf der Flucht der Nachbarstütze ein.
+
+## 20. Version 267: Drehpunkt und Einpassen auf Auswahl
+
+- **Drehen um den Punkt unter dem Zeiger:** Beim Drehen in 3D liegt der Drehpunkt auf dem Bauteil, wo man anfasst (Oberseite, Unterseite oder seitlich am Umriss), sonst auf der Geschossebene. Der Drehpunkt bleibt dabei an seiner Stelle im Bild.
+- **Drehen um die Auswahl:** Ist etwas gewählt, dreht die Ansicht um die Mitte der Auswahl (hat Vorrang).
+- **Drehpunkt sichtbar:** grüner Punkt mit hellem Hof, solange gedreht wird.
+- **Einpassen (F / Knopf):** mit Auswahl auf die Auswahl (Blickrichtung bleibt), ohne Auswahl auf alles. **Doppeltippen** auf ein Bauteil (außer Wand, dort Wandzug) wählt es und zoomt darauf, z. B. auf einen Raum.
+- Getestet: Drehen an der Oberseite einer Stütze → Punkt bleibt auf 0,00 px stehen; mit Auswahl, angefasst irgendwo → Auswahlmitte bleibt stehen; Einpassen auf Stütze 400 mm → 90 px im freien Bereich; Doppeltippen auf Stütze → Auswahl und 24-fach gezoomt; Rohr-Selbsttest 9/9.
+- Noch offen: Isolieren (nur Auswahl zeigen).

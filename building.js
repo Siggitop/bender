@@ -449,7 +449,7 @@ export async function openBuilding(env) {
         <button class="nvb" data-b="t:measure" title="Messen (M)" aria-label="Messen">${SVG(IC.measure)}</button>
         <i class="bsep"></i>
         <button class="nvb" data-b="view" title="Grundriss oder 3D (V)" aria-label="Grundriss oder 3D"></button>
-        <button class="nvb" data-b="fit" title="Einpassen (F)" aria-label="Einpassen">${SVG(IC.fit)}</button>
+        <button class="nvb" data-b="fit" title="Einpassen (F): auf die Auswahl, ohne Auswahl auf alles" aria-label="Einpassen">${SVG(IC.fit)}</button>
       </div>
     </div>
     <input type="file" class="bau-file" accept="image/*,application/pdf" hidden>
@@ -757,6 +757,50 @@ export async function openBuilding(env) {
     B.underlays.filter(u => u.storey === cur).forEach(u => ulCorners(u).forEach(p => pts.push([...p, curSt().elev])));
     if (!pts.length) pts.push([-5000, -5000, curSt().elev], [15000, 10000, curSt().elev + curSt().height]);
     return { mn: [0, 1, 2].map(k => Math.min(...pts.map(p => p[k]))), mx: [0, 1, 2].map(k => Math.max(...pts.map(p => p[k]))) };
+  }
+  // Auswahl als Quader (Bauteile und Achse), null ohne Auswahl
+  function selBox() {
+    const pts = [];
+    selIds().map(elById).filter(Boolean).forEach(e => { const [z0, z1] = zOf(e); (footprint(e) || []).forEach(p => pts.push([...p, z0], [...p, z1])); });
+    const g = selGrid(); if (g) pts.push([...g.a, curSt().elev], [...g.b, curSt().elev]);
+    if (!pts.length) return null;
+    return { mn: [0, 1, 2].map(k => Math.min(...pts.map(p => p[k]))), mx: [0, 1, 2].map(k => Math.max(...pts.map(p => p[k]))) };
+  }
+  // Auf die Auswahl einpassen: Blickrichtung und Drehpunkt-Mitte bleiben, nur Maßstab und Verschiebung ändern sich
+  function fitSel() {
+    const bb = selBox();
+    if (!bb) { fitView(); return; }
+    const { mn, mx } = bb, c = mn.map((v, k) => (v + mx[k]) / 2), A = viewArea(), { rx, ry } = basis();
+    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(b => [0, 1, 2].map(k => ((b >> k) & 1 ? mx[k] : mn[k])));
+    const ext = r => Math.max(1500, ...corners.map(q => Math.abs(dot(r, sub(q, c))) * 2));
+    cam.sc = Math.min(20, Math.min((A.x1 - A.x0) / ext(rx), Math.max(80, A.y1 - A.y0) / ext(ry)) * 0.8);
+    const s2 = P3(c); cam.panX += (A.x0 + A.x1) / 2 - s2[0]; cam.panY += (A.y0 + Math.max(A.y0 + 80, A.y1)) / 2 - s2[1];
+  }
+  // freier Bereich der Ansicht: neben der Liste (breit), über Fenster (Telefon) und Leisten
+  function viewArea() {
+    const rr = root.getBoundingClientRect(), dlr = !dlgEl.hidden ? dlgEl.getBoundingClientRect() : null, ifr = !infoEl.hidden && W > 700 ? infoEl.getBoundingClientRect() : null;
+    const side = W > 700 ? (dlr?.width ? dlr : ifr?.width ? ifr : null) : null;
+    const x0 = listOpen && W > 700 ? 320 : 12, x1 = side ? side.left - rr.left - 12 : W - 12, y0 = 64;
+    const dr = dlr && W <= 700 ? dlr : null, y1 = dr && dr.height ? dr.top - rr.top - 8 : H - 130;
+    return { x0, x1, y0, y1 };
+  }
+  // Drehpunkt: Mitte der Auswahl, sonst der Punkt auf dem Bauteil unter dem Zeiger, sonst auf der Geschossebene
+  function orbitPivot(x, y) {
+    const bb = selBox();
+    if (bb) return bb.mn.map((v, k) => (v + bb.mx[k]) / 2);
+    const h = pickEl(x, y), e = h?.el && elById(h.el);
+    if (e) {
+      const [z0, z1] = zOf(e), fp = footprint(e);
+      if (fp?.length > 2) {
+        for (const z of [z1, z0]) { const p = onPlane(x, y, z); if (p && pip(p[0], p[1], fp)) return [...p, z]; }
+        // seitlich getroffen: nächster Punkt des Umrisses auf halber Höhe
+        const zm = (z0 + z1) / 2, p = onPlane(x, y, zm);
+        if (p) { let best = null; fp.forEach((q, i) => { const r2 = fp[(i + 1) % fp.length], d = sub(r2, q), L2 = dot(d, d), t = L2 ? Math.max(0, Math.min(1, dot(sub(p, q), d) / L2)) : 0, c = add(q, mul(d, t)), dd = len(sub(p, c)); if (!best || dd < best.d) best = { c, d: dd }; }); return [...best.c, zm]; }
+        const c = centroid(fp); return [c[0], c[1], zm];
+      }
+    }
+    const p = onPlane(x, y);
+    return p ? [...p, curSt().elev] : null;
   }
   function fitView() {
     const { mn, mx } = bounds();
@@ -1897,6 +1941,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function pickSelect(x, y, add2) {
     const h = pickEl(x, y), now = Date.now(), we = h?.el && elById(h.el);
     if (!add2 && we?.type === 'wall' && lastTap && now - lastTap.t < 450 && lastTap.id === h.el) { sel = { ids: wallChain(we) }; lastTap = null; dirty = true; renderUi(); draw(); if (sel.ids.length > 1) env.toast(`Wandzug: ${sel.ids.length} Wände gewählt.`); return; }
+    if (!add2 && h?.el && we?.type !== 'wall' && lastTap && now - lastTap.t < 450 && lastTap.id === h.el) { sel = { ids: [h.el] }; lastTap = null; dirty = true; renderUi(); fitSel(); draw(); return; }
     lastTap = { t: now, id: h?.el };
     if (add2 && h?.el) { const ids = selIds(); sel = { ids: ids.includes(h.el) ? ids.filter(i => i !== h.el) : [...ids, h.el] }; if (!sel.ids.length) sel = null; }
     else sel = h?.el ? { ids: [h.el] } : h?.grid ? { grid: h.grid } : null;
@@ -2147,6 +2192,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       ctx.strokeStyle = hover.label ? mark : acc; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(s[0], s[1], hover.label ? 8 : 5, 0, 7); ctx.stroke();
       if (hover.label) tag(s[0], s[1] - 22, hover.label, mark);
     }
+    if (drag?.piv && drag.moved && !drag.pan && !drag.D) { const s2 = P3(drag.piv); ctx.fillStyle = 'rgba(40,170,90,.18)'; ctx.beginPath(); ctx.arc(s2[0], s2[1], 13, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(s2[0], s2[1], 5, 0, 7); ctx.stroke(); dot2(s2, 4, 'rgb(40,170,90)'); }
     if (cmd && (dyn || dynNeg)) { const at = lastMouse || [W / 2, H / 2]; tag(at[0] + 70, at[1] + 26, `${cmd.t === 'grid' ? 'Abstand' : 'Länge'} ${dyn || '…'} mm${dynNeg ? ' · Gegenrichtung' : ''} · Enter`, acc); }
   }
   function placeDyn() {
@@ -2944,7 +2990,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       }
       case 'view': setPlan(!cam.plan); return;
       case 'above': showAbove = !showAbove; dirty = true; renderUi(); draw(); return;
-      case 'fit': fitView(); draw(); return;
+      case 'fit': if (selBox()) fitSel(); else fitView(); draw(); return;
       case 'end': endCmd(); return;
       case 'chain': cmd.pts = []; renderUi(); draw(); return;
       case 'mclear': cmd.pts = []; cmd.closed = false; cmd.res = null; renderUi(); draw(); return;
@@ -3164,6 +3210,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; if (drag?.D) dragEnd(drag.D); drag = null; return; }
     const h = !cmd && e.button === 0 && !e.shiftKey ? handleAt(x, y) : null;
     drag = { pan: e.button === 2 || e.button === 1 || (cam.plan && !h), moved: false, D: h ? dragStart(h) : null, shift: e.shiftKey };
+    if (!drag.pan && !drag.D) drag.piv = orbitPivot(x, y);
     freeSnap = !!(e.shiftKey && cmd);
   });
   cv.addEventListener('pointermove', e => {
@@ -3184,7 +3231,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     drag.moved = true;
     if (drag.D) { dragMove(drag.D, x, y); return; }
     if (drag.pan) { cam.panX += dx; cam.panY += dy; }
-    else { cam.yaw += dx * 0.01; cam.pitch = Math.max(0.05, Math.min(Math.PI / 2 - 1e-4, cam.pitch + dy * 0.01)); if (cam.plan) { cam.plan = false; dirty = true; renderUi(); } }
+    else {
+      // Drehen: der Drehpunkt bleibt an seiner Stelle auf dem Bildschirm
+      const pv = drag.piv, s0 = pv && P3(pv);
+      cam.yaw += dx * 0.01; cam.pitch = Math.max(0.05, Math.min(Math.PI / 2 - 1e-4, cam.pitch + dy * 0.01));
+      if (cam.plan) { cam.plan = false; dirty = true; renderUi(); }
+      if (pv) { const s1 = P3(pv); cam.panX += s0[0] - s1[0]; cam.panY += s0[1] - s1[1]; }
+    }
     draw();
   });
   const up = e => {
@@ -3229,7 +3282,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const map = { w: 'wall', s: 'column', t: 'beam', d: 'slab', o: 'open', m: 'measure', r: 'space', g: 'grid' };
     if (map[k]) { e.preventDefault(); if (cmd?.t === map[k]) endCmd(); else startCmd(map[k]); return; }
     if (k === 'v') { setPlan(!cam.plan); return; }
-    if (k === 'f') { fitView(); draw(); }
+    if (k === 'f') { if (selBox()) fitSel(); else fitView(); draw(); }
   });
   root.tabIndex = -1;
   const ro = new ResizeObserver(() => { const r = root.getBoundingClientRect(); W = r.width; H = r.height; draw(); });
