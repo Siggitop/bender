@@ -578,6 +578,8 @@ export async function openBuilding(env) {
     }
     return [r.aR, r.bR, r.bL, r.aL];
   }
+  // Fangpunkte einer Stütze: eckig/Stahl die vier Ecken der Außenkontur, rund die vier Randpunkte
+  const colOutline = c => (c.shape === 'round' ? [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([x, y]) => add(c.p, [x * c.w / 2, y * c.w / 2])) : colPoly(c));
   function colPoly(c) {
     if (c.shape === 'round') return Array.from({ length: 28 }, (_, k) => { const a = 2 * Math.PI * k / 28; return [c.p[0] + Math.cos(a) * c.w / 2, c.p[1] + Math.sin(a) * c.w / 2]; });
     const sec = c.shape === 'steel' ? steelSection(c.prof) : null, w = sec ? sec.b : c.w, dd = sec ? sec.h : c.d;
@@ -1087,8 +1089,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function addParallel(ref, off) {
     const f = famOf(ref); if (!f) return null;
     const o = dot(ref.a, f.n) + off;
-    if (f.items.some(it => Math.abs(it.off - o) < 1)) return null;
-    const g = { id: uid(), name: famName(f.items, o, f.vert), a: add(ref.a, mul(f.n, off)).map(v => Math.round(v * 10) / 10), b: add(ref.b, mul(f.n, off)).map(v => Math.round(v * 10) / 10) };
+    if ((grpOf(ref) || f).items.some(it => Math.abs(it.off - o) < 1)) return null;
+    const g = { id: uid(), name: famName((grpOf(ref) || f).items, o, f.vert), a: add(ref.a, mul(f.n, off)).map(v => Math.round(v * 10) / 10), b: add(ref.b, mul(f.n, off)).map(v => Math.round(v * 10) / 10) };
     B.grids.push(g); return g;
   }
   function gridSeries(str, side) {
@@ -1239,6 +1241,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         L.push({ a: e.a, b: e.b, label: 'Wandachse' });
         for (const o of [lo, hi]) if (Math.abs(o) > 0.5) L.push({ a: add(e.a, mul(n, o)), b: add(e.b, mul(n, o)), label: 'Wandfläche' });
       } else if (e.type === 'beam') L.push({ a: e.a, b: e.b, label: 'Trägerachse' });
+      else if (e.type === 'column') {
+        // Außenflächen der Stütze (rund: umschreibendes Quadrat als Flucht)
+        const K = e.shape === 'round' ? [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => add(e.p, [x * e.w / 2, y * e.w / 2])) : colOutline(e);
+        K.forEach((q, i) => L.push({ a: q, b: K[(i + 1) % 4], label: e.shape === 'round' ? 'Stützenflucht' : 'Stützenfläche' }));
+      }
       else if (['slab', 'roof', 'ceil', 'space', 'shaft'].includes(e.type) && e.pts) e.pts.forEach((p, i) => L.push({ a: p, b: e.pts[(i + 1) % e.pts.length], label: 'Kante' }));
     });
     return L;
@@ -1247,7 +1254,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function snapAt(x, y, o = {}) { const res = snapRaw(x, y, o); if (res?.p) res.p = res.p.map(v => Math.round(v * 10) / 10); return res; }
   // ---------- Fang-Einstellungen (je Gerät) ----------
   const SNAP_KEYS = [['end', 'Endpunkte und Ecken'], ['mid', 'Mitten'], ['grid', 'Achsen und Achsschnitte'], ['face', 'Wandflächen, Achsen, Kanten'], ['track', 'Fluchten (Spurlinien)'], ['perp', 'Lot'], ['ext', 'Verlängerungen'], ['round', 'Raster 10 mm']];
-  const SNAP_HELP = { end: 'Wandenden, Wand- und Raumecken, Stützen', mid: 'Mitte von Wänden, Trägern und Kanten', grid: 'Achslinien und ihre Schnittpunkte', face: 'auf Wandflächen, Wandachsen und Kanten entlang', track: 'waagerecht/senkrecht durch erfasste Punkte (Kreuz)', perp: 'senkrecht vom letzten Punkt auf eine Linie', ext: 'über Wand- und Achsenden hinaus', round: 'freie Punkte und Längen auf 10 mm' };
+  const SNAP_HELP = { end: 'Wandenden, Wand- und Raumecken, Stützenmitte und -ecken', mid: 'Mitte von Wänden, Trägern, Kanten und Stützenseiten', grid: 'Achslinien und ihre Schnittpunkte', face: 'auf Wand- und Stützenflächen, Wandachsen und Kanten entlang', track: 'waagerecht/senkrecht durch erfasste Punkte (Kreuz)', perp: 'senkrecht vom letzten Punkt auf eine Linie', ext: 'über Wand- und Achsenden hinaus', round: 'freie Punkte und Längen auf 10 mm' };
   const snapCfg = (() => { const d = Object.fromEntries(SNAP_KEYS.map(([k]) => [k, true])); try { return { ...d, ...JSON.parse(localStorage.getItem('biege.bau.snap') || '{}') }; } catch { return d; } })();
   const saveSnap = () => { try { localStorage.setItem('biege.bau.snap', JSON.stringify(snapCfg)); } catch {} };
   // erfasste Punkte: Fluchten laufen von Punkten, über die der Zeiger zuletzt gefahren ist (wie in CAD üblich)
@@ -1264,7 +1271,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         const w = e.type === 'wall';
         if (C.end) { put(e.a, w ? 'Wandende' : 'Trägerende'); put(e.b, w ? 'Wandende' : 'Trägerende'); if (w) wallPoly(e).forEach(q => put(q, 'Wandecke')); }
         if (C.mid) put(mul(add(e.a, e.b), 0.5), w ? 'Wandmitte' : 'Trägermitte', 'mid');
-      } else if (e.type === 'column') { if (C.end) put(e.p, 'Stütze'); }
+      } else if (e.type === 'column') {
+        // Stütze: Mitte, Ecken der Außenkontur, Kantenmitten (rund: vier Randpunkte)
+        if (C.end) put(e.p, 'Stützenmitte');
+        const K = colOutline(e);
+        if (C.end) K.forEach(q => put(q, e.shape === 'round' ? 'Stützenrand' : 'Stützenecke'));
+        if (C.mid && e.shape !== 'round') K.forEach((q, i) => put(mul(add(q, K[(i + 1) % 4]), 0.5), 'Stützenkante Mitte', 'mid'));
+      }
       else if (e.pts) {
         if (C.end) e.pts.forEach(q => put(q, 'Eckpunkt'));
         if (C.mid && e.type !== 'space') e.pts.forEach((q, i) => put(mul(add(q, e.pts[(i + 1) % e.pts.length]), 0.5), 'Kantenmitte', 'mid'));
@@ -1819,7 +1832,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         let g = null;
         change(() => {
           g = { id: uid(), name: '?', a, b: p }; B.grids.push(g);
-          const f = famOf(g); g.name = famName(f.items.filter(it => it.g !== g), dot(g.a, f.n), f.vert);
+          const G = grpOf(g); g.name = famName(G.items.filter(it => it.g !== g), dot(g.a, G.n), G.f.vert);
         });
         cmd.pts = []; cmd.base = cmd.ref = g.id; cmd.side = 1; renderUi(); draw();
         env.toast(`Achse ${g.name}. Jetzt parallele Achsen: Abstand eintippen (auch 3x7500) oder Lage tippen.`);
@@ -3237,7 +3250,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   if (fresh) { saveNow().catch(() => {}); openDlg('new', { first: true }); }
   return {
     click: sel2 => root.querySelector(sel2)?.click(), field(key, val) { const el = root.querySelector(`[data-f="${key}"]`); if (!el) return false; el.value = String(val); el.dispatchEvent(new Event('change', { bubbles: true })); return true; },
-    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint, snapAt, detectRoom, ifcText, roofGeo, zOf,
+    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint, snapAt, detectRoom, ifcText, roofGeo, zOf, gridFams, gridGroups,
     get B() { return B; }, get state() { return { cmd, sel, cur, cam, hover }; },
     setCur(id) { cur = id; dirty = true; renderUi(); draw(); },
     setSel(ids) { sel = ids ? { ids } : null; dirty = true; renderUi(); draw(); },

@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 264**, siehe Abschnitt 6 bis 17. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 266**, siehe Abschnitt 6 bis 19. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -308,3 +308,16 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 - **Beim Verschieben** (Auswahlknopf in der Achs-Tafel): **Nur diese Achse**, **Alle folgenden** (Abstände dahinter bleiben gleich) oder **Ganze Richtung** (alle Achsen der Richtung wandern mit, alle Abstände bleiben gleich). Gilt fürs Ziehen und für geänderte Abstände; bei Abständen wirkt „Ganze Richtung“ wie „Alle folgenden“.
 - Gewählte Achse: Abstände zu beiden Nachbarachsen stehen blau direkt an der Achse und laufen beim Ziehen mit.
 - Getestet (Ziehen mit Zeiger-Ereignissen): Achse 3 um 437 mm nur allein; um 1234 mm mit allen folgenden (Abstände 3–7 unverändert); um −2777 mm ganze Richtung (alle Abstände unverändert).
+
+## 18. Version 265: Getrennte Maßketten je Achsgruppe
+
+- Achsen gleicher Richtung, die sich der Länge nach nicht überlappen (z. B. links und rechts im Plan), bilden je eine **Gruppe** mit eigener Maßkette (Einzelmaße und Gesamtmaß). Eine Achse, die über mehrere Gruppen durchläuft, gehört zu jeder davon.
+- Achs-Tafel: **Maßkette** Links/Rechts (bzw. Unten/Oben, bei schrägen Achsen Anfang/Ende), Beide Seiten oder Aus – gilt für die Gruppe der gewählten Achse. Hinweis „Gruppe: n Achsen (A bis …)“.
+- Abstände, Nachbarmaße, Mitnahme beim Ziehen („Ganze Gruppe“ statt „Ganze Richtung“) und Namen arbeiten je Gruppe: eine neue Gruppe zählt eigenständig weiter (H, I, J …), gleiche Lage in einer anderen Gruppe ist erlaubt.
+- Getestet: links D–G (−5 bis 12 m), rechts Da–Fa (22 bis 40 m), A–C durchlaufend → zwei Ketten; rechte Kette auf „Rechts“; neue Gruppe bei 50–60 m → H, I, J; Abstand Da–Ea auf 4000 → nur die rechte Gruppe wandert; Rohr-Selbsttest 9/9.
+
+## 19. Version 266: Fang an Stützen
+
+- Stützen fangen nicht mehr nur in der Mitte: **Stützenecke** (Außenkontur, mit Drehung; Stahl: Profilumriss), **Stützenkante Mitte** (bei „Mitten“), **Stützenfläche** als Fanglinie (bei „Flächen“) – damit auch Lot, Fluchten und Verlängerungen an Stützenflächen. Runde Stützen: vier Randpunkte und ein umschreibendes Quadrat als **Stützenflucht**.
+- Fang-Erklärungen im Fang-Menü ergänzt.
+- Getestet (Stütze 400 × 400): Ecke (70200 | 5200), Kantenmitte (70200 | 5000), auf Fläche (70200 | 5120), Lot von (69000 | 4500) auf die Fläche → (70200 | 4500); rund Ø 400: Randpunkt und Flucht; eine neue Stütze rastete auf der Flucht der Nachbarstütze ein.
