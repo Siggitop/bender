@@ -9,6 +9,7 @@ import { STEEL, STEEL_FAM, steelSection } from './building-steel.js';
 import { loadB, listB, delB, saveB, putFile, getFile, delFile, newBuilding, lastId, remember, download } from './building-store.js';
 import { SVG, IC, TYPE_NAME, LAYERS, ROOM_NAMES, TILE_PRESETS, WALL_PRESETS, WALL_KINDS, kindName, WOPS, wopName, WIN_TPL, WALL_SEG, TYPE_COL, WALL_OPS, OPS, OP_DEF, JUST, MORE, ABOVE, layerOf, MAT, TYPE_CATS, seedTypes } from './building-data.js';
 import { BAU_CSS } from './building-css.js';
+import { SCHEMA, migrate } from './building-schema.js';
 
 export async function openBuilding(env) {
   let styleEl = document.getElementById('bau-css');
@@ -36,11 +37,11 @@ export async function openBuilding(env) {
     </div>
     <div class="bau-main">
       <aside class="ped-list"></aside>
-      <div class="bau-view"><canvas class="ped-gl"></canvas><canvas class="ped-2d"></canvas></div>
+      <div class="bau-view"><canvas class="ped-gl"></canvas><canvas class="ped-2d"></canvas><div class="bau-vc">${[['top', 'Oben'], ['front', 'Vorne'], ['right', 'Rechts'], ['iso', 'Iso'], ['back', 'Hinten'], ['left', 'Links']].map(([k, n]) => `<button data-vw="${k}" title="Ansicht: ${n}">${n}</button>`).join('')}</div></div>
       <div class="ped-info" hidden></div>
     </div>
     <div class="bau-status">
-      <span class="bau-sp"></span><span class="bau-sx"></span>
+      <span class="bau-sp"></span><span class="bau-ss"></span><span class="bau-sx"></span>
       <button data-b="ortho" title="Ortho (F8)">Ortho</button><button data-ddk="snap" title="Fang-Einstellungen">Fang</button><button data-dlg="keys" title="Tastaturkürzel (?)">?</button>
     </div>
     <div class="bau-ctxm" hidden></div>
@@ -79,13 +80,15 @@ export async function openBuilding(env) {
   const fresh = !B;
   if (!B) B = newBuilding();
   remember(B.id);
-  const fixB = () => { if (!B.typesV) { B.types ||= seedTypes(); B.typesV = 1; (B.els || []).forEach(linkOne); } B.types ||= seedTypes(); B.vis ||= { off: {}, hide: [] }; B.vis.off ||= {}; B.vis.hide ||= []; B.grids ||= []; B.underlays ||= []; };
+  const WJ_OPTS = [['auto', 'Automatisch (Gehrung, T-Stoß)'], ['butt', 'Stumpf an die Nachbarwand']];
+  // Gebäude auf den neuesten Datenstand bringen (Migrationskette in building-schema.js); neuere Gebäude bleiben unverändert und werden gemeldet
+  const fixB = () => { const r = migrate(B, { linkOne }); if (r.newer) setTimeout(() => env.toast('Dieses Gebäude stammt aus einer neueren Version der App. Speichern kann Angaben verlieren.'), 400); return r; };
   fixB();
   let cur = [...B.storeys].sort((a, b) => Math.abs(a.elev) - Math.abs(b.elev))[0].id;
   // Liste: Reiter, aufgeklappte Geschosse und Gruppen; Fenster (Dialog) mit eigenem Zustand
   let tab = 'tree', dlg = null;
   const openSt = new Set([cur]), openGrp = new Set();
-  const cam = { yaw: -0.6, pitch: 0.55, sc: 0.05, panX: 0, panY: 0, plan: false };
+  const cam = { yaw: -0.6, pitch: 0.55, sc: 0.05, panX: 0, panY: 0, plan: false, style: (() => { try { const v = localStorage.getItem('biege.bau.style'); return ['shaded', 'edges', 'xray'].includes(v) ? v : 'shaded'; } catch { return 'shaded'; } })() };
   let desk = false, ribTab = (() => { try { const v = +localStorage.getItem('biege.bau.rib'); return v >= 0 && v < 8 ? v : 1; } catch { return 1; } })(), ribOff = (() => { try { return localStorage.getItem('biege.bau.riboff') === '1'; } catch { return false; } })(), lastCmdT = null, ribPrev = 1;
   let mid = [0, 0, 0], size = 20000, W = 1, H = 1, listOpen = innerWidth > 1000, showAbove = false, moreOpen = false;
   // sel: { ids: [...] } Bauteile oder { grid: id }; addMode: Tippen ergänzt die Auswahl
@@ -103,7 +106,67 @@ export async function openBuilding(env) {
   const saveNow = () => { if (testing) return Promise.resolve(); B.updated = Date.now(); return saveB(B).then(() => { savedAt = Date.now(); if (dlg?.kind === 'docs') renderDlg(); }); };
   const persist = () => { if (testing) return; clearTimeout(saveT); saveT = setTimeout(() => saveNow().catch(e => env.toast(`Speichern fehlgeschlagen: ${e.message || e}`)), 250); };
   const snap = () => JSON.stringify(B);
-  function change(fn) { undo.push(snap()); if (undo.length > 200) undo.shift(); redo.length = 0; fn(); relinkAll(); syncStairs(); dirty = true; persist(); renderUi(); draw(); }
+  // ---------- Räume folgen den Wänden ----------
+  // Ein Raum mit seed (Punkt im Raum) und auto berechnet seinen Umriss neu, wenn sich Wände oder Stützen seines Geschosses ändern.
+  // Die Aktualisierung läuft kurz nach der Änderung und ist kein eigener Rückgängig-Schritt (der Stand davor enthält den alten Umriss mit).
+  const wallSig = sid => B.els.filter(e => e.storey === sid && (e.type === 'wall' || e.type === 'column')).map(e => `${e.id}${(e.a || e.p).join()}${e.b ? e.b.join() : ''}${e.t || ''}${e.w || ''}${e.d || ''}${e.rot || ''}${e.just || ''}${e.ja || ''}${e.jb || ''}`).join('|');
+  const sigs = new Map(), roomsStale = new Set(); let roomsT = 0;
+  const syncSigs = () => { B.storeys.forEach(s0 => { const g = wallSig(s0.id); if (sigs.get(s0.id) !== g) { if (sigs.has(s0.id) && B.els.some(e => e.type === 'space' && e.auto && e.storey === s0.id)) roomsStale.add(s0.id); sigs.set(s0.id, g); } }); if (roomsStale.size) { clearTimeout(roomsT); roomsT = setTimeout(updateRooms, 120); } };
+  function roomSeed(e) {
+    const ok = q => pip(q[0], q[1], e.pts) && !(e.holes || []).some(h2 => pip(q[0], q[1], h2));
+    const c = centroid(e.pts); if (ok(c)) return c.map(v => Math.round(v * 10) / 10);
+    for (const [i, j, k] of triangulate(e.pts)) { const q = centroid([e.pts[i], e.pts[j], e.pts[k]]); if (ok(q)) return q.map(v => Math.round(v * 10) / 10); }
+    return null;
+  }
+  function updateRooms() {
+    clearTimeout(roomsT); let n = 0;
+    for (const sid of [...roomsStale]) {
+      if (sid !== cur) continue; // detectRoom arbeitet am aktuellen Geschoss; die anderen folgen beim Wechsel dorthin
+      roomsStale.delete(sid);
+      B.els.filter(e => e.type === 'space' && e.auto && e.seed && e.storey === sid).forEach(e => {
+        const r = detectRoom(e.seed);
+        if (r.err) { if (!e.open) { e.open = true; n++; } return; }
+        const same = JSON.stringify(r.pts) === JSON.stringify(e.pts) && JSON.stringify(r.holes || []) === JSON.stringify(e.holes || []);
+        delete e.open; if (same) return;
+        e.pts = r.pts; if (r.holes?.length) e.holes = r.holes; else delete e.holes; n++;
+      });
+    }
+    if (n) { dirty = true; persist(); renderUi(); draw(); }
+  }
+  // Rückgängig/Wiederholen: ein Schritt
+  function undoRedo(a) {
+    const from = a === 'undo' ? undo : redo, to = a === 'undo' ? redo : undo;
+    if (!from.length) return false;
+    to.push(snap()); B = JSON.parse(from.pop()); fixB();
+    if (!st(cur)) cur = B.storeys[0].id;
+    sigs.clear(); syncSigs(); roomsStale.clear(); sel = null; dirty = true; persist(); renderUi(); draw(); return true;
+  }
+  // Name eines Änderungsschritts aus dem Unterschied zweier Stände (kein Mitführen von Namen an jeder Änderung nötig)
+  function describeStep(bs, as) {
+    const A = JSON.parse(bs), C = JSON.parse(as), parts = [];
+    const idx = L => new Map((L || []).map(e => [e.id, JSON.stringify(e)])), a0 = idx(A.els), c0 = idx(C.els), tn = id => TYPE_NAME[(C.els.find(e => e.id === id) || A.els.find(e => e.id === id))?.type] || 'Bauteil';
+    const added = [...c0.keys()].filter(k => !a0.has(k)), removed = [...a0.keys()].filter(k => !c0.has(k)), changed = [...c0.keys()].filter(k => a0.has(k) && a0.get(k) !== c0.get(k));
+    const grp = (ids, verb) => { if (!ids.length) return; const kinds = [...new Set(ids.map(tn))]; parts.push(kinds.length === 1 ? (ids.length === 1 ? `${kinds[0]} ${verb}` : `${ids.length} × ${kinds[0]} ${verb}`) : `${ids.length} Bauteile ${verb}`); };
+    grp(added, 'angelegt'); grp(removed, 'gelöscht'); grp(changed, 'geändert');
+    const gj = (X, Y) => JSON.stringify(X || []) !== JSON.stringify(Y || []);
+    if (gj(A.grids, C.grids)) parts.push((C.grids?.length || 0) > (A.grids?.length || 0) ? 'Achse angelegt' : (C.grids?.length || 0) < (A.grids?.length || 0) ? 'Achse gelöscht' : 'Achse geändert');
+    if (gj(A.storeys, C.storeys)) parts.push('Geschoss geändert');
+    if (JSON.stringify(A.types || {}) !== JSON.stringify(C.types || {})) parts.push('Typ geändert');
+    if (gj(A.underlays, C.underlays)) parts.push('Planunterlage geändert');
+    if (JSON.stringify(A.vis || {}) !== JSON.stringify(C.vis || {})) parts.push('Sichtbarkeit geändert');
+    return parts.length ? parts.slice(0, 3).join(', ') : 'Änderung';
+  }
+  // Verlauf: letzte Schritte mit Namen; Klick springt auf den Stand davor
+  function histMenu(btn) {
+    const n = undo.length, from = Math.max(0, n - 30), items = [];
+    for (let i = n - 1; i >= from; i--) { let nm; try { nm = describeStep(undo[i], i + 1 < n ? undo[i + 1] : snap()); } catch { nm = 'Änderung'; } items.push(`<button data-hist="${n - i}"><b>${esc(nm)}</b><small>${n - i === 1 ? 'letzter Schritt' : `${n - i} Schritte zurück`}</small></button>`); }
+    ctxm.innerHTML = items.length ? `<div class="bau-ddh">Verlauf · zurück zu vor …</div>${items.join('')}` : '<div class="bau-ddh">Noch keine Änderungen</div>';
+    ctxm.hidden = false; ctxm.classList.add('bau-hist');
+    const rr = root.getBoundingClientRect(), br = btn.getBoundingClientRect();
+    ctxm.style.left = `${Math.max(4, Math.min(rr.width - 300, br.left - rr.left))}px`; ctxm.style.top = `${br.bottom - rr.top + 4}px`;
+    ctxm.style.maxHeight = `${Math.max(160, rr.bottom - br.bottom - 20)}px`; ctxm.style.overflow = 'auto';
+  }
+  function change(fn) { undo.push(snap()); if (undo.length > 200) undo.shift(); redo.length = 0; fn(); relinkAll(); syncStairs(); syncSigs(); dirty = true; persist(); renderUi(); draw(); }
   const elById = id => B.els.find(e => e.id === id);
   const selIds = () => (sel?.ids || []).filter(id => B.els.some(e => e.id === id)), isSel = id => !!sel?.ids?.includes(id);
   const selEl = () => (selIds().length === 1 ? elById(selIds()[0]) : null), selGrid = () => (sel?.grid ? B.grids.find(g => g.id === sel.grid) : null);
@@ -180,7 +243,11 @@ export async function openBuilding(env) {
       }
       if (others.length === 1) {
         const o = others[0], od = norm(sub(o.b, o.a)), oAway = near(o.a, P) ? od : mul(od, -1), s = add(away, oAway);
-        if (len(s) > 1e-3 && Math.abs(cross2(away, oAway)) > 0.02) m = norm(s);
+        // Ecke von Hand: „stumpf“ stößt an die Fläche der Nachbarwand, die Nachbarwand läuft bis zur Außenfläche durch (sonst Gehrung)
+        const oEnd = near(o.a, P) ? 'a' : 'b', myStyle = w[end === 'a' ? 'ja' : 'jb'], oStyle = o[oEnd === 'a' ? 'ja' : 'jb'], on = perp(od), [olo, ohi] = wallOffs(o), sd = dot(sub(w[end === 'a' ? 'b' : 'a'], o.a), on);
+        if (myStyle === 'butt' && oStyle !== 'butt') face = { p: add(o.a, mul(on, sd > 0 ? ohi : olo)), d: od };
+        else if (oStyle === 'butt' && myStyle !== 'butt') face = { p: add(o.a, mul(on, sd > 0 ? olo : ohi)), d: od };
+        else if (len(s) > 1e-3 && Math.abs(cross2(away, oAway)) > 0.02) m = norm(s);
       }
       for (const [k, off] of [['L', hi], ['R', lo]]) {
         const Q = add(P, mul(n, off));
@@ -277,8 +344,8 @@ export async function openBuilding(env) {
     const { d } = wallAxis(w), n = perp(d), [wlo, whi] = wallOffs(w), sv = p => dot(sub(p, w.a), d), lat = p => dot(sub(p, w.a), n);
     const ws = poly.map(sv), sMin = Math.min(...ws), sMax = Math.max(...ws), out = [];
     B.els.forEach(c => {
-      if (c.type !== 'column' || c.storey !== w.storey) return;
-      const P = colPoly(c), ss = P.map(sv), ls = P.map(lat), l0 = Math.min(...ls), l1 = Math.max(...ls), s0 = Math.min(...ss), s1 = Math.max(...ss);
+      if ((c.type !== 'column' && c.type !== 'beam') || c.storey !== w.storey) return;
+      const P = c.type === 'beam' ? beamPoly(c) : colPoly(c), ss = P.map(sv), ls = P.map(lat), l0 = Math.min(...ls), l1 = Math.max(...ls), s0 = Math.min(...ss), s1 = Math.max(...ss);
       if (l1 <= wlo + 0.5 || l0 >= whi - 0.5 || s1 <= sMin + 0.5 || s0 >= sMax - 0.5) return;
       const [cz0, cz1] = zRange(c);
       out.push({ s0, s1, b: cz0, t: cz1, lat: l0 <= wlo + 0.5 && l1 >= whi - 0.5 ? null : [l0, l1], col: c.id });
@@ -425,6 +492,30 @@ export async function openBuilding(env) {
     cam.sc = Math.min((x1 - x0) / ext(rx), Math.max(80, y1 - y0) / ext(ry)) * 0.9;
     cam.panX = (x0 + x1) / 2 - W / 2; cam.panY = (y0 + Math.max(y0 + 80, y1)) / 2 - H / 2;
   }
+  // Standardansichten: Oben = Grundriss, Vorne/Rechts/Hinten/Links = Ansicht von der Seite, Iso = Schrägansicht
+  const VIEWS = { top: [0, Math.PI / 2 - 1e-4], front: [0, 0.05], right: [-Math.PI / 2, 0.05], back: [Math.PI, 0.05], left: [Math.PI / 2, 0.05], iso: [-0.6, 0.55] };
+  function setView(k) {
+    const v = VIEWS[k]; if (!v) return;
+    cam.plan = k === 'top'; cam.yaw = v[0]; cam.pitch = v[1];
+    fitView(); dirty = true; renderUi(); draw();
+  }
+  const viewKey = () => (cam.plan ? 'top' : Object.entries(VIEWS).find(([k, v]) => k !== 'top' && k !== 'iso' && Math.abs(cam.yaw - v[0]) < 0.01 && cam.pitch < 0.1)?.[0] || (cam.pitch > 0.1 ? 'iso' : ''));
+  // Gespeicherte Ansichten: Blickrichtung, Ausschnitt, Geschoss, Layer, Darstellung
+  function saveView() {
+    const base = `${cam.plan ? 'Grundriss' : '3D'} ${curSt().name}`, have = new Set((B.views || []).map(x => x.name)); let nm = base, i = 2; while (have.has(nm)) nm = `${base} (${i++})`;
+    const v = { id: uid(), name: nm, yaw: cam.yaw, pitch: cam.pitch, sc: cam.sc, panX: cam.panX, panY: cam.panY, plan: cam.plan, style: cam.style, cur, mid: [...mid], off: { ...B.vis.off } };
+    change(() => { (B.views ||= []).push(v); }); env.toast(`Ansicht „${nm}“ gespeichert.`); return v;
+  }
+  function gotoView(id) {
+    const v = (B.views || []).find(x => x.id === id); if (!v) return false;
+    if (st(v.cur)) cur = v.cur;
+    Object.assign(cam, { yaw: v.yaw, pitch: v.pitch, sc: v.sc, panX: v.panX, panY: v.panY, plan: v.plan, style: v.style || cam.style }); mid = [...v.mid]; B.vis.off = { ...v.off };
+    sel = null; dirty = true; renderUi(); draw(); return true;
+  }
+  function viewsHtml() {
+    const L = (B.views || []).map(v => `<div class="bau-vrow"><button class="bau-trow" data-vgo="${v.id}"><b>${esc(v.name)}</b><small>${v.plan ? 'Grundriss' : '3D'} · ${esc(st(v.cur)?.name || '')}${v.style && v.style !== 'shaded' ? ` · ${v.style === 'edges' ? 'Kanten' : 'Röntgen'}` : ''}</small></button><button class="icbtn" data-vdel="${v.id}" title="Ansicht löschen" aria-label="Ansicht löschen">${SVG(IC.x)}</button></div>`).join('');
+    return `<div class="ped-acts"><button data-b="vsave" class="on">+ Aktuelle Ansicht speichern</button></div>${L || '<small class="bau-none">Noch keine gespeicherten Ansichten.</small>'}`;
+  }
   function setPlan(on) {
     cam.plan = on;
     if (on) { cam.yaw = 0; cam.pitch = Math.PI / 2 - 1e-4; } else { cam.yaw = -0.6; cam.pitch = 0.55; }
@@ -453,7 +544,7 @@ export async function openBuilding(env) {
   }
   // Kantenlinien einer Wand: Umriss oben, unten, senkrecht – ohne die Teile, die in einer Stütze liegen (Gehrung und Stoß verschwinden hinter der Stütze)
   function wallOutline(w, z0, z1, lines) {
-    const fp = footprint(w), cols = B.els.filter(c => c.type === 'column' && c.storey === w.storey && shown(c)).map(c => ({ K: colPoly(c), r: zRange(c) }));
+    const fp = footprint(w), cols = B.els.filter(c => (c.type === 'column' || c.type === 'beam') && c.storey === w.storey && shown(c)).map(c => ({ K: c.type === 'beam' ? beamPoly(c) : colPoly(c), r: zRange(c) }));
     const Ks = z => cols.filter(c => z >= c.r[0] - 1 && z <= c.r[1] + 1).map(c => c.K);
     const P = fp.filter((p, i) => !near(p, fp[(i + 1) % fp.length], 0.01));
     for (let i = 0; i < P.length; i++) {
@@ -647,7 +738,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.BLEND); gl.depthMask(true); gl.uniform1f(glp.uAlpha, 1); gl.uniform1f(glp.uFlat, cam.plan ? 1 : 0);
     gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
-    if (triN) { gl.bindBuffer(gl.ARRAY_BUFFER, glp.tris); attribs(); gl.drawArrays(gl.TRIANGLES, 0, triN); }
+    if (triN) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, glp.tris); attribs();
+      if (cam.style === 'edges') { gl.colorMask(false, false, false, false); gl.drawArrays(gl.TRIANGLES, 0, triN); gl.colorMask(true, true, true, true); } // nur Kanten: Flächen verdecken nur noch, ohne zu erscheinen
+      else if (cam.style === 'xray') { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.uniform1f(glp.uAlpha, 0.32); gl.drawArrays(gl.TRIANGLES, 0, triN); gl.depthMask(true); gl.disable(gl.BLEND); gl.uniform1f(glp.uAlpha, 1); } // Röntgen: durchscheinend
+      else gl.drawArrays(gl.TRIANGLES, 0, triN);
+    }
     gl.disable(gl.POLYGON_OFFSET_FILL);
     if (lineN) {
       const edge = isDark() ? [0.2, 0.22, 0.25] : [0.25, 0.27, 0.3];
@@ -898,8 +994,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function applyOpDim(hh, v) {
     const o = elById(hh.op);
     if (!o) return;
-    if (o.type === 'hole') {
-      const m = hh.dir, dl = hh.val - v; // Abstand kleiner → Durchbruch wandert zur Kante hin
+    if (o.type === 'wall') {
+      change(() => {
+        if (hh.kind === 'wl' && v > 0) { o.b = add(o.a, mul(norm(sub(o.b, o.a)), v)).map(r1); B.els.filter(x => x.host === o.id && WALL_OPS.includes(x.type)).forEach(x => { x.w = Math.min(x.w, v); x.at = Math.max(x.w / 2, Math.min(v - x.w / 2, x.at)); }); joinWall(o, ['b']); }
+        else if (hh.kind === 'wt' && v > 0) o.t = v;
+      });
+    } else if (o.type === 'hole' || o.type === 'column') {
+      const m = hh.dir, dl = hh.val - v; // Abstand kleiner → Bauteil wandert zur Kante hin
       change(() => { o.p = add(o.p, mul(m, dl)).map(r1); });
     } else {
       const w = hostOf(o); if (!w) return;
@@ -912,6 +1013,24 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       });
     }
     renderUi(); draw();
+  }
+  // Maße einer gewählten Wand: Länge (Anfang bleibt) und Dicke, am oberen Rand der Wand
+  function wallDims(w) {
+    const { d } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), [, z1] = zRange(w), { rz } = basis(), side = n[0] * rz[0] + n[1] * rz[1] < 0 ? hi : lo, off = side + (side > 0 ? 350 : -350), mid = mul(add(w.a, w.b), 0.5);
+    return [{ A: [...add(w.a, mul(n, off)), z1], B: [...add(w.b, mul(n, off)), z1], val: len(sub(w.b, w.a)), kind: 'wl', title: 'Länge (Anfang bleibt)' },
+      { A: [...add(mid, mul(n, lo)), z1], B: [...add(mid, mul(n, hi)), z1], val: w.t, kind: 'wt', title: 'Dicke' }];
+  }
+  // Maße einer gewählten Stütze: Abstand von jeder Seite bis zur nächsten Wandfläche oder Achse; Eingabe verschiebt die Stütze
+  function colDims(c) {
+    const [, z1] = zOf(c), segs = [], hw = c.w / 2, hd = (c.shape === 'round' ? c.w : c.d) / 2;
+    B.els.forEach(e => { if (e.type === 'wall' && e.storey === c.storey) { const P = wallPoly(e); P.forEach((q, i) => segs.push([q, P[(i + 1) % P.length]])); } });
+    if (!B.vis.off.grid) B.grids.forEach(g => segs.push([g.a, g.b]));
+    const hit = (q, dir) => { let best = Infinity; segs.forEach(([a, b]) => { const e2 = sub(b, a), den = cross2(dir, e2); if (Math.abs(den) < 1e-9) return; const t = cross2(sub(a, q), e2) / den, u = cross2(sub(a, q), dir) / den; if (t > 0.5 && u >= -1e-6 && u <= 1 + 1e-6 && t < best) best = t; }); return best; };
+    const out = [], P = c.p;
+    [[[1, 0], [P[0] + hw, P[1]], 'x+', 'Abstand rechts'], [[-1, 0], [P[0] - hw, P[1]], 'x-', 'Abstand links'], [[0, 1], [P[0], P[1] + hd], 'y+', 'Abstand oben'], [[0, -1], [P[0], P[1] - hd], 'y-', 'Abstand unten']].forEach(([dir, q, kind, title]) => {
+      const t = hit(q, dir); if (Number.isFinite(t) && t < 1e5) out.push({ A: [...q, z1], B: [...add(q, mul(dir, t)), z1], val: t, kind, title, dir });
+    });
+    return out;
   }
   // Maß im Raum zeichnen (Ansicht oder Grundriss), antippbar
   function dim3(A, Bq, val, col, hits, data) {
@@ -1293,10 +1412,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const DRAW = ['wall', 'column', 'beam', 'slab', 'grid', 'open', 'roof', 'ceil', 'space', 'shaft', 'stair', 'measure', 'gstart', 'ualign'];
   function startCmd(t, extra = {}) {
     acq = []; dyn = ''; closeDD();
-    if (!['move', 'copy', 'split', 'tiles', 'gstart', 'measure'].includes(t)) sel = null;
+    if (!['move', 'copy', 'split', 'tiles', 'gstart', 'measure', 'rotate', 'mirror'].includes(t)) sel = null;
     hover = null; gridForm = false; addMode = false; moreOpen = false;
     if (t === 'sel') { cmd = null; dirty = true; renderUi(); draw(); return; }
-    if ([...DRAW, 'move', 'copy', 'split', 'tiles'].includes(t) && Math.abs(basis().rz[2]) < 0.12) setPlan(true);
+    if ([...DRAW, 'move', 'copy', 'split', 'tiles', 'rotate', 'mirror'].includes(t) && Math.abs(basis().rz[2]) < 0.12) setPlan(true);
     cmd = { t, pts: [] }; if (!['sel', 'gstart', 'tiles', 'split'].includes(t)) lastCmdT = t;
     const s = curSt();
     if (t === 'wall') Object.assign(cmd, { th: last.wall.th, just: last.wall.just, kind: last.wall.kind, typeId: last.wall.typeId ?? null });
@@ -1310,6 +1429,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (t === 'shaft') Object.assign(cmd, { to: sorted().at(-1).id });
     if (t === 'open') Object.assign(cmd, { kind: last.op.kind, ...structuredClone(last.op.v) });
     if (t === 'copy') Object.assign(cmd, { n: last.copyN });
+    if (t === 'rotate') Object.assign(cmd, { ang: 90 });
+    if (t === 'mirror') Object.assign(cmd, { keep: true });
     Object.assign(cmd, extra);
     dirty = true; renderUi(); draw();
   }
@@ -1539,7 +1660,36 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (e.p) e.p = mv(e.p);
     if (e.pts) e.pts = e.pts.map(mv);
     if (e.holes) e.holes = e.holes.map(h => h.map(mv));
+    if (e.seed) e.seed = mv(e.seed);
     if (e.type === 'ceil') { e.ox += d[0]; e.oy += d[1]; }
+  }
+  // Drehen und Spiegeln der Auswahl (Wand, Stütze, Träger, Decke, Raum, Schacht samt Türen, Fenstern und Durchbrüchen); copy = Kopie statt Original
+  function transformSel(f, o, ids = selIds()) {
+    const els = ids.map(elById).filter(Boolean), OK = ['wall', 'column', 'beam', 'slab', 'space', 'shaft'], main = els.filter(e => OK.includes(e.type));
+    if (!main.length) { env.toast('Drehen und Spiegeln geht für Wand, Stütze, Träger, Decke, Raum und Schacht.'); return []; }
+    const ops = B.els.filter(x => OPS.includes(x.type) && !x.stairOf && main.some(h => h.id === x.host)), made = [];
+    const one = e => {
+      if (e.a) e.a = f(e.a); if (e.b) e.b = f(e.b); if (e.p) e.p = f(e.p); if (e.seed) e.seed = f(e.seed);
+      if (e.pts) { e.pts = e.pts.map(f); if (o.mirror) e.pts.reverse(); }
+      if (e.holes) { e.holes = e.holes.map(h => { const m = h.map(f); if (o.mirror) m.reverse(); return m; }); }
+      if (e.type === 'column') e.rot = (((o.mirror ? 2 * o.ax - (e.rot || 0) : (e.rot || 0) + o.deg) % 360) + 360) % 360;
+      if (e.type === 'wall' && o.mirror && e.just !== 'c') e.just = e.just === 'l' ? 'r' : 'l';
+      return e;
+    };
+    change(() => {
+      const map = new Map();
+      main.forEach(e => { if (o.copy) { const c = structuredClone(e); c.id = uid(); map.set(e.id, c.id); one(c); B.els.push(c); made.push(c.id); } else one(e); });
+      ops.forEach(x => { if (o.copy) { const c = structuredClone(x); c.id = uid(); c.host = map.get(x.host); if (c.type === 'hole') one(c); B.els.push(c); } else if (x.type === 'hole') one(x); });
+    });
+    return made;
+  }
+  const rotF = (c, deg) => { const a = deg * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a); return q => { const v = sub(q, c); return add(c, [v[0] * cs - v[1] * sn, v[0] * sn + v[1] * cs]).map(r1); }; };
+  const mirF = (a0, b0) => { const d = norm(sub(b0, a0)); return q => { const v = sub(q, a0), pr = add(a0, mul(d, dot(v, d))); return sub(mul(pr, 2), q).map(r1); }; };
+  function doRotate(copy) {
+    const C = cmd; if (!C?.pts.length) { env.toast('Zuerst den Drehpunkt tippen.'); return; }
+    const deg = num(C.ang); if (!Number.isFinite(deg)) { env.toast('Winkel eingeben.'); return; }
+    const made = transformSel(rotF(C.pts[0], deg), { deg, copy }); if (made.length && copy) sel = { ids: made };
+    endCmd();
   }
   function xform(d) {
     const ids = selIds(), els = ids.map(elById).filter(Boolean);
@@ -1623,16 +1773,18 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (!p) return;
       const r = detectRoom(p);
       if (r.err) { env.toast(r.err); return; }
-      if (t === 'space') { const nums = B.els.filter(e => e.type === 'space').map(e => +e.no).filter(Number.isFinite); addEl({ type: 'space', pts: r.pts, ...(r.holes.length ? { holes: r.holes } : {}), name: 'Raum', no: String((nums.length ? Math.max(...nums) : 0) + 1) }); }
+      if (t === 'space') { const nums = B.els.filter(e => e.type === 'space').map(e => +e.no).filter(Number.isFinite); addEl({ type: 'space', seed: p.map(v => Math.round(v * 10) / 10), auto: true, pts: r.pts, ...(r.holes.length ? { holes: r.holes } : {}), name: 'Raum', no: String((nums.length ? Math.max(...nums) : 0) + 1) }); }
       else addArea('ceil', r.pts, r.holes);
       return;
     }
     const lp = cmd.pts.length ? cmd.pts.at(-1) : null;
-    const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair'].includes(t) ? lp : null;
+    const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair', 'mirror'].includes(t) ? lp : null;
     const extra = ['wall', 'slab', 'roof', 'ceil'].includes(t) && cmd.pts.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
     const raw = t === 'cal' || t === 'ualign' || t === 'umove' && !cmd.pts.length;
-    const s = raw ? { p: calOrtho(onPlane(x, y)) } : snapAt(x, y, { from: cmd.mid ? null : from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
+    const s = raw ? { p: calOrtho(onPlane(x, y)) } : snapAt(x, y, { from: cmd.mid || (cmd.from && !cmd.from.a) ? null : (cmd.from?.a || from), extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
     if (!s?.p) { env.toast('In dieser Ansicht lässt sich nicht zeichnen. Grundriss oder 3D von schräg oben.'); return; }
+    if (cmd.from && !cmd.from.a) { cmd.from.a = s.p; renderUi(); draw(); return; }
+    if (cmd.from?.a) cmd.from = null;
     // Mitte zwischen zwei Punkten: erst beide Punkte, dann gilt die Mitte als getippter Punkt
     if (cmd.mid) { if (!cmd.mid.a) { cmd.mid.a = s.p; renderUi(); draw(); return; } const m = mul(add(cmd.mid.a, s.p), 0.5).map(v => Math.round(v * 10) / 10); cmd.mid = null; applyPoint(m); return; }
     applyPoint(s.p);
@@ -1695,6 +1847,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         env.toast(`Achse ${g.name}. Jetzt parallele Achsen: Abstand eintippen (auch 3x7500) oder Lage tippen.`);
         return;
       }
+      case 'rotate': if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); } return;
+      case 'mirror': {
+        if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
+        if (near(p, cmd.pts[0], 5)) return;
+        const a0 = cmd.pts[0], ax = Math.atan2(p[1] - a0[1], p[0] - a0[0]) * 180 / Math.PI, made = transformSel(mirF(a0, p), { mirror: true, ax, copy: cmd.keep });
+        if (made.length) sel = { ids: made }; endCmd(); return;
+      }
       case 'move': case 'copy':
         if (!cmd.pts.length) { cmd.pts.push(p); renderUi(); draw(); return; }
         xform(sub(p, cmd.pts[0])); endCmd(); return;
@@ -1749,6 +1908,19 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (segD(x, y, a, b)[0] < tol) return { grid: g.id };
     }
     return null;
+  }
+  // Rahmenauswahl (Shift + Ziehen auf leerer Fläche): von links nach rechts nur Bauteile, die ganz im Rahmen liegen; von rechts nach links alles, was den Rahmen berührt. Ergänzt die Auswahl.
+  function rectSelect(r) {
+    const x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1), y0 = Math.min(r.y0, r.y1), y1 = Math.max(r.y0, r.y1), cross = r.x1 < r.x0, ids = [];
+    B.els.forEach(e => {
+      if (!onStorey(e, cur) || !shown(e) || (cam.plan && e.type === 'ceil')) return;
+      const fp = footprint(e); if (!fp || fp.length < 2) return;
+      const [z0, z1] = zOf(e), S = fp.flatMap(p => [P3([...p, z0]), P3([...p, z1])]), bx0 = Math.min(...S.map(q => q[0])), bx1 = Math.max(...S.map(q => q[0])), by0 = Math.min(...S.map(q => q[1])), by1 = Math.max(...S.map(q => q[1]));
+      const inside = bx0 >= x0 && bx1 <= x1 && by0 >= y0 && by1 <= y1, touch = bx1 >= x0 && bx0 <= x1 && by1 >= y0 && by0 <= y1;
+      if (cross ? touch : inside) ids.push(e.id);
+    });
+    const all = [...new Set([...selIds(), ...ids])]; sel = all.length ? { ids: all } : null; dirty = true;
+    env.toast(ids.length ? `${ids.length} Bauteil${ids.length === 1 ? '' : 'e'} im Rahmen (${cross ? 'berührt' : 'ganz enthalten'}), insgesamt ${all.length} gewählt.` : 'Nichts im Rahmen.');
   }
   let lastTap = null;
   function pickSelect(x, y, add2) {
@@ -1834,7 +2006,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (D.e?.type === 'stair') stairHole(D.e);
     if (D.e?.type === 'wall' && D.moved !== false) joinWall(D.e, D.h.k === 'm' ? ['a', 'b'] : [D.h.k]);
     if (snap() === D.before) return;
-    undo.push(D.before); redo.length = 0; persist(); renderUi();
+    undo.push(D.before); redo.length = 0; syncSigs(); persist(); renderUi();
   }
 
   // ---------- Zeichnen (Beschriftung, Raster, Anfasser) ----------
@@ -1869,7 +2041,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     });
     // Wandschichten (Grundriss): Bänder je Schicht in Materialfarbe, ohne die Stützen; erst ab sichtbarer Dicke
     if (cam.plan) {
-      const cols = B.els.filter(c => c.type === 'column' && c.storey === cur && shown(c)).map(colPoly), px = len(sub(P2([1000, 0], z), P2([0, 0], z))) / 1000;
+      const cols = B.els.filter(c => (c.type === 'column' || c.type === 'beam') && c.storey === cur && shown(c)).map(c => (c.type === 'beam' ? beamPoly(c) : colPoly(c))), px = len(sub(P2([1000, 0], z), P2([0, 0], z))) / 1000;
       ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); cols.forEach(K => K.forEach((q, i) => { const s2 = P2(q, z); if (i) ctx.lineTo(s2[0], s2[1]); else ctx.moveTo(s2[0], s2[1]); ctx.closePath(); })); ctx.clip('evenodd');
       B.els.forEach(w => {
         if (w.type !== 'wall' || w.storey !== cur || !shown(w)) return;
@@ -1918,7 +2090,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     });
     if (cam.plan || cmd?.t === 'grid' || sel?.grid) gridDims(z, 'rgb(200,60,60)'); else gdimHits = [];
     opHits = [];
-    { const o = !cmd && selEl(); if (o && OPS.includes(o.type)) (o.type === 'hole' ? holeDims(o) : opDims(o)).forEach(m => dim3(m.A, m.B, m.val, acc, opHits, { op: o.id, kind: m.kind, title: m.title, dir: m.dir, sl: m.sl, sr: m.sr, z0: m.z0, z1: m.z1, L: m.L })); }
+    { const o = !cmd && selEl(); if (o && (OPS.includes(o.type) || o.type === 'wall' || o.type === 'column')) (o.type === 'hole' ? holeDims(o) : o.type === 'wall' ? wallDims(o) : o.type === 'column' ? colDims(o) : opDims(o)).forEach(m => dim3(m.A, m.B, m.val, acc, opHits, { op: o.id, kind: m.kind, title: m.title, dir: m.dir, sl: m.sl, sr: m.sr, z0: m.z0, z1: m.z1, L: m.L })); }
     // gewählte Achse: Abstände zu den Nachbarn direkt an der Achse (laufen beim Ziehen mit)
     { const g = !cmd && selGrid(), f = g && grpOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1;
       if (f) { const mid = mul(add(g.a, g.b), 0.5); [f.items[i - 1], f.items[i + 1]].forEach(nb => { if (nb) { const o = nb.off - f.items[i].off; dimLine(mid, add(mid, mul(f.n, o)), fmt(Math.abs(o)), acc, z); } }); } }
@@ -1973,7 +2145,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     });
     // Maße der Auswahl
     const e = selEl();
-    if (e?.type === 'wall' || e?.type === 'beam') dimLine(e.a, e.b, fmt(len(sub(e.b, e.a))), acc, z);
+    if (e?.type === 'beam') dimLine(e.a, e.b, fmt(len(sub(e.b, e.a))), acc, z);
     if (false && e && WALL_OPS.includes(e.type) && hostOf(e)) { const w = hostOf(e), { d } = wallAxis(w); dimLine(w.a, add(w.a, mul(d, e.at - e.w / 2)), fmt(e.at - e.w / 2), acc, z); dimLine(add(w.a, mul(d, e.at - e.w / 2)), add(w.a, mul(d, e.at + e.w / 2)), fmt(e.w), acc, z); }
     if (e?.type === 'ceil' && cam.plan) { polyPath(e.pts, z); ctx.strokeStyle = acc; ctx.setLineDash([8, 5]); ctx.stroke(); ctx.setLineDash([]); ctx.strokeStyle = 'rgba(10,124,189,.35)'; ctx.lineWidth = 1; for (const [k, g2, o2] of [[0, e.gx, e.ox], [1, e.gy, e.oy]]) { const vals = e.pts.map(p => p[k]), lo = Math.min(...vals), hi = Math.max(...vals), dd = k ? [1, 0] : [0, 1]; for (let c = Math.ceil((lo - o2) / g2) * g2 + o2; c < hi; c += g2) lineInPoly(e.pts, k ? [0, c] : [c, 0], dd, e.holes || []).forEach(([a, b]) => { const s1 = P2(a, z), s2 = P2(b, z); ctx.beginPath(); ctx.moveTo(s1[0], s1[1]); ctx.lineTo(s2[0], s2[1]); ctx.stroke(); }); } ceilHoles(e).forEach(q => { polyPath(q, z); ctx.fillStyle = 'rgba(220,50,50,.35)'; ctx.fill(); }); ceilTiles(e).cut.forEach(t => { if (t.off) return; polyPath([[t.x, t.y], [t.x + e.gx, t.y], [t.x + e.gx, t.y + e.gy], [t.x, t.y + e.gy]].map(q => q), z); ctx.save(); ctx.clip(); polyPath(e.pts, z); ctx.fillStyle = 'rgba(255,122,26,.22)'; ctx.fill(); ctx.restore(); }); }
     // Mehrfachauswahl: Umrisse
@@ -1998,7 +2170,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (cmd) {
       const pts = cmd.pts || [];
       pts.forEach((p, i) => dot2(p.length > 2 ? P3(p) : P2(p, z), i === 0 ? 5 : 4, mark));
-      if (['slab', 'roof', 'ceil', 'cal', 'ualign', 'grid', 'move', 'copy', 'beam', 'shaft'].includes(cmd.t) && pts.length) {
+      if (cmd.from?.a) { const a = P2(cmd.from.a, z); dot2(a, 5, acc); if (hover?.p) { const b2 = P2(hover.p, z); ctx.strokeStyle = acc; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke(); ctx.setLineDash([]); dimLine(cmd.from.a, hover.p, fmt(len(sub(hover.p, cmd.from.a))), acc, z); } }
+      if (['slab', 'roof', 'ceil', 'cal', 'ualign', 'grid', 'move', 'copy', 'beam', 'shaft', 'mirror'].includes(cmd.t) && pts.length) {
         ctx.strokeStyle = mark; ctx.lineWidth = 2; ctx.setLineDash(['slab', 'roof', 'ceil'].includes(cmd.t) ? [] : [6, 4]);
         ctx.beginPath(); pts.forEach((p, i) => { const s = P2(p, z); if (i) ctx.lineTo(s[0], s[1]); else ctx.moveTo(s[0], s[1]); });
         if (hover?.p && !(['cal', 'ualign'].includes(cmd.t) && pts.length !== 1)) { const s = P2(hover.p, z); ctx.lineTo(s[0], s[1]); }
@@ -2031,7 +2204,17 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (hover.label) tag(s[0], s[1] - 22, hover.label, mark);
     }
     if (drag?.piv && drag.moved && !drag.pan && !drag.D) { const s2 = P3(drag.piv); ctx.fillStyle = 'rgba(40,170,90,.18)'; ctx.beginPath(); ctx.arc(s2[0], s2[1], 13, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(s2[0], s2[1], 5, 0, 7); ctx.stroke(); dot2(s2, 4, 'rgb(40,170,90)'); }
-    if (cmd && (dyn || dynNeg)) { const at = lastMouse || [W / 2, H / 2]; tag(at[0] + 70, at[1] + 26, `${cmd.t === 'grid' ? 'Abstand' : 'Länge'} ${dyn || '…'} mm${dynNeg ? ' · Gegenrichtung' : ''} · Enter`, acc); }
+    // Maßstab: Balken unten links (Grundriss) und „1 : n“ in der Statusleiste (bei 96 dpi: 1 Bildpunkt = 0,2646 mm)
+    { const sc2 = statusEl.querySelector('.bau-ss'), den = 1 / (cam.sc * 0.2646);
+      if (cam.plan && sc2) {
+        const nice = [1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 150, 200, 250, 500, 1000, 2000, 5000].reduce((a2, c2) => (Math.abs(Math.log(c2 / den)) < Math.abs(Math.log(a2 / den)) ? c2 : a2));
+        sc2.textContent = `Maßstab ≈ 1 : ${nice}`;
+        const Ls = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000], Lm = Ls.find(l => l * cam.sc >= 70) || Ls.at(-1), lp = Lm * cam.sc, x0 = 16, y0 = H - 22;
+        ctx.strokeStyle = text; ctx.fillStyle = text; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, y0 - 6); ctx.lineTo(x0, y0); ctx.lineTo(x0 + lp, y0); ctx.lineTo(x0 + lp, y0 - 6); ctx.stroke();
+        ctx.font = '600 11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(Lm >= 1000 ? `${Lm / 1000} m` : `${Lm} mm`, x0 + 4, y0 - 5);
+      } else if (sc2) sc2.textContent = ''; }
+    if (drag?.rect && drag.moved) { const r = drag.rect, cross = r.x1 < r.x0; ctx.fillStyle = cross ? 'rgba(60,170,100,.16)' : 'rgba(10,124,189,.16)'; ctx.strokeStyle = cross ? 'rgb(60,170,100)' : acc; ctx.lineWidth = 1.5; ctx.setLineDash(cross ? [6, 4] : []); ctx.fillRect(Math.min(r.x0, r.x1), Math.min(r.y0, r.y1), Math.abs(r.x1 - r.x0), Math.abs(r.y1 - r.y0)); ctx.strokeRect(Math.min(r.x0, r.x1), Math.min(r.y0, r.y1), Math.abs(r.x1 - r.x0), Math.abs(r.y1 - r.y0)); ctx.setLineDash([]); }
+    if (cmd && (dyn || dynNeg)) { const at = lastMouse || [W / 2, H / 2]; tag(at[0] + 70, at[1] + 26, `${cmd.t === 'grid' || cmd.from ? 'Abstand' : 'Länge'} ${dyn || '…'} mm${dynNeg ? ' · Gegenrichtung' : ''} · Enter`, acc); }
   }
   function placeDyn() {
     if (cmd?.t === 'grid' && cmd.base) {
@@ -2041,13 +2224,14 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (hover?.p && ref) side = Math.sign(dot(sub(hover.p, ref.a), famOf(ref).n)) || side;
       gridSeries(str, neg ? -side : side); return;
     }
-    const L = num(dyn), neg = dynNeg, from = cmd?.pts?.at(-1);
+    const L = num(dyn), neg = dynNeg, from = cmd?.from?.a || cmd?.pts?.at(-1), viaFrom = !!cmd?.from?.a;
     dyn = ''; dynNeg = false;
     if (!(L > 0) || !from) { draw(); return; }
     const hp3 = from.length > 2 ? (hover?.p3 || (hover?.p && [...hover.p, from[2]])) : hover?.p;
     let dir = hp3 && len(sub(hp3, from)) > 1 ? norm(sub(hp3, from)) : from.length > 2 ? [...(cmd.lastDir || [1, 0]), 0].slice(0, 3) : cmd.lastDir || [1, 0];
     if (neg) dir = mul(dir, -1);
     const p = add(from, mul(dir, L)).map(v => Math.round(v * 10) / 10);
+    if (viaFrom) cmd.from = null;
     if (cmd.t === 'measure') measurePoint(p); else applyPoint(p);
     if (lastMouse && cmd) { hover = hoverOf(...lastMouse); }
     draw();
@@ -2273,13 +2457,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const RIB_B = (a, l, ic, o = {}) => ({ a, l, ic, ...o });
   const RIB = [
     ['Gebäude', [['Datei', [RIB_B('docnew', 'Neu', 'plus'), RIB_B('dlg:docs', 'Öffnen', 'house'), RIB_B('export', 'Sichern', 'save'), RIB_B('import', 'Laden', 'upload')]], ['Ausgabe', [RIB_B('ifc', 'IFC', 'ifc'), RIB_B('png', 'Bild', 'image')]], ['Hilfe', [RIB_B('dlg:keys', 'Kürzel', 'help')]]]],
-    ['Start', [['Auswahl', [RIB_B('t:sel', 'Auswählen', 'sel')]], ['Bauen', [RIB_B('t:wall', 'Wand', 'wall'), RIB_B('t:column', 'Stütze', 'column'), RIB_B('t:beam', 'Träger', 'beam'), RIB_B('t:slab', 'Decke', 'slab'), RIB_B('t:open', 'Öffnung', 'door')]], ['Ändern', [RIB_B('xmove', 'Verschieben', 'move', { sel: 1 }), RIB_B('xcopy', 'Kopieren', 'copy', { sel: 1 }), RIB_B('del', 'Löschen', 'trash', { sel: 1 })]], ['Verlauf', [RIB_B('undo', 'Rückgängig', 'undo'), RIB_B('redo', 'Wiederholen', 'redo')]]]],
+    ['Start', [['Auswahl', [RIB_B('t:sel', 'Auswählen', 'sel')]], ['Bauen', [RIB_B('t:wall', 'Wand', 'wall'), RIB_B('t:column', 'Stütze', 'column'), RIB_B('t:beam', 'Träger', 'beam'), RIB_B('t:slab', 'Decke', 'slab'), RIB_B('t:open', 'Öffnung', 'door')]], ['Ändern', [RIB_B('xmove', 'Verschieben', 'move', { sel: 1 }), RIB_B('xcopy', 'Kopieren', 'copy', { sel: 1 }), RIB_B('xrot', 'Drehen', 'rotate', { sel: 1 }), RIB_B('xmir', 'Spiegeln', 'mirror', { sel: 1 }), RIB_B('del', 'Löschen', 'trash', { sel: 1 })]], ['Verlauf', [RIB_B('undo', 'Rückgängig', 'undo'), RIB_B('redo', 'Wiederholen', 'redo'), RIB_B('hist', 'Verlauf', 'layers')]]]],
     ['Tragwerk', [['Wand und Stütze', [RIB_B('t:wall', 'Wand', 'wall'), RIB_B('t:column', 'Stütze', 'column')]], ['Träger und Decke', [RIB_B('t:beam', 'Träger', 'beam'), RIB_B('t:slab', 'Decke', 'slab')]], ['Wände', [RIB_B('joinall', 'Ecken verbinden', 'link')]]]],
     ['Öffnungen', [['Wand', [RIB_B('op:door', 'Tür', 'door'), RIB_B('op:window', 'Fenster', 'window'), RIB_B('op:opening', 'Durchbruch', 'opening')]], ['Decke', [RIB_B('op:hole', 'Durchbruch', 'hole'), RIB_B('t:shaft', 'Schacht', 'shaft')]]]],
     ['Ausbau', [['Räume', [RIB_B('t:space', 'Raum', 'space'), RIB_B('t:ceil', 'Rasterdecke', 'ceil')]], ['Aufbauten', [RIB_B('t:stair', 'Treppe', 'stair'), RIB_B('t:roof', 'Dach', 'roof')]]]],
     ['Raster + Plan', [['Achsraster', [RIB_B('t:grid', 'Achse', 'grid'), RIB_B('dlg:grid', 'Raster erzeugen', 'grid')]], ['Planunterlage', [RIB_B('uload', 'Laden', 'under'), RIB_B('cal', 'Kalibrieren', 'ruler', { ul: 1 }), RIB_B('ualign', 'Ausrichten', 'rotate', { ul: 1 }), RIB_B('umove', 'Verschieben', 'move', { ul: 1 })]], ['Geschosse', [RIB_B('dlg:storeys', 'Geschosse', 'layers')]]]],
     ['Messen', [['Messen', [RIB_B('t:measure', 'Messen', 'measure')]]]],
-    ['Ansicht', [['Ansicht', [RIB_B('view', 'Grundriss / 3D', 'plan'), RIB_B('fit', 'Einpassen', 'fit'), RIB_B('above', 'Darüber', 'layers'), RIB_B('list', 'Projektbrowser', 'list')]]]],
+    ['Ansicht', [['Ansicht', [RIB_B('view', 'Grundriss / 3D', 'plan'), RIB_B('fit', 'Einpassen', 'fit'), RIB_B('above', 'Darüber', 'layers'), RIB_B('list', 'Projektbrowser', 'list')]], ['Richtung', [RIB_B('vw:top', 'Oben', 'plan'), RIB_B('vw:front', 'Vorne', 'cube'), RIB_B('vw:right', 'Rechts', 'cube'), RIB_B('vw:back', 'Hinten', 'cube'), RIB_B('vw:left', 'Links', 'cube'), RIB_B('vw:iso', 'Iso', 'iso')]], ['Darstellung', [RIB_B('sty:shaded', 'Schattiert', 'cube'), RIB_B('sty:edges', 'Kanten', 'cubeline'), RIB_B('sty:xray', 'Röntgen', 'cubex')]], ['Ansichten', [RIB_B('vsave', 'Ansicht speichern', 'plus')]]]],
   ];
   // Kontext-Reiter: nur Aktionen zur Auswahl; die Werte stehen in der Palette rechts
   function ctxTab() {
@@ -2295,13 +2479,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (ty === 'ceil') spec.push(RIB_B('ceildlg', 'Raster', 'ceil', { sel1: 1 }), RIB_B('gstart', 'Rasterstart', 'grid', { sel1: 1 }), RIB_B('tiles', 'Platten', 'ceil', { sel1: 1 }));
     if (ty === 'space') spec.push(RIB_B('roomceil', 'Rasterdecke', 'ceil', { sel1: 1 }));
     if (spec.length) grp.push([one ? TYPE_NAME[one.type] : `${TYPE_NAME[ty]} (${els.length})`, spec]);
-    grp.push(['Ändern', [RIB_B('xmove', 'Verschieben', 'move'), RIB_B('xcopy', 'Kopieren', 'copy'), RIB_B('hidesel', 'Ausblenden', 'eyeoff'), RIB_B('del', 'Löschen', 'trash')]]);
+    grp.push(['Ändern', [RIB_B('xmove', 'Verschieben', 'move'), RIB_B('xcopy', 'Kopieren', 'copy'), RIB_B('xrot', 'Drehen', 'rotate'), RIB_B('xmir', 'Spiegeln', 'mirror'), RIB_B('hidesel', 'Ausblenden', 'eyeoff'), RIB_B('del', 'Löschen', 'trash')]]);
     grp.push(['Auswahl', [RIB_B('selnone', 'Aufheben', 'x')]]);
     return [one ? TYPE_NAME[one.type] : ty ? `${TYPE_NAME[ty]} (${els.length})` : `Auswahl (${els.length})`, grp];
   }
   const ribBtn = b => {
     const [kind, val] = b.a.includes(':') ? b.a.split(':') : ['b', b.a], attr = kind === 'dlg' ? `data-dlg="${val}"` : `data-b="${b.a}"`;
-    const on = kind === 't' ? cmd?.t === val : kind === 'op' ? cmd?.t === 'open' && cmd.kind === val : b.a === 'view' ? !cam.plan : b.a === 'above' ? showAbove : b.a === 'list' ? listOpen : false;
+    const on = kind === 'sty' ? cam.style === val : kind === 'vw' ? viewKey() === val : kind === 't' ? cmd?.t === val : kind === 'op' ? cmd?.t === 'open' && cmd.kind === val : b.a === 'view' ? !cam.plan : b.a === 'above' ? showAbove : b.a === 'list' ? listOpen : false;
     const dis = (b.sel && !selIds().length && !sel?.grid) || (b.ul && !curUl()) ? ' disabled' : '';
     return `<button class="bau-rb${on ? ' on' : ''}" ${attr} title="${esc(b.l)}"${dis}>${SVG(IC[b.ic] || IC.more)}<span>${esc(b.l)}</span></button>`;
   };
@@ -2321,6 +2505,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const n = selIds().length, one = selEl(), pr = cmdEl.querySelector('.bprompt')?.textContent;
     statusEl.querySelector('.bau-sp').textContent = cmd ? (pr || cmd.t) : n === 1 && one ? `${elLabel(one)} gewählt` : n > 1 ? `${n} Bauteile gewählt` : selGrid() ? `Achse ${selGrid().name} gewählt` : 'Bereit · Befehl im Menüband wählen oder Bauteil antippen';
     statusEl.querySelector('[data-b="ortho"]').classList.toggle('on', orthoOn);
+    root.querySelectorAll('.bau-vc [data-vw]').forEach(x => x.classList.toggle('on', x.dataset.vw === viewKey()));
     statusEl.querySelector('[data-ddk="snap"]').textContent = `Fang ${SNAP_KEYS.filter(([k]) => snapCfg[k]).length}/${SNAP_KEYS.length}`;
   }
   // Kontextmenü (rechte Maustaste)
@@ -2330,7 +2515,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const has = selIds().length > 0 || !!sel?.grid, it = (a, l, ic, dis) => `<button data-b="${a}" ${dis ? 'disabled' : ''}>${SVG(IC[ic] || IC.more)}${esc(l)}</button>`;
     ctxm.innerHTML = cmd ? `${it('end', cmd.pts?.length ? 'Fertig / Abbrechen (Esc)' : 'Befehl beenden (Esc)', 'x')}${it('ortho', orthoOn ? 'Ortho ausschalten (F8)' : 'Ortho einschalten (F8)', 'plan')}`
       : `${lastCmdT ? it(`t:${lastCmdT}`, `Letzten Befehl wiederholen (${TYPE_NAME[lastCmdT] || MORE.find(m => m[0] === lastCmdT)?.[1] || lastCmdT})`, 'rotate') : ''}${has ? `<hr>${it('xmove', 'Verschieben', 'move')}${it('xcopy', 'Kopieren', 'copy')}${it('hidesel', 'Ausblenden', 'eyeoff')}${it('del', 'Löschen', 'trash')}${it('selnone', 'Auswahl aufheben', 'x')}` : ''}<hr>${it('fit', has ? 'Auf Auswahl zoomen (F)' : 'Alles einpassen (F)', 'fit')}${it('view', cam.plan ? '3D-Ansicht (V)' : 'Grundriss (V)', 'plan')}`;
-    ctxm.hidden = false;
+    ctxm.hidden = false; ctxm.classList.remove('bau-hist'); ctxm.style.maxHeight = ''; ctxm.style.overflow = '';
     const rr = root.getBoundingClientRect(), cr = cv.getBoundingClientRect(), w = 240, h2 = ctxm.offsetHeight;
     ctxm.style.left = `${Math.max(4, Math.min(rr.width - w - 4, x + cr.left - rr.left))}px`; ctxm.style.top = `${Math.max(4, Math.min(rr.height - h2 - 4, y + cr.top - rr.top))}px`;
   }
@@ -2365,6 +2550,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function setCurrent(id, keepSel) {
     if (!st(id)) return;
     cur = id; openSt.add(id);
+    if (roomsStale.has(id)) setTimeout(updateRooms, 0);
     if (!keepSel) sel = null;
     if (cmd) { cmd.pts = []; if (cmd.t === 'measure') { cmd.closed = false; cmd.res = null; } }
     dirty = true; renderUi(); draw();
@@ -2382,9 +2568,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function renderCmd() {
     cmdEl.hidden = !cmd;
     if (!cmd) { cmdEl.innerHTML = ''; return; }
+    if (cmd.from) { cmdEl.innerHTML = `<span class="bprompt">${cmd.from.a ? 'Abstand: Richtung zeigen, Zahl eintippen, Enter' : 'Abstand von einem Punkt: Bezugspunkt tippen'}</span><button data-b="ortho" class="bau-tg${orthoOn ? ' on' : ''}" title="Ortho (F8)">Ortho</button><button data-b="frompick" class="on">Abstand aus</button>`; return; }
     if (cmd.mid) { cmdEl.innerHTML = `<span class="bprompt">Mitte zwischen zwei Punkten: ${cmd.mid.a ? 'zweiten' : 'ersten'} Punkt tippen</span><button data-b="midpick" class="on">Mitte aus</button>`; return; }
     const nOn = SNAP_KEYS.filter(([k]) => snapCfg[k]).length;
-    const helpers = `<span class="bau-cgrp"><button data-b="ortho" class="bau-tg${orthoOn ? ' on' : ''}" title="Ortho-Modus: nur waagerecht und senkrecht (F8)">Ortho</button><button data-b="midpick" class="bau-tg" title="Punkt in der Mitte zwischen zwei Punkten">Mitte</button><button class="bau-dd" data-ddk="snap" title="Fang-Einstellungen"><span>Fang</span><b>${nOn}/${SNAP_KEYS.length}</b><i>▾</i></button></span>`;
+    const helpers = `<span class="bau-cgrp"><button data-b="ortho" class="bau-tg${orthoOn ? ' on' : ''}" title="Ortho-Modus: nur waagerecht und senkrecht (F8)">Ortho</button><button data-b="midpick" class="bau-tg" title="Punkt in der Mitte zwischen zwei Punkten">Mitte</button>${cmd.t === 'measure' || (cmd.t === 'grid' && cmd.base) ? '' : `<button data-b="frompick" class="bau-tg${cmd.from ? ' on' : ''}" title="Punkt mit Abstand von einem Bezugspunkt (Taste A)">Abstand</button>`}<button class="bau-dd" data-ddk="snap" title="Fang-Einstellungen"><span>Fang</span><b>${nOn}/${SNAP_KEYS.length}</b><i>▾</i></button></span>`;
     const done = '<button data-b="end" class="on">Fertig</button>', cancel = '<button data-b="end">Abbrechen</button>', c = cmd;
     const close = c.pts.length >= 3 ? '<button data-b="areaok" class="on">Schließen</button>' : '';
     const P = t => `<span class="bprompt">${t}</span>`, G = (...x) => `<span class="bau-cgrp">${x.join('')}</span>`;
@@ -2433,6 +2620,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       }
       case 'measure': h = G(dd('mmode', 'Messen', c.mode, [['dist', 'Abstand'], ['chain', 'Kette'], ['area', 'Fläche'], ['pick', 'Bauteil antippen']])) + `<span class="bprompt bau-mres">${esc(measRes())}</span>${c.pts.length || c.res ? '<button data-b="mclear">Neu</button>' : ''}${c.mode === 'pick' ? '' : helpers}${done}`; break;
       case 'move': case 'copy': h = P(c.pts.length ? 'Zielpunkt tippen oder Abstand eintippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} ${c.t === 'move' ? 'verschieben' : 'kopieren'}: Basispunkt tippen`) + (c.t === 'copy' ? fld('cn', c.n, 'Anzahl', 'Stk') : '') + helpers + cancel; break;
+      case 'rotate': h = P(c.pts.length ? 'Winkel (gegen den Uhrzeigersinn) eingeben' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} drehen: Drehpunkt tippen`) + (c.pts.length ? G(fld('rang', c.ang, 'Winkel', '°'), seg('rpre', String(c.ang), [['90', '90°'], ['180', '180°'], ['-90', '−90°']]), '<button data-b="rotok" class="on">Drehen</button>', '<button data-b="rotcopy">Kopie drehen</button>') : '') + helpers + cancel; break;
+      case 'mirror': h = P(c.pts.length ? 'Zweiten Punkt der Spiegelachse tippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} spiegeln: ersten Punkt der Spiegelachse tippen`) + G(`<button data-b="mirkeep" class="bau-tg${c.keep ? ' on' : ''}" title="Original bleibt stehen, das Spiegelbild kommt dazu">Original behalten</button>`) + helpers + cancel; break;
       case 'split': h = P('Teilungspunkt auf der Wand tippen') + cancel; break;
       case 'tiles': h = P('Platten antippen: herausnehmen oder wieder einsetzen') + done; break;
       case 'gstart': h = P('Ecke der Rasterdecke antippen, von der das Raster beginnt') + cancel; break;
@@ -2517,6 +2706,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           h = `<h4>${esc(kindName(e.kind) || 'Wand')}</h4><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
             <div class="ped-grid">${fld('wh', e.h ?? '', 'Höhe', 'mm', fmt(autoTop(e, s) - s.elev))}${fld('wbase', e.base || 0, 'Fuß')}</div>
             <div class="ped-acts"><span class="bprompt">Lage zur Achse</span>${seg('wjust', e.just, JUST)}</div>
+            <div class="ped-acts">${dd('wja', 'Ecke Anfang', e.ja || 'auto', WJ_OPTS)}${dd('wjb', 'Ecke Ende', e.jb || 'auto', WJ_OPTS)}</div>
             <small>Länge ändert das Ende, der Anfang bleibt. Höhe leer: ${slabOver(e, s) ? `bis UK Decke ${esc(nextName(s))}` : `bis OK Rohdecke ${esc(nextName(s))}`}, jetzt ${fmt(zRange(e)[1] - zRange(e)[0])} mm.</small>${acts(`<button data-b="split">Teilen</button>${wallChain(e).length > 1 ? `<button data-b="chainsel">Wandzug (${wallChain(e).length})</button>` : ''}<button data-b="joinall">Ecken verbinden</button>`)}`; break;
         case 'column':
           h = `<h4>Stütze</h4><div class="ped-acts">${seg('cshape', e.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']])}</div>
@@ -2548,7 +2738,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           h = `<h4>Raum</h4><div class="ped-grid"><label class="ped-f"><span>Nr.</span><input data-txt="no" value="${esc(e.no)}" class="bau-short"></label><label class="ped-f"><span>Name</span><input data-txt="name" list="bau-rn" value="${esc(e.name)}"></label></div>
             <datalist id="bau-rn">${ROOM_NAMES.map(n2 => `<option value="${n2}">`).join('')}</datalist>
             <small>${elMeasure(e).map(([k, v]) => `${k} ${v}`).join(' · ')}</small>
-            <div class="ped-acts">${B.els.some(x => x.type === 'ceil' && x.storey === e.storey && pip(...centroid(e.pts), x.pts)) ? '' : '<button data-b="roomceil">Rasterdecke hier</button>'}</div>${acts()}`; break;
+            <div class="ped-acts">${dd('rauto', 'Umriss', e.auto ? '1' : '0', [['1', 'Folgt den Wänden'], ['0', 'Fest']])}${B.els.some(x => x.type === 'ceil' && x.storey === e.storey && pip(...centroid(e.pts), x.pts)) ? '' : '<button data-b="roomceil">Rasterdecke hier</button>'}</div>${e.open ? '<small class="bau-warn">Raum ist nicht mehr geschlossen – Umriss bleibt wie zuletzt.</small>' : ''}${acts()}`; break;
         case 'shaft': {
           const [z0, z1] = shaftRange(e);
           h = `<h4>Schacht</h4><div class="ped-grid"><label class="ped-f"><span>Name</span><input data-txt="name" value="${esc(e.name || 'Schacht')}"></label>${storeySel('eshto', e.to, s)}</div><small>Von ${fmt(z0)} bis ${fmt(z1)}, ${elMeasure(e)[0][1]}. Decken dazwischen sind ausgespart.</small>${acts()}`; break;
@@ -2659,8 +2849,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function renderList() {
     if (!listOpen) { listEl.innerHTML = ''; return; }
     const sc = listEl.querySelector('.bau-tree')?.scrollTop || 0;
-    listEl.innerHTML = `<div class="bau-tabs">${seg('tab', tab, [['tree', 'Struktur'], ['layer', 'Layer'], ['types', 'Typen']])}</div>
-      <div class="bau-tree">${tab === 'tree' ? treeHtml() : tab === 'types' ? typesHtml() : layerHtml()}</div>
+    listEl.innerHTML = `<div class="bau-tabs">${seg('tab', tab, [['tree', 'Struktur'], ['layer', 'Layer'], ['types', 'Typen'], ['views', 'Ansichten']])}</div>
+      <div class="bau-tree">${tab === 'tree' ? treeHtml() : tab === 'types' ? typesHtml() : tab === 'views' ? viewsHtml() : layerHtml()}</div>
       <div class="bau-foot"><button data-dlg="storeys">Geschosse</button><button data-dlg="grid">Raster</button><button data-dlg="under">Unterlage</button></div>`;
     listEl.querySelector('.bau-tree').scrollTop = sc;
   }
@@ -2673,7 +2863,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   async function switchTo(nb) {
     clearTimeout(saveT); await saveNow().catch(() => {});
-    B = nb; fixB(); remember(B.id);
+    B = nb; fixB(); remember(B.id); sigs.clear(); roomsStale.clear(); syncSigs();
     undo.length = 0; redo.length = 0;
     cur = [...B.storeys].sort((a, c) => Math.abs(a.elev) - Math.abs(c.elev))[0].id;
     openSt.clear(); openSt.add(cur); openGrp.clear();
@@ -2725,8 +2915,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     keys: () => ({
       title: 'Tastaturkürzel',
       body: `<div class="bau-keys"><h5>Befehle</h5><kbd>W</kbd><span>Wand</span><kbd>S</kbd><span>Stütze</span><kbd>T</kbd><span>Träger</span><kbd>D</kbd><span>Decke, Bodenplatte</span><kbd>O</kbd><span>Tür, Fenster, Durchbruch</span><kbd>R</kbd><span>Raum</span><kbd>G</kbd><span>Achse</span><kbd>M</kbd><span>Messen</span><kbd>Leertaste</kbd><span>letzten Befehl wiederholen</span><kbd>Esc</kbd><span>Befehl beenden, Auswahl aufheben</span>
-        <h5>Zeichnen</h5><kbd>Zahl + Enter</kbd><span>Länge bzw. Abstand eintippen, Minus kehrt um</span><kbd>F8</kbd><span>Ortho an/aus</span><kbd>Shift</kbd><span>ohne Fang (gedrückt halten)</span>
-        <h5>Ansicht</h5><kbd>V</kbd><span>Grundriss / 3D</span><kbd>F</kbd><span>Einpassen, mit Auswahl auf die Auswahl</span><kbd>Bild ↑ ↓</kbd><span>Geschoss wechseln</span><kbd>Rechtsklick</kbd><span>Kontextmenü, Ziehen mit rechter Taste verschiebt</span><kbd>Doppelklick</kbd><span>Bauteil heranzoomen, Wand: ganzer Wandzug</span>
+        <h5>Zeichnen</h5><kbd>Zahl + Enter</kbd><span>Länge bzw. Abstand eintippen, Minus kehrt um</span><kbd>A</kbd><span>Punkt mit Abstand von einem Bezugspunkt: Bezugspunkt tippen, Richtung zeigen, Abstand eintippen</span><kbd>F8</kbd><span>Ortho an/aus</span><kbd>Shift</kbd><span>ohne Fang (gedrückt halten)</span>
+        <h5>Ansicht</h5><kbd>V</kbd><span>Grundriss / 3D</span><kbd>F</kbd><span>Einpassen, mit Auswahl auf die Auswahl</span><kbd>Bild ↑ ↓</kbd><span>Geschoss wechseln</span><kbd>Rechtsklick</kbd><span>Kontextmenü, Ziehen mit rechter Taste verschiebt</span><kbd>Doppelklick</kbd><span>Bauteil heranzoomen, Wand: ganzer Wandzug</span><kbd>Shift + Ziehen</kbd><span>Rahmenauswahl: nach rechts nur ganz Enthaltenes, nach links alles Berührte</span>
         <h5>Bearbeiten</h5><kbd>Entf</kbd><span>Auswahl löschen</span><kbd>⌘ Z / ⇧ ⌘ Z</kbd><span>Rückgängig / Wiederholen</span><kbd>?</kbd><span>diese Übersicht</span></div>`,
     }),
     grid: () => ({
@@ -2973,6 +3163,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (!ddPop.hidden && !e.target.closest('.bau-ddpop') && !e.target.closest('[data-ddk]')) closeDD();
     if (!dimEd.hidden && e.target !== cv && !e.target.closest('.bau-dimed')) closeDimEd();
     if (!ctxm.hidden && !e.target.closest('.bau-ctxm')) ctxm.hidden = true;
+    const hb = e.target.closest('[data-hist]'); if (hb) { const k = +hb.dataset.hist; ctxm.hidden = true; for (let i = 0; i < k; i++) if (!undoRedo('undo')) break; env.toast(`${k} Schritt${k === 1 ? '' : 'e'} zurück.`); return; }
     const rt = e.target.closest('[data-rtab]');
     if (rt) { const v = +rt.dataset.rtab; if (e.detail > 1 && v === ribTab) ribOff = !ribOff; else { if (v === 100 && ribTab !== 100) ribPrev = ribTab; ribTab = v; if (ribOff && e.detail <= 1) ribOff = false; } try { localStorage.setItem('biege.bau.rib', String(ribTab === 100 ? ribPrev : ribTab)); localStorage.setItem('biege.bau.riboff', ribOff ? '1' : '0'); } catch {} renderRibbon(); return; }
     const wf = e.target.closest('[data-wf]');
@@ -2991,6 +3182,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     }
     if (!b.closest('.bau-stpop') && b.dataset.b !== 'stpick') stPop.hidden = true;
     if (b.dataset.st) { setCurrent(b.dataset.st); stPop.hidden = true; return; }
+    if (b.dataset.vgo) { gotoView(b.dataset.vgo); return; }
+    if (b.dataset.vdel) { change(() => { B.views = (B.views || []).filter(x => x.id !== b.dataset.vdel); }); return; }
+    if (b.dataset.vw) { setView(b.dataset.vw); return; }
     if (b.dataset.tysel) { const ids = B.els.filter(x => x.typeId === b.dataset.tysel && x.storey === cur).map(x => x.id); if (!ids.length) env.toast('Kein Exemplar dieses Typs in diesem Geschoss.'); else { sel = { ids }; dirty = true; renderUi(); draw(); } return; }
     if (b.dataset.pick) { const x = elById(b.dataset.pick); if (x) { if (!onStorey(x, cur)) setCurrent(x.storey, true); sel = { ids: [x.id] }; addMode = false; if (cmd && cmd.t !== 'measure') cmd = null; dirty = true; renderUi(); draw(); } return; }
     if (b.dataset.eye) { const id = b.dataset.eye; B.vis.hide = B.vis.hide.includes(id) ? B.vis.hide.filter(i => i !== id) : [...B.vis.hide, id]; if (B.vis.hide.includes(id) && isSel(id)) sel = null; visPersist(); return; }
@@ -3027,7 +3221,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (k.startsWith('nw.') && dlg?.kind === 'new') { dlg[k.slice(3)] = v; renderDlg(); return; }
       if (k === 'just' && C) { C.just = v; last.wall.just = v; }
       else if (k === 'wth' && C) { C.th = +v; last.wall.th = C.th; C.typeId = null; last.wall.typeId = null; }
+      else if (k === 'rpre' && C) C.ang = +v;
       else if (k === 'wtype' && C) { C.typeId = v || null; last.wall.typeId = C.typeId; const ty = v && B.types[v]; if (ty) { C.kind = ty.kind; C.th = typeTotal(ty); last.wall.kind = C.kind; last.wall.th = C.th; } }
+      else if ((k === 'wja' || k === 'wjb') && el) change(() => { const f = k === 'wja' ? 'ja' : 'jb'; if (v === 'auto') delete el[f]; else el[f] = v; });
+      else if (k === 'rauto' && el) { if (v === '1') { const sd = roomSeed(el); if (sd) change(() => { el.seed = sd; el.auto = true; }); else env.toast('Für diesen Raum lässt sich kein Punkt im Raum finden.'); } else change(() => { delete el.auto; delete el.open; }); }
       else if (k === 'etype') {
         const els = selIds().map(elById).filter(Boolean);
         if (v === '__new') { if (els.length) newTypeFrom(els); }
@@ -3080,7 +3277,13 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (b.dataset.snapk) { const k = b.dataset.snapk; snapCfg[k] = !snapCfg[k]; saveSnap(); renderCmd(); openDD('snap', true); if (lastMouse && cmd) hover = hoverOf(...lastMouse); draw(); return; }
     const a = b.dataset.b;
     if (!a) return;
+    if (a === 'rotok' || a === 'rotcopy') { doRotate(a === 'rotcopy'); return; }
+    if (a === 'mirkeep' && cmd) { cmd.keep = !cmd.keep; renderUi(); return; }
+    if (a === 'frompick' && cmd) { cmd.from = cmd.from ? null : {}; cmd.mid = null; renderUi(); draw(); return; }
     if (a === 'midpick' && cmd) { cmd.mid = cmd.mid ? null : {}; renderUi(); draw(); return; }
+    if (a.startsWith('sty:')) { cam.style = a.slice(4); try { localStorage.setItem('biege.bau.style', cam.style); } catch {} renderUi(); draw(); return; }
+    if (a.startsWith('vw:')) { setView(a.slice(3)); return; }
+    if (a === 'vsave') { saveView(); return; }
     if (a.startsWith('op:')) { moreOpen = false; if (cmd?.t === 'open' && cmd.kind === a.slice(3)) endCmd(); else startCmd('open', { kind: a.slice(3) }); return; }
     if (!ctxm.hidden) ctxm.hidden = true;
     if (a === 'tyladd' || a.startsWith('tyldel:') || a === 'typeupd' || a === 'tydel') {
@@ -3102,13 +3305,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         if (!stPop.hidden) stPop.innerHTML = [...sorted()].reverse().map(x => `<button data-st="${x.id}"${x.id === cur ? ' class="on"' : ''}><b>${esc(x.name)}</b><small>OK RD ${fmt(x.elev)}</small></button>`).join('') + '<button data-dlg="storeys"><b>Geschosse bearbeiten …</b></button>';
         return;
       case 'dlgclose': closeDlg(); return;
-      case 'undo': case 'redo': {
-        const from = a === 'undo' ? undo : redo, to = a === 'undo' ? redo : undo;
-        if (!from.length) return;
-        to.push(snap()); B = JSON.parse(from.pop()); fixB();
-        if (!st(cur)) cur = B.storeys[0].id;
-        sel = null; dirty = true; persist(); renderUi(); draw(); return;
-      }
+      case 'undo': case 'redo': undoRedo(a); return;
+      case 'hist': histMenu(b); return;
       case 'view': setPlan(!cam.plan); return;
       case 'above': showAbove = !showAbove; dirty = true; renderUi(); draw(); return;
       case 'fit': if (selBox()) fitSel(); else fitView(); draw(); return;
@@ -3151,6 +3349,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'joinall': { let n = 0; change(() => { n = joinAll(); }); env.toast(n ? `${n} Wandenden angeschlossen.` : 'Alle Ecken waren schon verbunden.'); return; }
       case 'ortho': orthoOn = !orthoOn; try { localStorage.setItem('biege.bau.ortho', orthoOn ? '1' : '0'); } catch {} if (lastMouse && cmd) hover = hoverOf(...lastMouse); renderUi(); draw(); return;
       case 'xmove': case 'xcopy': startCmd(a === 'xmove' ? 'move' : 'copy'); return;
+      case 'xrot': case 'xmir': startCmd(a === 'xrot' ? 'rotate' : 'mirror'); return;
       case 'addsel': addMode = !addMode; renderUi(); if (addMode) env.toast('Weitere Bauteile antippen. Am Mac geht das auch mit Shift.'); return;
       case 'selnone': sel = null; addMode = false; dirty = true; renderUi(); draw(); return;
       case 'split': startCmd('split', { el: el.id }); return;
@@ -3255,7 +3454,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const v = num(el.value), pos = x => Number.isFinite(x) && x > 0, fin = Number.isFinite(v);
     if (cmd && el.closest('.ped-cmd, .bau-ddpop')) {
       const C = cmd;
-      if (k === 'th' && pos(v)) { C.th = v; if (C.t === 'wall') { last.wall.th = v; C.typeId = null; last.wall.typeId = null; } else if (C.t === 'roof') last.roof.th = v; else last.slab.th = v; }
+      if (k === 'rang' && fin) C.ang = v;
+      else if (k === 'th' && pos(v)) { C.th = v; if (C.t === 'wall') { last.wall.th = v; C.typeId = null; last.wall.typeId = null; } else if (C.t === 'roof') last.roof.th = v; else last.slab.th = v; }
       else if (k === 'len') C.len = fin ? v : null;
       else if (k === 'w' && pos(v)) { C.w = v; last.col.w = v; }
       else if (k === 'd' && pos(v)) { C.d = v; last.col.d = v; }
@@ -3328,9 +3528,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (t === 'cal' || t === 'ualign' || (t === 'umove' && !cmd.pts.length)) { const p = calOrtho(onPlane(x, y)); return p ? { p } : null; }
     if (t === 'measure') { if (cmd.mode === 'pick' || (cmd.mode === 'dist' && cmd.pts.length >= 2) || cmd.closed) return null; return snapAt(x, y, { from: cmd.pts.at(-1), extra: cmd.mode === 'area' && cmd.pts.length > 2 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [] }); }
     if (t === 'gstart') return null;
-    const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair'].includes(t) && cmd.pts.length ? cmd.pts.at(-1) : null;
+    const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair', 'mirror'].includes(t) && cmd.pts.length ? cmd.pts.at(-1) : null;
     const extra = ['wall', 'slab', 'roof', 'ceil'].includes(t) && cmd.pts.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
-    return snapAt(x, y, { from: cmd.mid ? null : from, extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
+    return snapAt(x, y, { from: cmd.mid || (cmd.from && !cmd.from.a) ? null : (cmd.from?.a || from), extra, skip: t === 'move' || t === 'copy' ? new Set(selIds()) : null });
   };
   cv.addEventListener('pointerdown', e => {
     try { cv.setPointerCapture(e.pointerId); } catch {}
@@ -3342,7 +3542,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; if (drag?.D) dragEnd(drag.D); drag = null; return; }
     const h = !cmd && e.button === 0 && !e.shiftKey ? handleAt(x, y) : null;
     drag = { pan: e.button === 2 || e.button === 1 || (cam.plan && !h), moved: false, D: h ? dragStart(h) : null, shift: e.shiftKey };
-    if (!drag.pan && !drag.D) drag.piv = orbitPivot(x, y);
+    if (!cmd && e.pointerType === 'mouse' && e.button === 0 && e.shiftKey && !h && !pickEl(x, y)) { drag.rect = { x0: x, y0: y, x1: x, y1: y }; drag.pan = false; }
+    if (!drag.pan && !drag.D && !drag.rect) drag.piv = orbitPivot(x, y);
     freeSnap = !!(e.shiftKey && cmd);
   });
   cv.addEventListener('pointermove', e => {
@@ -3361,6 +3562,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (!drag) return;
     if (!drag.moved && Math.hypot(x - p.x0, y - p.y0) < 6) return;
     drag.moved = true;
+    if (drag.rect) { drag.rect.x1 = x; drag.rect.y1 = y; draw(); return; }
     if (drag.D) { dragMove(drag.D, x, y); return; }
     if (drag.pan) { cam.panX += dx; cam.panY += dy; }
     else {
@@ -3377,6 +3579,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     ptrs.delete(e.pointerId);
     if (pinch) { if (!ptrs.size) pinch = null; drag = null; return; }
     if (!p || !drag) return;
+    if (drag.rect && drag.moved) { rectSelect(drag.rect); drag = null; renderUi(); draw(); return; }
     if (drag.D) { if (drag.moved) dragEnd(drag.D); hover = null; drag = null; renderUi(); draw(); return; }
     if (!drag.moved && e.button === 2) { drag = null; ctxMenu(p.x, p.y); return; }
     if (!drag.moved && e.button !== 2) { if (cmd) hover = null; onTap(p.x, p.y, drag.shift); if (cmd && e.pointerType === 'mouse') { hover = hoverOf(p.x, p.y); draw(); } }
@@ -3399,7 +3602,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const k = e.key.toLowerCase();
     if (e.key === 'F8') { e.preventDefault(); orthoOn = !orthoOn; try { localStorage.setItem('biege.bau.ortho', orthoOn ? '1' : '0'); } catch {} if (lastMouse && cmd) hover = hoverOf(...lastMouse); renderUi(); draw(); env.toast(orthoOn ? 'Ortho an: nur waagerecht und senkrecht.' : 'Ortho aus.'); return; }
     if (e.key === 'Shift' && cmd) { freeSnap = true; if (lastMouse) hover = hoverOf(...lastMouse); draw(); return; }
-    if (cmd && DYN.includes(cmd.t) && (cmd.pts?.length || (cmd.t === 'grid' && cmd.base)) && !(cmd.t === 'measure' && cmd.mode === 'pick') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (cmd && (DYN.includes(cmd.t) || cmd.from?.a) && (cmd.pts?.length || cmd.from?.a || (cmd.t === 'grid' && cmd.base)) && !(cmd.t === 'measure' && cmd.mode === 'pick') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (cmd.t === 'grid' && dyn && (k === 'x' || e.key === ' ' || e.key === '*')) { dyn += e.key === ' ' ? ' ' : 'x'; e.preventDefault(); draw(); return; }
       if (/^[0-9]$/.test(e.key) || ((e.key === ',' || e.key === '.') && !dyn.includes(','))) { dyn += e.key === '.' ? ',' : e.key; e.preventDefault(); draw(); return; }
       if (e.key === '-') { dynNeg = !dynNeg; e.preventDefault(); draw(); return; }
@@ -3414,6 +3617,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (e.key === 'PageUp' || e.key === 'PageDown') { const S = sorted(), i = S.indexOf(curSt()), n = S[i + (e.key === 'PageUp' ? 1 : -1)]; if (n) setCurrent(n.id); e.preventDefault(); return; }
     if (e.key === ' ' && !cmd && lastCmdT) { e.preventDefault(); startCmd(lastCmdT); return; }
     if (e.key === '?') { e.preventDefault(); if (dlg?.kind === 'keys') closeDlg(); else openDlg('keys'); return; }
+    if (k === 'a' && cmd && !['measure', 'cal', 'umove', 'ualign', 'gstart', 'tiles', 'split', 'open', 'space', 'rotate'].includes(cmd.t) && !(cmd.t === 'grid' && cmd.base)) { e.preventDefault(); cmd.from = cmd.from ? null : {}; cmd.mid = null; renderUi(); draw(); return; }
     const map = { w: 'wall', s: 'column', t: 'beam', d: 'slab', o: 'open', m: 'measure', r: 'space', g: 'grid' };
     if (map[k]) { e.preventDefault(); if (cmd?.t === map[k]) endCmd(); else startCmd(map[k]); return; }
     if (k === 'v') { setPlan(!cam.plan); return; }
@@ -3437,11 +3641,11 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   // Start
   const r0 = root.getBoundingClientRect();
   W = r0.width; H = r0.height;
-  fitView(); renderUi(); draw(); root.focus({ preventScroll: true });
+  syncSigs(); fitView(); renderUi(); draw(); root.focus({ preventScroll: true });
   if (fresh) { saveNow().catch(() => {}); openDlg('new', { first: true }); }
   return {
     click: sel2 => root.querySelector(sel2)?.click(), field(key, val) { const el = root.querySelector(`[data-f="${key}"]`); if (!el) return false; el.value = String(val); el.dispatchEvent(new Event('change', { bubbles: true })); return true; },
-    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint, snapAt, detectRoom, ifcText, roofGeo, zOf, gridFams, gridGroups, opDims, holeDims, elemMesh, wallOutline, num,
+    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint, snapAt, detectRoom, ifcText, roofGeo, zOf, gridFams, gridGroups, opDims, holeDims, wallDims, colDims, setView, saveView, gotoView, cam, wallPieces, elemMesh, wallOutline, num,
     get B() { return B; }, get state() { return { cmd, sel, cur, cam, hover }; },
     setCur(id) { cur = id; dirty = true; renderUi(); draw(); },
     // Selbsttest in einem eigenen Test-Gebäude (nichts wird gespeichert, Rückgängig und Auswahl bleiben erhalten)
@@ -3450,7 +3654,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       clearTimeout(saveT); testing = true;
       B = newBuilding('Selbsttest'); fixB(); cur = B.storeys[0].id; sel = null; cmd = null; dlg = null;
       try {
-        return await runBuildingTests({ get B() { return B; }, cur: () => cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType });
+        return await runBuildingTests({ get B() { return B; }, cur: () => cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType, syncSigs, updateRooms, describeStep, roomSeed, wallPoly, transformSel, rotF, mirF, moveEl, wallDims, colDims, saveView, gotoView, setView, cam, wallPieces: wallPieces });
       } finally {
         B = keep.B; cur = keep.cur; sel = keep.sel; cmd = keep.cmd; hover = keep.hover; dlg = keep.dlg;
         undo.splice(0, undo.length, ...keep.undo); redo.splice(0, redo.length, ...keep.redo); testing = false; dirty = true; renderUi(); draw();

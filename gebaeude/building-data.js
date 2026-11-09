@@ -2,13 +2,14 @@
 // ---------- Symbole und Namen ----------
 const SVG = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const IC = {
+  cube: '<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" fill="currentColor" fill-opacity=".22"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>', cubeline: '<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9" stroke-dasharray="2.5 2"/>', cubex: '<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" fill="currentColor" fill-opacity=".08"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9" opacity=".6"/><circle cx="12" cy="12" r="2"/>',
   // Menüband (Version 273)
   plus: '<path d="M12 5v14M5 12h14"/>', save: '<path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>', upload: '<path d="M12 16V5"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/>',
   ifc: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 13h6M9 17h6"/>', image: '<path d="M4 5h16v14H4z"/><path d="m4 16 5-5 4 4 3-3 4 4"/>',
   stair: '<path d="M4 20h4v-4h4v-4h4V8h4"/>', roof: '<path d="m3 12 9-8 9 8"/><path d="M6 10v9h12v-9"/>', ceil: '<path d="M4 5h16v14H4z"/><path d="M9.3 5v14M14.7 5v14M4 9.7h16M4 14.3h16"/>',
   space: '<path d="M5 5h14v14H5z"/><path d="M9 10h6M9 14h4"/>', shaft: '<path d="M6 4h12v16H6z"/><path d="m6 4 12 16M18 4 6 20"/>', grid: '<path d="M8 3v18M16 3v18M3 8h18M3 16h18"/>',
   window: '<path d="M5 4h14v16H5z"/><path d="M12 4v16M5 12h14"/>', hole: '<path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/>', opening: '<path d="M4 4h16v16H4z"/><path d="M9 20v-8h6v8"/>',
-  move: '<path d="M12 3v18M3 12h18"/><path d="m9 6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>', under: '<path d="M4 5h16v14H4z"/><path d="m4 15 5-4 4 3 3-2 4 3"/>',
+  mirror: '<path d="M12 3v18" stroke-dasharray="3 2"/><path d="M9 7 4 12l5 5z"/><path d="m15 7 5 5-5 5z"/>', move: '<path d="M12 3v18M3 12h18"/><path d="m9 6 3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>', under: '<path d="M4 5h16v14H4z"/><path d="m4 15 5-4 4 3 3-2 4 3"/>',
   layers: '<path d="m12 3-9 5 9 5 9-5z"/><path d="m3 13 9 5 9-5"/>', ruler: '<path d="m4 16 12-12 4 4L8 20z"/><path d="m8 12 2 2M11 9l2 2M14 6l2 2"/>', rotate: '<path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v5h-5"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
   cut: '<path d="M12 4v16"/><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/>', link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', 
 

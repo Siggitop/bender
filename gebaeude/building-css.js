@@ -288,6 +288,22 @@ const BAU_CSS = `
 .bau .bau-lay td:nth-child(3) span { font-size: 11px; color: var(--muted); }
 .bau .bau-lay .icbtn { min-height: 28px; width: 28px; }
 .bau .bau-sw2 { display: block; width: 14px; height: 22px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .25); }
+
+/* ===== Verlauf, Räume (Version 276) ===== */
+.bau .bau-ctxm.bau-hist { min-width: 280px; }
+.bau .bau-ctxm.bau-hist button { flex-direction: column; align-items: flex-start; gap: 0; min-height: 40px; justify-content: center; }
+.bau .bau-ctxm.bau-hist small { font-size: 11px; color: var(--muted); font-weight: 500; }
+.bau .bau-warn { color: #b45309; }
+
+/* ===== Ansichten und Darstellung (Version 278) ===== */
+.bau .bau-vc { display: none; }
+.bau.desk .bau-vc { position: absolute; top: 10px; right: 10px; z-index: 3; display: grid; grid-template-columns: repeat(3, auto); gap: 3px; padding: 4px; background: color-mix(in srgb, var(--card) 88%, transparent); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(6px); }
+.bau .bau-vc button { min-height: 26px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 11.5px; font-weight: 650; }
+.bau .bau-vc button.on { background: var(--accent); color: #fff; }
+@media (hover: hover) { .bau .bau-vc button:not(.on):hover { background: var(--accent-soft); } }
+.bau .bau-vrow { display: flex; align-items: center; gap: 2px; }
+.bau .bau-vrow .bau-trow { flex: 1; }
+.bau .bau-status .bau-ss { font-variant-numeric: tabular-nums; }
 `;
 
 export { BAU_CSS };

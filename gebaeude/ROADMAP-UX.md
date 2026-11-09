@@ -1,6 +1,6 @@
 # Roadmap Nutzererfahrung: Gebäude-Werkzeug auf dem Prüfstand
 
-Stand: 09.11.2026, Version 273 (Phase 0 umgesetzt, Abschnitt 7; Modul-Aufteilung und Selbsttest, Abschnitt 8; Phase 1 erster Stand, Abschnitt 9; Phase 2 erster Stand, Abschnitt 10; Phase 3 erster Stand, Abschnitt 11). Schwerpunkt ist das Gebäude-Werkzeug (`building.js`), das hauptsächlich am **Desktop** (Mac, großer Bildschirm, Maus, Tastatur) benutzt wird; das iPad bleibt zweite Plattform. Der Rohrbiege-Assistent bleibt vorerst unverändert, der letzte Abschnitt zeigt nur, wie er später in dieselbe Oberfläche passt.
+Stand: 09.11.2026, Version 273 (Phase 0 umgesetzt, Abschnitt 7; Modul-Aufteilung und Selbsttest, Abschnitt 8; Phase 1 erster Stand, Abschnitt 9; Phase 2 erster Stand, Abschnitt 10; Phase 3 erster Stand, Abschnitt 11; Phase 4 erster Stand, Abschnitt 12; Phase 5 erster Stand, Abschnitt 13; Phase 6 erster Stand, Abschnitt 14). Schwerpunkt ist das Gebäude-Werkzeug (`building.js`), das hauptsächlich am **Desktop** (Mac, großer Bildschirm, Maus, Tastatur) benutzt wird; das iPad bleibt zweite Plattform. Der Rohrbiege-Assistent bleibt vorerst unverändert, der letzte Abschnitt zeigt nur, wie er später in dieselbe Oberfläche passt.
 
 Die Roadmap ist in Phasen geordnet. Jede Phase ist für sich nutzbar, Phase 0 sind Fehler, die vor allem anderen behoben werden.
 
@@ -372,3 +372,53 @@ Getestet (1500 × 900): Fenster wählen → Editor in der Palette, Titel „Fens
 Getestet (1500 × 900, Testgebäude „Fangtest“): Katalog 29 Typen; Typ „Innenwand tragend 24“ → „Außenwand 36,5“ ändert Dicke 365 und Art; Schicht Mauerwerk 175 → 200 ändert alle Exemplare (390); Dicke von Hand → „Eigene Maße“; Typen-Reiter mit Zahlen; Grundriss mit Schichtbändern; Selbsttest Gebäude **16/16** (neu: Katalog, Typ ändern, lösen, Neuer Typ, Stützentyp, Fenstertyp, IFC-Schichten), keine Konsolenfehler. Der Abschnitt „Typ bearbeiten“ steht nur am Desktop (Palette); auf schmalen Geräten gibt es den Auswahlknopf.
 
 *Bekannt:* Wände aus dem Startfenster („Neues Gebäude“) sind noch nicht typisiert, die Vorlagen im Fenster-Editor laufen neben den Fenstertypen weiter.
+
+## 12. Phase 4 erster Stand: Datenmodell (Version 276)
+
+| Nr. | Stand |
+|---|---|
+| 4.1 | **Fertig:** Schemaversion `B.schema` (jetzt 3) und Migrationskette in `building-schema.js`: jede Version mit Änderung am Datenmodell bekommt einen Schritt; Gebäude ohne Nummer werden der Reihe nach auf Stand gebracht (Schritt 1 Grundgerüst, 2 Bauteiltypen mit Verknüpfung, 3 Räume/Wandenden), ein zweiter Lauf tut nichts. Gebäude aus einer **neueren** Version bleiben unverändert und werden gemeldet. Ersetzt die stille Reparatur `fixB`/`typesV`. |
+| 4.2 | **Teilweise:** **Wandecke von Hand** (gespeichert je Wandende als `ja`/`jb`): „Automatisch (Gehrung, T-Stoß)“ oder „Stumpf an die Nachbarwand“ (die Wand stößt an die Fläche der Nachbarwand, die Nachbarwand läuft bis zur Außenfläche durch); Auswahl in der Palette bei jeder Wand. Achsbindung und Wirt waren schon gespeichert bzw. sichtbar (Abschnitt „Bezug“). *Offen:* Wandverbindungen allgemein speichern (heute aus der Lage abgeleitet), Anzeige als Symbol am Bauteil, Verbindung „an Stütze“. |
+| 4.3 | *Offen:* Höhen als Bezug + Versatz. |
+| 4.4 | **Teilweise:** **Räume folgen den Wänden:** Ein Raum merkt sich einen Punkt im Raum (`seed`) und `auto`; ändern sich Wände oder Stützen seines Geschosses (Zeichnen, Dicke, Verschieben, Löschen, Ziehen am Griff), wird der Umriss kurz danach neu berechnet; ist der Raum nicht mehr geschlossen, bleibt der alte Umriss und die Palette meldet es. Neue Räume folgen von selbst, bei vorhandenen schaltet „Umriss: Folgt den Wänden“ in der Palette es ein. Die Aktualisierung ist kein eigener Rückgängig-Schritt (der Stand davor enthält den alten Umriss); andere Geschosse folgen beim Wechsel dorthin. *Offen:* Decken- und Dachränder, Rasterdecken. |
+| 4.5 | *Offen:* Öffnungen mit wählbarem Bezug (Wandanfang, Wandende, Achse, Kante). |
+| 4.6 | **Fertig:** **Verlauf** im Menüband (Start → Verlauf): die letzten 30 Schritte mit **automatisch ermittelten Namen** („Wand angelegt“, „3 × Fenster geändert“, „Achse gelöscht“, „Typ geändert“ …), aus dem Unterschied zweier Stände berechnet (kein Mitführen von Namen an jeder Änderung); Klick springt auf den Stand davor. |
+| 4.7 | *Offen:* Geometrie-Zwischenspeicher, Leistungsmessung mit 2.000 Bauteilen. |
+| 4.8 | *Offen:* Hülle mit explizitem Zustand aufteilen (Geometrie, Fang, Darstellung, Oberfläche, IFC). Die neuen Teile (Schema, Typen, Räume) sind wieder in `building.js`/eigenem Modul entstanden; Schema liegt jetzt in `building-schema.js`. |
+
+Getestet (1500 × 900): Selbsttest Gebäude **21/21** (neu: Schema-Migration, neuere Version, Verlaufsnamen, Wandecke stumpf, Raum folgt und meldet „offen“); am Modell: Raum anlegen (merkt Punkt), Wand dicker → Umriss folgt (Innenfläche 10750), Verlauf zeigt „3 Bauteile geändert“, „Raum angelegt“, Sprung zurück; Wandende „Stumpf“ setzen und rückgängig; keine Konsolenfehler.
+
+*Bekannt (nicht neu):* Bei Gehrungen zwischen Wänden unterschiedlicher Dicke weicht der Raumumriss an der Ecke vom Eckpunkt ab (z. B. (10850 | 150) statt (10750 | 150)), weil die Gehrung entlang der Winkelhalbierenden läuft. Gehört zu 4.2 (Wandverbindungen).
+
+## 13. Phase 5 erster Stand: Bearbeiten im Modell (Version 277)
+
+| Nr. | Stand |
+|---|---|
+| 5.0 (neu) | **Punkt mit Abstand von einem Bezugspunkt** für alle Zeichenbefehle (Wand, Stütze, Träger, Decke, Dach, Rasterdecke, Treppe, Schacht, Achse, Verschieben, Kopieren, Spiegeln): Knopf „Abstand“ in der Optionsleiste oder Taste **A** → Bezugspunkt tippen (mit Fang) → Richtung mit dem Zeiger zeigen (mit Ortho exakt waagerecht/senkrecht) → Abstand eintippen, Enter. Der Punkt wird dann wie ein getippter Punkt gesetzt (z. B. Startpunkt einer Wand 1.500 mm neben einer Ecke). Statt Eintippen funktioniert auch ein Tippen im Modell. |
+| 5.1 | **Teilweise:** Temporäre, antippbare Maße bei gewählter **Wand** (Länge bei festem Anfang, Dicke) und **Stütze** (Abstand von jeder Seite bis zur nächsten Wandfläche oder Achse; Eingabe verschiebt die Stütze). *Offen:* Decke (Kantenlängen), Raum, Abstände der Wandenden zu Nachbarwänden und Achsen. |
+| 5.2 | *Offen:* Maße festsetzen (Schloss). |
+| 5.3 | *Offen:* Griffe vereinheitlichen, Doppelklick auf Griff = Wert tippen. |
+| 5.4 | **Teilweise:** **Rahmenauswahl** mit **Shift + Ziehen** auf leerer Fläche (Maus): nach rechts nur ganz Enthaltenes (blau), nach links alles Berührte (grün, gestrichelt); ergänzt die Auswahl. Ziehen ohne Shift bleibt wie bisher (Verschieben bzw. Drehen der Ansicht). „Alle dieses Typs wählen“ geht über den Reiter „Typen“ im Projektbrowser. *Offen:* Auswahlfilter nach Bauteilart, Rahmen ohne Shift. |
+| 5.5 | *Offen:* Flächenfang in 3D auch beim Zeichnen. |
+| 5.6 | *Offen:* Ausrichten (Kante an Kante). |
+| 5.7 | **Teilweise:** **Drehen** (Drehpunkt tippen, Winkel eintippen oder 90°/180°/−90°, „Drehen“ oder „Kopie drehen“) und **Spiegeln** (zwei Punkte der Achse, „Original behalten“) für Wand, Stütze, Träger, Decke, Raum und Schacht samt Türen, Fenstern und Durchbrüchen; Stützen drehen mit, Wandlage links/rechts wechselt beim Spiegeln. **Reihe** gibt es als „Kopieren“ mit Anzahl. *Offen:* Treppen, Dächer und Rasterdecken drehen/spiegeln. |
+
+Außerdem behoben: Ein verschobener Raum, der den Wänden folgt, behält jetzt seinen Punkt im Raum (sonst wäre er zurückgesprungen).
+
+Getestet (1500 × 900, Testgebäude „Fangtest“): Selbsttest Gebäude **24/24** (neu: Drehen 90° mit Fenster, Spiegeln mit Kopie, Raumpunkt beim Verschieben); am Modell: Abstandsmodus (Taste A, Bezugspunkt, Richtung, 1500, Enter → Punkt in 1500 mm Abstand, Modus beendet), Wandlänge 9000 → 8500 über das Maß, Stützenabstand links 4730 → 4230 verschiebt die Stütze um 500, Rahmen nach rechts 3 Bauteile / nach links 13, Drehen mit Winkelfeld, Spiegeln mit Kopie, Rückgängig; keine Konsolenfehler.
+
+*Hinweis zum Abstandsmodus:* Die Richtung kommt vom Zeiger samt Fang; ohne Ortho kann sie auf einen gefangenen Punkt „einrasten“. Für exakt waagerecht oder senkrecht Ortho (F8) einschalten.
+
+## 14. Phase 6 erster Stand: Ansicht und Navigation (Version 278)
+
+**Fehler vorab behoben:** Ein **Unterzug in einer Wand** schnitt die Wand nicht aus, die Wand ragte in den Unterzug. Wände werden jetzt wie bei Stützen auch von Unterzügen und Stahlträgern ausgespart (3D, Grundriss, Mengen, IFC): im Höhenbereich des Trägers verschwindet die Wand, ist der Träger schmaler als die Wand, bleibt sie seitlich stehen; Wandkanten und Schichtbänder im Grundriss laufen nicht mehr durch den Träger. Schräg liegende Träger werden über ihr umschließendes Rechteck ausgespart (leicht großzügig).
+
+| Nr. | Stand |
+|---|---|
+| 6.1 | **Fertig (einfache Fassung):** **Ansichtssteuerung** oben rechts in der Zeichenfläche (Desktop) und im Band (Ansicht → Richtung): Oben (Grundriss), Vorne, Rechts, Hinten, Links, Iso; die aktuelle Richtung ist hervorgehoben, jede Wahl passt das Modell neu ein. *Offen:* echter 3D-Würfel zum Anklicken von Flächen, Kanten und Ecken, Ziehen am Würfel. |
+| 6.2 | *Offen:* Schnittbox und Schnittebene (braucht eine Beschneidung im Zeichenprogramm). |
+| 6.3 | **Teilweise:** **Gespeicherte Ansichten** (Schema 4: `B.views`): Blickrichtung, Ausschnitt, Geschoss, ausgeblendete Layer und Darstellung; Reiter „Ansichten“ im Projektbrowser (Speichern, Aufrufen, Löschen) und Knopf im Band. *Offen:* Umbenennen, Ansichten für Ausgabe (PDF). |
+| 6.4 | **Fertig:** **Darstellung** Schattiert, **Kanten** (nur Kanten, verdeckte Linien bleiben verdeckt) und **Röntgen** (durchscheinend); gilt für 3D und Grundriss, wird gemerkt. *Offen:* Schraffuren im Grundriss je Bauteilart. |
+| 6.5 | **Fertig:** **Maßstab** im Grundriss: Balken unten links (100 mm bis 50 m, je nach Zoom) und „Maßstab ≈ 1 : n“ in der Statusleiste (bei 96 dpi); Zeigerkoordinaten gab es schon. |
+
+Getestet (1500 × 900, Testgebäude „Fangtest“): Unterzug anlegen, in die Wand kopieren → Wandstücke zeigen den Ausschnitt 2000–2500 mm und das schmale Seitenstück, 3D-Bild; Vorne/Links/Oben/Iso mit Hervorhebung, Oben → „Maßstab ≈ 1 : 75“; Kanten und Röntgen im Bild; Ansicht speichern/aufrufen/löschen (stellt auch die Darstellung wieder her); Selbsttest Gebäude **27/27** (neu: Unterzug in der Wand, Unterzug schmaler als die Wand, Ansicht speichern und aufrufen); keine Konsolenfehler.

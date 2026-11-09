@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 275**, siehe Abschnitt 6 bis 28. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 278**, siehe Abschnitt 6 bis 31. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -374,3 +374,15 @@ Einklappbare Abschnitte Mengen/Bezug/IFC, Bauteil-Editoren (Fenster, Dach, Trepp
 ## 28. Version 275: Bauteiltypen (Phase 3, erster Stand)
 
 Typenkatalog mit 29 Vorgabetypen (Wand mit Schichten, Decke, Stütze, Fenster, Tür), Typauswahl in Palette und Wandbefehl, Typ bearbeiten ändert alle Exemplare, Typen-Reiter im Projektbrowser, Schichten im Grundriss und im IFC. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 11.
+
+## 29. Version 276: Datenmodell (Phase 4, erster Stand)
+
+Schemaversion mit Migrationskette, Verlauf mit Schrittnamen, Wandecke von Hand (stumpf), Räume folgen den Wänden. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 12.
+
+## 30. Version 277: Bearbeiten im Modell (Phase 5, erster Stand)
+
+Startpunkt mit Abstand (Taste A), antippbare Maße an Wand und Stütze, Rahmenauswahl (Shift + Ziehen), Drehen und Spiegeln. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 13.
+
+## 31. Version 278: Ansicht und Navigation (Phase 6, erster Stand)
+
+Unterzüge und Träger schneiden Wände aus (Fehler behoben), Ansichtssteuerung (Oben, Vorne, Rechts, Hinten, Links, Iso), gespeicherte Ansichten, Darstellungen (Schattiert, Kanten, Röntgen), Maßstab. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 14.
