@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Gebäude</title>
+<meta name="description" content="Gebäudestruktur erfassen: Geschosse, Achsraster, Wände, Stützen, Decken, Öffnungen, Dächer, IFC-Export.">
+<meta name="theme-color" content="#e6e7e9">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gebäude">
+<link rel="stylesheet" href="style.css">
+<style>
+  body { display: grid; place-items: center; min-height: 100vh; margin: 0; }
+  .gstart { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; text-align: center; }
+  .gstart img { width: 96px; height: 96px; border-radius: 22px; }
+  .gstart h1 { margin: 0; font-size: 22px; }
+  .gstart p { margin: 0; color: var(--muted); font-size: 13px; }
+  .gstart button { min-height: 44px; padding: 0 22px; border: 0; border-radius: 99px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="gstart" id="gstart">
+  <img src="icon.svg" alt="">
+  <h1>Gebäude</h1>
+  <p id="gver"></p>
+  <button id="gopen">Gebäude öffnen</button>
+</div>
+<div class="toast" id="toast" hidden></div>
+<div class="modal" id="askDlg" hidden>
+  <div class="askbox" role="alertdialog" aria-modal="true" aria-labelledby="askMsg">
+    <p id="askMsg"></p>
+    <div class="askrow"><button id="askNo">Abbrechen</button><button id="askYes"></button></div>
+  </div>
+</div>
+<script src="version.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

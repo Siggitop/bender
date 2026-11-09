@@ -12,7 +12,30 @@ const cross2 = (a, b) => a[0] * b[1] - a[1] * b[0], perp = a => [-a[1], a[0]], n
 const uid = () => Math.random().toString(36).slice(2, 9);
 const fmt = n => (Number.isFinite(n) ? (Math.round(n * 10) / 10).toLocaleString('de-DE', { maximumFractionDigits: 1 }) : '–');
 const fmt2 = n => (Number.isFinite(n) ? n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '–');
-const num = s => { const v = parseFloat(String(s ?? '').replace(/\s/g, '').replace(',', '.')); return Number.isFinite(v) ? v : NaN; };
+// Zahlen-Leser für alle Felder (deutsches Format): „1.260“, „1260“, „1 260“, „1.260,5“, „1260,5“, „1,26 m“, „126 cm“, Rechnen „2*1260+115“.
+// Punkt mit genau drei Ziffern dahinter (und 1–3 Ziffern davor, nicht „0“) ist Tausendertrenner, sonst Dezimalzeichen; Komma ist immer dezimal.
+const numPart = t => {
+  if (t.includes(',')) return t.replace(/\./g, '').replace(',', '.');
+  const dots = (t.match(/\./g) || []).length;
+  if (dots > 1) return t.replace(/\./g, '');
+  if (dots === 1 && /^[1-9]\d{0,2}\.\d{3}$/.test(t)) return t.replace('.', '');
+  return t;
+};
+const num = s => {
+  if (typeof s === 'number') return Number.isFinite(s) ? s : NaN;
+  let t = String(s ?? '').replace(/[\s\u00a0]+/g, ' ').trim().toLowerCase();
+  if (!t) return NaN;
+  let f = 1;
+  const u = t.match(/\s*(mm|cm|m)$/);
+  if (u) { f = u[1] === 'm' ? 1000 : u[1] === 'cm' ? 10 : 1; t = t.slice(0, u.index); }
+  t = t.replace(/(\d) (?=\d)/g, '$1').replace(/×/g, '*').replace(/(\d|\))\s*x\s*(?=\d|\()/g, '$1*');
+  t = t.replace(/\d[\d.,]*/g, m => numPart(m));
+  if (!/^[\d.+\-*/() ]+$/.test(t)) return NaN;
+  if (/^[+-]?\d*\.?\d+$/.test(t.replace(/ /g, ''))) { const v = parseFloat(t); return Number.isFinite(v) ? v * f : NaN; }
+  try { const v = Function(`"use strict";return (${t})`)(); return Number.isFinite(v) ? v * f : NaN; } catch { return NaN; }
+};
+// Wert im Feld beim Bearbeiten: nackte Zahl mit Dezimalkomma (kein Tausenderpunkt, damit nichts falsch gelesen wird)
+const raw = n => (Number.isFinite(n) ? String(Math.round(n * 10) / 10).replace('.', ',') : '');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const area2 = P => { let a = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
 const segD = (x, y, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2)) : 0; return [Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy), t]; };
@@ -823,6 +846,35 @@ export async function openBuilding(env) {
 
   // ---------- Geometrie ----------
   // Prisma aus Grundriss (mit Löchern) zwischen z0 und z1. T: lokales System {o, u, v, n}, sonst Grundriss x/y und Höhe z
+  // Teil der Strecke p→q (Parameter 0..1), der außerhalb aller konvexen Polygone Ks liegt
+  function segOutside(p, q, Ks) {
+    const d = sub(q, p), iv = [];
+    Ks.forEach(K => {
+      const sg = area2(K) >= 0 ? 1 : -1; let t0 = 0, t1 = 1, ok = true;
+      for (let i = 0; i < K.length && ok; i++) {
+        const a = K[i], b = K[(i + 1) % K.length], e = sub(b, a), nx = [e[1] * sg, -e[0] * sg], den = dot(nx, d), num2 = dot(nx, sub(a, p)); // innen: dot(nx, x - a) <= 0
+        if (Math.abs(den) < 1e-12) { if (num2 < -1e-9) ok = false; continue; }
+        const t = num2 / den; if (den > 0) t1 = Math.min(t1, t); else t0 = Math.max(t0, t);
+      }
+      if (ok && t1 - t0 > 1e-6) iv.push([t0, t1]);
+    });
+    iv.sort((x, y) => x[0] - y[0]);
+    const out = []; let c = 0;
+    for (const [a, b] of iv) { if (a > c + 1e-6) out.push([c, a]); c = Math.max(c, b); }
+    if (c < 1 - 1e-6) out.push([c, 1]);
+    return out.filter(([a, b]) => (b - a) * len(d) > 1);
+  }
+  // Kantenlinien einer Wand: Umriss oben, unten, senkrecht – ohne die Teile, die in einer Stütze liegen (Gehrung und Stoß verschwinden hinter der Stütze)
+  function wallOutline(w, z0, z1, lines) {
+    const fp = footprint(w), cols = B.els.filter(c => c.type === 'column' && c.storey === w.storey && shown(c)).map(c => ({ K: colPoly(c), r: zRange(c) }));
+    const Ks = z => cols.filter(c => z >= c.r[0] - 1 && z <= c.r[1] + 1).map(c => c.K);
+    const P = fp.filter((p, i) => !near(p, fp[(i + 1) % fp.length], 0.01));
+    for (let i = 0; i < P.length; i++) {
+      const p = P[i], q = P[(i + 1) % P.length], d = sub(q, p);
+      for (const z of [z0, z1]) segOutside(p, q, Ks(z)).forEach(([a, b]) => lines.push([...add(p, mul(d, a)), z], [...add(p, mul(d, b)), z]));
+      if (!Ks((z0 + z1) / 2).some(K => pip(p[0], p[1], K))) lines.push([...p, z0], [...p, z1]);
+    }
+  }
   function extrude(outer, holes, z0, z1, col, out, lines, T) {
     let P0 = outer.filter((p, i) => !near(p, outer[(i + 1) % outer.length], 0.01));
     if (P0.length < 3) return;
@@ -897,7 +949,7 @@ export async function openBuilding(env) {
       case 'wall': {
         wallPieces(e).forEach(pc => prism(pc.poly, pc.z0, pc.z1, col, out, null));
         if (lines) {
-          prism(footprint(e), z0, z1, col, [], lines);
+          wallOutline(e, z0, z1, lines);
           B.els.filter(o => o.host === e.id && WALL_OPS.includes(o.type)).forEach(o => { const P = opPoly(o), [b, t] = opZ(o); [[P[0], P[1]], [P[3], P[2]]].forEach(([p, q]) => lines.push([...p, b], [...q, b], [...q, b], [...q, t], [...q, t], [...p, t], [...p, t], [...p, b])); });
         }
         return;
@@ -1153,7 +1205,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (Math.abs(dl) < 0.05) return;
     const mv = gMode !== 'one' ? f.items.slice(i + 1) : [nx];
     if (gMode === 'one' && f.items[i + 2] && nx.off + dl >= f.items[i + 2].off - 1) { env.toast(`Achse ${nx.g.name} würde über Achse ${f.items[i + 2].g.name} hinaus wandern. „Alle folgenden“ wählen.`); return; }
-    change(() => mv.forEach(({ g }) => { g.a = add(g.a, mul(f.n, dl)).map(v => Math.round(v * 10) / 10); g.b = add(g.b, mul(f.n, dl)).map(v => Math.round(v * 10) / 10); }));
+    change(() => { const ids = new Set(mv.map(({ g }) => g.id)), F = gridFollowers([...ids]); mv.forEach(({ g }) => { g.a = add(g.a, mul(f.n, dl)).map(r1); g.b = add(g.b, mul(f.n, dl)).map(r1); }); applyFollow(F, id => (ids.has(id) ? mul(f.n, dl) : [0, 0])); });
     renderUi(); draw();
   }
   function renumberGrids() {
@@ -1162,11 +1214,38 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     renderUi(); draw(); env.toast('Achsen neu nummeriert: 1, 2, 3 … von links, A, B, C … von unten.');
   }
   // Mitnahme beim Verschieben einer Achse: one = nur diese, next = alle folgenden, all = ganze Gruppe
-  let gMode = 'next', gdimHits = [], dimEdit = null;
+  let gMode = 'next', gdimHits = [], dimEdit = null, opHits = [];
+  const r1 = v => Math.round(v * 10) / 10;
+  // Liegt p auf der Achse g (innerhalb ihrer Länge)?
+  const onGrid = (p, g) => { const v = sub(g.b, g.a), L = len(v); if (!L) return false; const d = mul(v, 1 / L), t = dot(sub(p, g.a), d); return t > -1 && t < L + 1 && Math.abs(cross2(d, sub(p, g.a))) < 1; };
+  // Bauteile, die an den Achsen gids hängen: Stützen auf der Achse, Wand- und Trägerenden auf der Achse,
+  // Stützen in einer Wand, die ganz auf der Achse liegt; Öffnungen behalten ihre Lage in der Wand
+  function gridFollowers(gids) {
+    const set = new Set(gids), G = B.grids.filter(g => set.has(g.id) && !g.free), out = [];
+    if (!G.length) return out;
+    const gsOf = p => G.filter(g => onGrid(p, g)).map(g => g.id);
+    for (const e of B.els) {
+      if (e.noGrid) continue;
+      if (e.type === 'column') { const gs = gsOf(e.p); if (gs.length) out.push({ e, k: 'p', gs, p0: [...e.p] }); }
+      else if (e.type === 'wall' || e.type === 'beam') {
+        const ga = gsOf(e.a), gb = gsOf(e.b);
+        if (ga.length) out.push({ e, k: 'a', gs: ga, p0: [...e.a] });
+        if (gb.length) out.push({ e, k: 'b', gs: gb, p0: [...e.b] });
+        if (e.type === 'wall' && (ga.length || gb.length)) B.els.filter(o => o.host === e.id && WALL_OPS.includes(o.type)).forEach(o => out.push({ e: o, k: 'op', w: e, at0: o.at, a0: [...e.a] }));
+        const both = ga.filter(id => gb.includes(id));
+        if (e.type === 'wall' && both.length) { const P = wallPoly(e); B.els.forEach(c => { if (c.type === 'column' && !c.noGrid && c.storey === e.storey && !out.some(f => f.e === c) && pip(c.p[0], c.p[1], P)) out.push({ e: c, k: 'p', gs: both, p0: [...c.p] }); }); }
+      }
+    }
+    return out;
+  }
+  function applyFollow(F, dOf) {
+    F.forEach(f => { if (f.k !== 'op') f.e[f.k] = add(f.p0, f.gs.reduce((s2, id) => add(s2, dOf(id)), [0, 0])).map(r1); });
+    F.forEach(f => { if (f.k === 'op') { const { d, L } = wallAxis(f.w); f.e.at = Math.max(f.e.w / 2, Math.min(L - f.e.w / 2, r1(f.at0 - dot(sub(f.w.a, f.a0), d)))); } });
+  }
   const G_MODES = [['one', 'Nur diese Achse'], ['next', 'Alle folgenden'], ['all', 'Ganze Gruppe']];
   // Maßketten am Raster: Abstände von Achse zu Achse und Gesamtmaß, je Schar vor dem Achsanfang
   function gridDims(z, col) {
-    gdimHits = [];
+    gdimHits = []; const placed = [];
     if (B.vis.off.grid) return;
     const sc = (() => { const a = P2([0, 0], z), b = P2([1000, 0], z); return Math.hypot(b[0] - a[0], b[1] - a[1]) / 1000; })();
     if (!(sc > 0)) return;
@@ -1185,8 +1264,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         const txt = fmt(val);
         ctx.font = '600 12px system-ui'; const w = ctx.measureText(txt).width + 10;
         // zu eng für die Zahl: abwechselnd weiter nach außen
-        const narrow = Math.hypot(Bp[0] - A[0], Bp[1] - A[1]) < w + 6, out2 = narrow && (narrowFlip = !narrowFlip) ? -18 : 0;
-        const m = [(A[0] + Bp[0]) / 2 + ou[0] * out2, (A[1] + Bp[1]) / 2 + ou[1] * out2];
+        const base = [(A[0] + Bp[0]) / 2, (A[1] + Bp[1]) / 2], fits = o => { const mm = [base[0] + ou[0] * o, base[1] + ou[1] * o]; return !placed.some(r2 => Math.abs(r2[0] - mm[0]) < (r2[2] + w) / 2 + 2 && Math.abs(r2[1] - mm[1]) < 22); };
+        let out2 = 0; for (const o of [0, 15, -18, 30, -34, 45]) if (fits(o)) { out2 = o; break; }
+        const m = [base[0] + ou[0] * out2, base[1] + ou[1] * out2]; placed.push([m[0], m[1], w]);
         ctx.fillStyle = hit ? (css('--card') || '#fff') : 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.roundRect(m[0] - w / 2, m[1] - 10, w, 20, 5); ctx.fill();
         if (hit) { ctx.strokeStyle = 'rgba(200,60,60,.45)'; ctx.stroke(); }
         ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, m[0], m[1] + 0.5);
@@ -1196,11 +1276,81 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (f.items.length > 2) row(88, 0, f.items.length - 1, f.items.at(-1).off - f.items[0].off, false);
     }
   }
+  // Maße einer gewählten Öffnung auf der Wandfläche (zur Kamera hin): links/rechts bis zur nächsten Kante, Brüstung, bis UK Decke
+  function opDims(o) {
+    const w = hostOf(o);
+    if (!w) return [];
+    const { d, L } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), [z0, z1] = zRange(w), { rz } = basis();
+    const off = n[0] * rz[0] + n[1] * rz[1] < 0 ? hi : lo;
+    const Fp = (s2, z) => [...add(add(w.a, mul(d, s2)), mul(n, off)), z];
+    const sv = q => dot(sub(q, w.a), d), lat = q => dot(sub(q, w.a), n);
+    const fs = wallPoly(w).filter(q => Math.abs(lat(q) - off) < 1).map(sv), fs0 = fs.length ? Math.min(...fs) : 0, fs1 = fs.length ? Math.max(...fs) : L;
+    const s0 = o.at - o.w / 2, s1 = o.at + o.w / 2, oth = [...B.els.filter(x => x !== o && x.host === w.id && WALL_OPS.includes(x.type)).map(x => [x.at - x.w / 2, x.at + x.w / 2]), ...wallColCuts(w).map(c => [c.s0, c.s1])];
+    const sl = Math.max(fs0, ...oth.filter(([, b2]) => b2 <= s0 + 1).map(([, b2]) => b2)), sr = Math.min(fs1, ...oth.filter(([a2]) => a2 >= s1 - 1).map(([a2]) => a2));
+    const b = z0 + (o.sill || 0), t = b + o.h, zm = b + o.h / 2, out = [];
+    out.push({ A: Fp(s0, b + o.h * 0.15), B: Fp(s1, b + o.h * 0.15), val: o.w, kind: 'w', title: 'Breite' });
+    if (s0 - sl > 0.5) out.push({ A: Fp(sl, zm), B: Fp(s0, zm), val: s0 - sl, kind: 'l', title: 'Abstand links' });
+    if (sr - s1 > 0.5) out.push({ A: Fp(s1, zm), B: Fp(sr, zm), val: sr - s1, kind: 'r', title: 'Abstand rechts' });
+    if (b - z0 > 0.5) out.push({ A: Fp(o.at, z0), B: Fp(o.at, b), val: b - z0, kind: 'u', title: o.type === 'window' ? 'Brüstung' : 'Unterkante' });
+    if (z1 - t > 0.5) out.push({ A: Fp(o.at, t), B: Fp(o.at, z1), val: z1 - t, kind: 'o', title: 'Bis Unterkante Decke' });
+    out.forEach(m2 => Object.assign(m2, { sl, sr, z0, z1, L }));
+    return out;
+  }
+  // Maße eines Deckendurchbruchs: von jeder Kante waagerecht bzw. senkrecht bis zur nächsten Wandfläche oder Deckenkante
+  function holeDims(o) {
+    const [, z1] = zOf(o), segs = [];
+    B.els.forEach(e => { if (e.type === 'wall' && e.storey === o.storey) { const P = wallPoly(e); P.forEach((q, i) => segs.push([q, P[(i + 1) % P.length]])); } });
+    const sl = elById(o.host); if (sl?.pts) sl.pts.forEach((q, i) => segs.push([q, sl.pts[(i + 1) % sl.pts.length]]));
+    const hit = (q, dir) => { let best = Infinity; segs.forEach(([a, b]) => { const e2 = sub(b, a), den = cross2(dir, e2); if (Math.abs(den) < 1e-9) return; const t = cross2(sub(a, q), e2) / den, u = cross2(sub(a, q), dir) / den; if (t > 0.5 && u >= -1e-6 && u <= 1 + 1e-6 && t < best) best = t; }); return best; };
+    const out = [], hw = o.w / 2, hd = o.d / 2, P = o.p;
+    [[[1, 0], [P[0] + hw, P[1]], 'x+', 'Abstand rechts'], [[-1, 0], [P[0] - hw, P[1]], 'x-', 'Abstand links'], [[0, 1], [P[0], P[1] + hd], 'y+', 'Abstand oben'], [[0, -1], [P[0], P[1] - hd], 'y-', 'Abstand unten']].forEach(([dir, q, kind, title]) => {
+      const t = hit(q, dir); if (Number.isFinite(t) && t < 1e5) out.push({ A: [...q, z1], B: [...add(q, mul(dir, t)), z1], val: t, kind, title, dir });
+    });
+    return out;
+  }
+  function applyOpDim(hh, v) {
+    const o = elById(hh.op);
+    if (!o) return;
+    if (o.type === 'hole') {
+      const m = hh.dir, dl = hh.val - v; // Abstand kleiner → Durchbruch wandert zur Kante hin
+      change(() => { o.p = add(o.p, mul(m, dl)).map(r1); });
+    } else {
+      const w = hostOf(o); if (!w) return;
+      change(() => {
+        if (hh.kind === 'w') { if (v > 0) { o.w = r1(v); o.at = r1(Math.max(o.w / 2, Math.min(hh.L - o.w / 2, o.at))); } }
+        else if (hh.kind === 'l') o.at = r1(Math.max(o.w / 2, Math.min(hh.L - o.w / 2, hh.sl + v + o.w / 2)));
+        else if (hh.kind === 'r') o.at = r1(Math.max(o.w / 2, Math.min(hh.L - o.w / 2, hh.sr - v - o.w / 2)));
+        else if (hh.kind === 'u') o.sill = r1(Math.max(0, v));
+        else if (hh.kind === 'o') o.sill = r1(Math.max(0, hh.z1 - hh.z0 - v - o.h));
+      });
+    }
+    renderUi(); draw();
+  }
+  // Maß im Raum zeichnen (Ansicht oder Grundriss), antippbar
+  function dim3(A, Bq, val, col, hits, data) {
+    const a = P3(A), b = P3(Bq), L2 = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (L2 < 8) return;
+    const dd = [(b[0] - a[0]) / L2, (b[1] - a[1]) / L2], tk = [(dd[0] - dd[1]) * 5, (dd[1] + dd[0]) * 5];
+    ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+    for (const q of [a, b]) { ctx.moveTo(q[0] - tk[0], q[1] - tk[1]); ctx.lineTo(q[0] + tk[0], q[1] + tk[1]); }
+    ctx.stroke();
+    const txt = fmt(val); ctx.font = '700 12px system-ui'; const w = ctx.measureText(txt).width + 12, m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    ctx.fillStyle = css('--card') || '#fff'; ctx.beginPath(); ctx.roundRect(m[0] - w / 2, m[1] - 11, w, 22, 6); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, m[0], m[1] + 0.5);
+    hits.push({ x: m[0], y: m[1], w: Math.max(w, 44), val, ...data });
+  }
   function openDimEd(hh) {
     dimEdit = hh;
-    const rr = root.getBoundingClientRect(), cr = cv.getBoundingClientRect(), g2 = B.grids.find(g => g.id === hh.ids[1]);
+    const rr = root.getBoundingClientRect(), cr = cv.getBoundingClientRect(), g2 = hh.ids && B.grids.find(g => g.id === hh.ids[1]);
     const typed = dimEd.hidden ? null : dimEd.querySelector('input')?.value;
-    dimEd.innerHTML = `<div class="bau-ddh">Abstand ${esc(B.grids.find(g => g.id === hh.ids[0])?.name || '')} – ${esc(g2?.name || '')}</div><label class="ped-f"><input data-gdim inputmode="decimal" value="${fmt(hh.val)}"><i>mm</i></label>${seg('gshift', gMode === 'one' ? 'one' : 'next', [['next', 'Folgende mitschieben'], ['one', `Nur ${esc(g2?.name || '')}`]])}<div class="ped-acts"><button data-b="gdimok" class="on">Übernehmen</button><button data-b="gdimx">Abbrechen</button></div>`;
+    if (hh.op) {
+      dimEd.innerHTML = `<div class="bau-ddh">${esc(hh.title)}</div><label class="ped-f"><input data-gdim inputmode="decimal" value="${raw(hh.val)}"><i>mm</i></label><div class="ped-acts"><button data-b="gdimok" class="on">Übernehmen</button><button data-b="gdimx">Abbrechen</button></div>`;
+      dimEd.hidden = false;
+      const x = hh.x + cr.left - rr.left, y = hh.y + cr.top - rr.top;
+      dimEd.style.left = `${Math.max(8, Math.min(rr.width - 268, x - 130))}px`; dimEd.style.top = `${Math.max(8, Math.min(rr.height - 150, y + 16))}px`;
+      const i = dimEd.querySelector('input'); if (typed != null) i.value = typed; i.focus(); i.select(); return;
+    }
+    dimEd.innerHTML = `<div class="bau-ddh">Abstand ${esc(B.grids.find(g => g.id === hh.ids[0])?.name || '')} – ${esc(g2?.name || '')}</div><label class="ped-f"><input data-gdim inputmode="decimal" value="${raw(hh.val)}"><i>mm</i></label>${seg('gshift', gMode === 'one' ? 'one' : 'next', [['next', 'Folgende mitschieben'], ['one', `Nur ${esc(g2?.name || '')}`]])}<div class="ped-acts"><button data-b="gdimok" class="on">Übernehmen</button><button data-b="gdimx">Abbrechen</button></div>`;
     dimEd.hidden = false;
     const x = hh.x + cr.left - rr.left, y = hh.y + cr.top - rr.top;
     dimEd.style.left = `${Math.max(8, Math.min(rr.width - 268, x - 130))}px`; dimEd.style.top = `${Math.max(8, Math.min(rr.height - 150, y + 16))}px`;
@@ -1210,7 +1360,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function applyDimEd() {
     const hh = dimEdit, v = num(dimEd.querySelector('input')?.value);
     closeDimEd();
-    if (!hh || !(v > 0)) return;
+    if (!hh || !(v >= 0) || (!hh.op && !(v > 0))) return;
+    if (hh.op) { applyOpDim(hh, v); return; }
     for (const f0 of gridFams()) for (const G of gridGroups(f0)) { const i = G.items.findIndex(it => it.g.id === hh.ids[0]); if (i >= 0 && G.items[i + 1]?.g.id === hh.ids[1]) { setGap(G, i, v); return; } }
   }
 
@@ -1295,7 +1446,65 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     return L;
   }
   // Fangergebnis auf 0,1 mm runden: keine Rundungsreste aus Schnittpunkten in den Daten
-  function snapAt(x, y, o = {}) { const res = snapRaw(x, y, o); if (res?.p) res.p = res.p.map(v => Math.round(v * 10) / 10); return res; }
+  function snapAt(x, y, o = {}) {
+    if (!cam.plan && !freeSnap && !o.no3d) { const r3 = snap3D(x, y, o); if (r3) { r3.p3 = r3.p3.map(v => Math.round(v * 10) / 10); r3.p = r3.p3.slice(0, 2); return r3; } }
+    const res = snapRaw(x, y, o); if (res?.p) res.p = res.p.map(v => Math.round(v * 10) / 10); return res;
+  }
+  // Fang in der 3D-Ansicht: Ecken, Kanten und (beim Messen) Flächen der Bauteile in echter Höhe; beim Messen zusätzlich X/Y/Z-Strahlen ab dem letzten Punkt
+  const AX3 = [[[1, 0, 0], 'X', 'rgb(225,60,60)'], [[0, 1, 0], 'Y', 'rgb(40,160,70)'], [[0, 0, 1], 'Z', 'rgb(40,110,220)']];
+  function solids3D() {
+    const out = [];
+    B.els.forEach(e => {
+      if (!onStorey(e, cur) || !shown(e)) return;
+      if (['wall', 'column', 'beam', 'slab', 'shaft'].includes(e.type)) { const fp = footprint(e); if (fp?.length > 2) { const [z0, z1] = zOf(e); out.push({ e, fp, z0, z1 }); } }
+      else if (WALL_OPS.includes(e.type)) { const w = hostOf(e); if (!w) return; const { d } = wallAxis(w), n = perp(d), [lo, hi] = wallOffs(w), [wz] = zRange(w), b = wz + (e.sill || 0); const q = (s2, o2) => add(add(w.a, mul(d, s2)), mul(n, o2)); out.push({ e, fp: [q(e.at - e.w / 2, lo), q(e.at + e.w / 2, lo), q(e.at + e.w / 2, hi), q(e.at - e.w / 2, hi)], z0: b, z1: b + e.h, op: true }); }
+    });
+    return out;
+  }
+  function snap3D(x, y, o) {
+    const tol = touch ? 20 : 11, S = solids3D(), C = snapCfg, meas = cmd?.t === 'measure';
+    const U = unP(x, y, 0), { rz } = basis();
+    // nächste getroffene Fläche (Tiefe), für Verdeckung und Flächenfang
+    let face = null;
+    const takeF = (p3, t, label) => { if (!face || t < face.t) face = { p3, t, label }; };
+    S.forEach(({ e, fp, z0, z1, op }) => {
+      if (op) return;
+      for (const z of [z1, z0]) { const p = onPlane(x, y, z); if (p && pip(p[0], p[1], fp)) takeF([...p, z], P3([...p, z])[2], z === z1 ? 'auf Oberseite' : 'auf Unterseite'); }
+      fp.forEach((q, i) => {
+        const q2 = fp[(i + 1) % fp.length], ev = sub(q2, q), den = cross2(ev, [rz[0], rz[1]]);
+        if (Math.abs(den) < 1e-9) return;
+        const t = -cross2(ev, sub([U[0], U[1]], q)) / den, R = add(U, mul(rz, t)), u = dot(sub([R[0], R[1]], q), ev) / dot(ev, ev);
+        if (u >= 0 && u <= 1 && R[2] >= z0 - 0.5 && R[2] <= z1 + 0.5) takeF(R, t, e.type === 'wall' ? 'auf Wandfläche' : e.type === 'column' ? 'auf Stützenfläche' : 'auf Fläche');
+      });
+    });
+    const vis = p3 => !face || P3(p3)[2] <= face.t + 30;
+    let best = null;
+    const tryP = (p3, label) => { const s2 = P3(p3), dpx = Math.hypot(s2[0] - x, s2[1] - y); if (dpx < tol && vis(p3) && (!best || dpx < best.d - 0.5 || (Math.abs(dpx - best.d) <= 0.5 && s2[2] < best.z))) best = { p3, label, d: dpx, z: s2[2] }; };
+    if (C.end) S.forEach(({ e, fp, z0, z1, op }) => fp.forEach(q => { const lb = op ? 'Öffnungsecke' : e.type === 'column' ? 'Stützenecke' : e.type === 'wall' ? 'Wandecke' : 'Ecke'; tryP([...q, z1], `${lb} oben`); tryP([...q, z0], `${lb} unten`); }));
+    if (C.mid) S.forEach(({ fp, z0, z1, op }) => { if (op) return; fp.forEach((q, i) => { const m = mul(add(q, fp[(i + 1) % fp.length]), 0.5); tryP([...m, z1], 'Kantenmitte oben'); }); });
+    if (best) return { p3: best.p3, label: best.label, d3: true };
+    // Kanten: oben, unten, senkrecht
+    let bestE = null;
+    const tryE = (A, Bq, label) => {
+      const a = P3(A), b = P3(Bq), ex = b[0] - a[0], ey = b[1] - a[1], L2 = ex * ex + ey * ey;
+      if (L2 < 1) return;
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (y - a[1]) * ey) / L2)), dpx = Math.hypot(a[0] + ex * t - x, a[1] + ey * t - y);
+      if (dpx >= tol * 0.8) return;
+      const p3 = add(A, mul(sub(Bq, A), t));
+      if (vis(p3) && (!bestE || dpx < bestE.d)) bestE = { p3, label, d: dpx };
+    };
+    if (C.face) S.forEach(({ e, fp, z0, z1, op }) => fp.forEach((q, i) => { const q2 = fp[(i + 1) % fp.length], lb = op ? 'Laibung' : 'Kante'; tryE([...q, z1], [...q2, z1], `auf ${lb} oben`); tryE([...q, z0], [...q2, z0], `auf ${lb} unten`); tryE([...q, z0], [...q, z1], `auf ${lb} senkrecht`); }));
+    if (bestE) return { p3: bestE.p3, label: bestE.label, d3: true };
+    // Messen: X/Y/Z-Strahlen ab dem letzten Punkt
+    const f3 = meas && o.from?.length === 3 ? o.from : null;
+    if (f3) {
+      const a = P3(f3); let bR = null;
+      AX3.forEach(([ax, nm], k) => { const b = P3(add(f3, mul(ax, 1000))), ex = b[0] - a[0], ey = b[1] - a[1], L2 = ex * ex + ey * ey; if (L2 < 1) return; const dpx = Math.abs((x - a[0]) * ey - (y - a[1]) * ex) / Math.sqrt(L2); if (dpx < tol && (!bR || dpx < bR.d)) bR = { k, d: dpx, t: ((x - a[0]) * ex + (y - a[1]) * ey) / L2 * 1000 }; });
+      if (bR) { const tt = snapCfg.round ? Math.round(bR.t / 10) * 10 : bR.t; return { p3: add(f3, mul(AX3[bR.k][0], tt)), label: `${AX3[bR.k][1]}-Richtung`, d3: true, ray: bR.k }; }
+    }
+    if (meas && face && C.face) return { p3: face.p3, label: face.label, d3: true };
+    return null;
+  }
   // ---------- Fang-Einstellungen (je Gerät) ----------
   const SNAP_KEYS = [['end', 'Endpunkte und Ecken'], ['mid', 'Mitten'], ['grid', 'Achsen und Achsschnitte'], ['face', 'Wandflächen, Achsen, Kanten'], ['track', 'Fluchten (Spurlinien)'], ['perp', 'Lot'], ['ext', 'Verlängerungen'], ['round', 'Raster 10 mm']];
   const SNAP_HELP = { end: 'Wandenden, Wand- und Raumecken, Stützenmitte und -ecken', mid: 'Mitte von Wänden, Trägern, Kanten und Stützenseiten', grid: 'Achslinien und ihre Schnittpunkte', face: 'auf Wand- und Stützenflächen, Wandachsen und Kanten entlang', track: 'waagerecht/senkrecht durch erfasste Punkte (Kreuz)', perp: 'senkrecht vom letzten Punkt auf eine Linie', ext: 'über Wand- und Achsenden hinaus', round: 'freie Punkte und Längen auf 10 mm' };
@@ -1402,14 +1611,25 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
 
   // ---------- Räume erkennen ----------
   // Raster über den Wänden, Füllung ab dem Tippunkt, Rand als Polygon. Türen schließen den Raum nicht auf.
+  // Raum finden: erst grob über das ganze Geschoss, dann fein nur um den gefundenen Raum
   function detectRoom(p) {
+    const r0 = detectRoomIn(p);
+    if (r0.err) return r0;
+    const all = [...r0.pts, ...(r0.holes || []).flat()], m = 800;
+    const r2 = detectRoomIn(p, [Math.min(...all.map(q => q[0])) - m, Math.min(...all.map(q => q[1])) - m, Math.max(...all.map(q => q[0])) + m, Math.max(...all.map(q => q[1])) + m]);
+    return r2.err ? r0 : r2;
+  }
+  function detectRoomIn(p, box) {
     const walls = B.els.filter(e => e.type === 'wall' && e.storey === cur);
     if (!walls.length) return { err: 'Keine Wände in diesem Geschoss.' };
     // Stützen schließen Lücken zwischen Wänden mit
-    const polys = [...walls.map(wallPoly), ...B.els.filter(e => e.type === 'column' && onStorey(e, cur)).map(colPoly)], all = polys.flat();
-    const x0 = Math.min(...all.map(q => q[0])) - 300, y0 = Math.min(...all.map(q => q[1])) - 300, x1 = Math.max(...all.map(q => q[0])) + 300, y1 = Math.max(...all.map(q => q[1])) + 300;
+    let polys = [...walls.map(wallPoly), ...B.els.filter(e => e.type === 'column' && onStorey(e, cur)).map(colPoly)];
+    if (box) polys = polys.filter(P => P.some(q => q[0] > box[0] && q[0] < box[2] && q[1] > box[1] && q[1] < box[3]) || P.every(q => q[0] < box[0]) === false && P.every(q => q[0] > box[2]) === false && P.every(q => q[1] < box[1]) === false && P.every(q => q[1] > box[3]) === false);
+    const all = polys.flat();
+    let x0 = Math.min(...all.map(q => q[0])) - 300, y0 = Math.min(...all.map(q => q[1])) - 300, x1 = Math.max(...all.map(q => q[0])) + 300, y1 = Math.max(...all.map(q => q[1])) + 300;
+    if (box) [x0, y0, x1, y1] = box;
     if (p[0] < x0 || p[0] > x1 || p[1] < y0 || p[1] > y1) return { err: 'Außerhalb der Wände.' };
-    const c = Math.max(20, Math.ceil(Math.sqrt((x1 - x0) * (y1 - y0) / 1.2e6))), nx = Math.ceil((x1 - x0) / c), ny = Math.ceil((y1 - y0) / c), G = new Uint8Array(nx * ny);
+    const c = Math.max(box ? 4 : 20, Math.ceil(Math.sqrt((x1 - x0) * (y1 - y0) / (box ? 2.5e6 : 1.2e6)))), nx = Math.ceil((x1 - x0) / c), ny = Math.ceil((y1 - y0) / c), G = new Uint8Array(nx * ny);
     polys.forEach(P => {
       const xs = P.map(q => q[0]), ys = P.map(q => q[1]);
       const i0 = Math.max(0, Math.floor((Math.min(...xs) - x0) / c) - 1), i1 = Math.min(nx - 1, Math.ceil((Math.max(...xs) - x0) / c) + 1), j0 = Math.max(0, Math.floor((Math.min(...ys) - y0) / c) - 1), j1 = Math.min(ny - 1, Math.ceil((Math.max(...ys) - y0) / c) + 1);
@@ -1683,10 +1903,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       default: return e.type === 'window' ? [['Größe', `${fmt(e.w)} × ${fmt(e.h)} mm`], ['Teilung', winText(e)]] : [['Größe', `${fmt(e.w)} × ${fmt(e.h ?? e.d)} mm`]];
     }
   }
+  // Zeigerpunkt fürs Messen: in 3D mit Höhe, sobald die Punkte Höhen haben
+  const mHover = c => (c.pts.at(-1)?.length === 3 || (!cam.plan && c.mode !== 'area') ? (hover?.p3 || (hover?.p && [...hover.p, curSt().elev])) : hover?.p);
   function measRes() {
-    const c = cmd, P = c.pts, hp = hover?.p;
+    const c = cmd, P = c.pts, hp = mHover(c);
     if (c.mode === 'pick') { const e = c.res && elById(c.res); return e ? `${TYPE_NAME[e.type]}: ${elMeasure(e).map(([k, v]) => `${k} ${v}`).join(' · ')}` : 'Raum, Decke, Wand … antippen'; }
-    if (c.mode === 'dist') { const Q = P.length === 2 ? P : P.length === 1 && hp ? [P[0], hp] : null; if (!Q) return P.length ? 'Zweiten Punkt tippen' : 'Ersten Punkt tippen'; const d = sub(Q[1], Q[0]); return `${fmt(len(d))} mm · ΔX ${fmt(Math.abs(d[0]))} · ΔY ${fmt(Math.abs(d[1]))}`; }
+    if (c.mode === 'dist') { const Q = P.length === 2 ? P : P.length === 1 && hp ? [P[0], hp] : null; if (!Q) return P.length ? 'Zweiten Punkt tippen' : 'Ersten Punkt tippen'; const d = sub(Q[1], Q[0]); return `${fmt(len(d))} mm · ΔX ${fmt(Math.abs(d[0]))} · ΔY ${fmt(Math.abs(d[1]))}${d.length > 2 ? ` · ΔZ ${fmt(Math.abs(d[2]))}` : ''}`; }
     if (c.mode === 'chain') { const Q = [...P, ...(hp && P.length ? [hp] : [])]; if (Q.length < 2) return 'Punkte tippen'; let sm = 0; for (let i = 1; i < Q.length; i++) sm += len(sub(Q[i], Q[i - 1])); return `Summe ${fmt(sm)} mm · ${Q.length - 1} Strecken`; }
     const Q = c.closed ? P : [...P, ...(hp ? [hp] : [])];
     if (Q.length < 3) return 'Umriss tippen, Startpunkt schließt';
@@ -1698,8 +1920,9 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const done2 = (c.mode === 'dist' && c.pts.length >= 2) || c.closed;
     const s2 = snapAt(x, y, { from: done2 || c.mid ? null : c.pts.at(-1), extra: c.mode === 'area' && c.pts.length > 2 ? [{ p: c.pts[0], label: 'Startpunkt' }] : [] });
     if (!s2?.p) return;
-    if (c.mid) { if (!c.mid.a) { c.mid.a = s2.p; renderUi(); draw(); return; } const m = mul(add(c.mid.a, s2.p), 0.5); c.mid = null; measurePoint(m); return; }
-    measurePoint(s2.p);
+    const q = !cam.plan && c.mode !== 'area' ? (s2.p3 || [...s2.p, curSt().elev]) : s2.p;
+    if (c.mid) { if (!c.mid.a) { c.mid.a = q; renderUi(); draw(); return; } const m = mul(add(c.mid.a, q), 0.5); c.mid = null; measurePoint(m); return; }
+    measurePoint(q);
   }
   function measurePoint(p) {
     const c = cmd;
@@ -1779,6 +2002,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
 
   function onTap(x, y, shift = false) {
     if (!dimEd.hidden) closeDimEd();
+    if (!cmd) { const hh = opHits.find(q => Math.abs(q.x - x) < q.w / 2 + 4 && Math.abs(q.y - y) < 14); if (hh) { openDimEd(hh); return; } }
     if (!cmd || cmd.t === 'grid') { const hh = gdimHits.find(q => Math.abs(q.x - x) < q.w / 2 + 4 && Math.abs(q.y - y) < 14); if (hh) { openDimEd(hh); return; } }
     if (!cmd) { pickSelect(x, y, shift || addMode); return; }
     const t = cmd.t;
@@ -1977,7 +2201,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     }
     // Achse parallel ziehen: mitwandernde Achsen merken
     const gmove = g && h.k === 'm' ? (() => { const f = grpOf(g), i = f.items.findIndex(it => it.g === g); return (gMode === 'all' ? f.items : gMode === 'next' ? f.items.slice(i) : [f.items[i]]).map(it => ({ g: it.g, a: [...it.g.a], b: [...it.g.b] })); })() : null;
-    return { h, before, e, g, follow, gmove, a0: e?.a && [...e.a], b0: e?.b && [...e.b], ga: g && [...g.a], gb: g && [...g.b], opp: e?.type === 'shaft' && typeof h.k === 'number' ? [...e.pts[(h.k + 2) % 4]] : null };
+    const gF = gmove ? gridFollowers(gmove.map(m => m.g.id)) : null;
+    return { h, before, e, g, follow, gmove, gF, a0: e?.a && [...e.a], b0: e?.b && [...e.b], ga: g && [...g.a], gb: g && [...g.b], opp: e?.type === 'shaft' && typeof h.k === 'number' ? [...e.pts[(h.k + 2) % 4]] : null };
   }
   // Magnet beim stufenlosen Ziehen: nur Bauteilecken und Stützen ganz in der Nähe
   function magnetAt(x, y) {
@@ -1993,6 +2218,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (!p) return;
       const n = perp(norm(sub(D.gb, D.ga))), dd = Math.round(dot(sub(p, mul(add(D.ga, D.gb), 0.5)), n));
       D.gmove.forEach(m => { m.g.a = add(m.a, mul(n, dd)); m.g.b = add(m.b, mul(n, dd)); });
+      if (D.gF?.length) { const ids = new Set(D.gmove.map(m => m.g.id)), dv = mul(n, dd); applyFollow(D.gF, id => (ids.has(id) ? dv : [0, 0])); }
       hover = mg ? { p: mg, label: 'Ecke' } : null;
       dirty = true; draw(); return;
     }
@@ -2086,6 +2312,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       }
     });
     if (cam.plan || cmd?.t === 'grid' || sel?.grid) gridDims(z, 'rgb(200,60,60)'); else gdimHits = [];
+    opHits = [];
+    { const o = !cmd && selEl(); if (o && OPS.includes(o.type)) (o.type === 'hole' ? holeDims(o) : opDims(o)).forEach(m => dim3(m.A, m.B, m.val, acc, opHits, { op: o.id, kind: m.kind, title: m.title, dir: m.dir, sl: m.sl, sr: m.sr, z0: m.z0, z1: m.z1, L: m.L })); }
     // gewählte Achse: Abstände zu den Nachbarn direkt an der Achse (laufen beim Ziehen mit)
     { const g = !cmd && selGrid(), f = g && grpOf(g), i = f ? f.items.findIndex(it => it.g === g) : -1;
       if (f) { const mid = mul(add(g.a, g.b), 0.5); [f.items[i - 1], f.items[i + 1]].forEach(nb => { if (nb) { const o = nb.off - f.items[i].off; dimLine(mid, add(mid, mul(f.n, o)), fmt(Math.abs(o)), acc, z); } }); } }
@@ -2141,13 +2369,16 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     // Maße der Auswahl
     const e = selEl();
     if (e?.type === 'wall' || e?.type === 'beam') dimLine(e.a, e.b, fmt(len(sub(e.b, e.a))), acc, z);
-    if (e && WALL_OPS.includes(e.type) && hostOf(e)) { const w = hostOf(e), { d } = wallAxis(w); dimLine(w.a, add(w.a, mul(d, e.at - e.w / 2)), fmt(e.at - e.w / 2), acc, z); dimLine(add(w.a, mul(d, e.at - e.w / 2)), add(w.a, mul(d, e.at + e.w / 2)), fmt(e.w), acc, z); }
+    if (false && e && WALL_OPS.includes(e.type) && hostOf(e)) { const w = hostOf(e), { d } = wallAxis(w); dimLine(w.a, add(w.a, mul(d, e.at - e.w / 2)), fmt(e.at - e.w / 2), acc, z); dimLine(add(w.a, mul(d, e.at - e.w / 2)), add(w.a, mul(d, e.at + e.w / 2)), fmt(e.w), acc, z); }
     if (e?.type === 'ceil' && cam.plan) { polyPath(e.pts, z); ctx.strokeStyle = acc; ctx.setLineDash([8, 5]); ctx.stroke(); ctx.setLineDash([]); ctx.strokeStyle = 'rgba(10,124,189,.35)'; ctx.lineWidth = 1; for (const [k, g2, o2] of [[0, e.gx, e.ox], [1, e.gy, e.oy]]) { const vals = e.pts.map(p => p[k]), lo = Math.min(...vals), hi = Math.max(...vals), dd = k ? [1, 0] : [0, 1]; for (let c = Math.ceil((lo - o2) / g2) * g2 + o2; c < hi; c += g2) lineInPoly(e.pts, k ? [0, c] : [c, 0], dd, e.holes || []).forEach(([a, b]) => { const s1 = P2(a, z), s2 = P2(b, z); ctx.beginPath(); ctx.moveTo(s1[0], s1[1]); ctx.lineTo(s2[0], s2[1]); ctx.stroke(); }); } ceilHoles(e).forEach(q => { polyPath(q, z); ctx.fillStyle = 'rgba(220,50,50,.35)'; ctx.fill(); }); ceilTiles(e).cut.forEach(t => { if (t.off) return; polyPath([[t.x, t.y], [t.x + e.gx, t.y], [t.x + e.gx, t.y + e.gy], [t.x, t.y + e.gy]].map(q => q), z); ctx.save(); ctx.clip(); polyPath(e.pts, z); ctx.fillStyle = 'rgba(255,122,26,.22)'; ctx.fill(); ctx.restore(); }); }
     // Mehrfachauswahl: Umrisse
     if (selIds().length > 1) selIds().map(elById).filter(Boolean).forEach(o => { const fp = footprint(o); if (fp?.length > 2) { polyPath(fp, z); ctx.strokeStyle = acc; ctx.lineWidth = 2; ctx.stroke(); } });
     // Messen
     if (cmd?.t === 'measure') {
-      const c = cmd, P = c.pts, hp = hover?.p;
+      const c = cmd, P = c.pts, hp = mHover(c);
+      // X/Y/Z-Strahlen ab dem letzten Punkt (3D)
+      const f3 = !cam.plan && P.at(-1)?.length === 3 && !(c.mode === 'dist' && P.length >= 2) ? P.at(-1) : null;
+      if (f3) { const a = P3(f3); AX3.forEach(([ax, , colr], k) => { const b = P3(add(f3, mul(ax, 1000))), ex = b[0] - a[0], ey = b[1] - a[1], l = Math.hypot(ex, ey); if (l < 1) return; ctx.strokeStyle = colr; ctx.globalAlpha = hover?.ray === k ? 0.95 : 0.35; ctx.lineWidth = hover?.ray === k ? 2 : 1; ctx.setLineDash([7, 5]); ctx.beginPath(); ctx.moveTo(a[0] - ex / l * 3000, a[1] - ey / l * 3000); ctx.lineTo(a[0] + ex / l * 3000, a[1] + ey / l * 3000); ctx.stroke(); }); ctx.setLineDash([]); ctx.globalAlpha = 1; }
       if (c.mode === 'pick' && c.res && elById(c.res)) { const fp = footprint(elById(c.res)); if (fp?.length > 2) { polyPath(fp, z); ctx.fillStyle = 'rgba(255,122,26,.18)'; ctx.fill(); ctx.strokeStyle = mark; ctx.lineWidth = 2; ctx.stroke(); } }
       else if (c.mode === 'area') {
         const Q = c.closed ? P : [...P, ...(hp ? [hp] : [])];
@@ -2161,7 +2392,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     // Befehl
     if (cmd) {
       const pts = cmd.pts || [];
-      pts.forEach((p, i) => dot2(P2(p, z), i === 0 ? 5 : 4, mark));
+      pts.forEach((p, i) => dot2(p.length > 2 ? P3(p) : P2(p, z), i === 0 ? 5 : 4, mark));
       if (['slab', 'roof', 'ceil', 'cal', 'ualign', 'grid', 'move', 'copy', 'beam', 'shaft'].includes(cmd.t) && pts.length) {
         ctx.strokeStyle = mark; ctx.lineWidth = 2; ctx.setLineDash(['slab', 'roof', 'ceil'].includes(cmd.t) ? [] : [6, 4]);
         ctx.beginPath(); pts.forEach((p, i) => { const s = P2(p, z); if (i) ctx.lineTo(s[0], s[1]); else ctx.moveTo(s[0], s[1]); });
@@ -2190,7 +2421,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (cmd.mid?.a) { const s2 = P2(cmd.mid.a, z); dot2(s2, 4, mark); if (hover?.p) { const m = P2(mul(add(cmd.mid.a, hover.p), 0.5), z); ctx.strokeStyle = mark; ctx.beginPath(); ctx.moveTo(m[0] - 6, m[1]); ctx.lineTo(m[0] + 6, m[1]); ctx.moveTo(m[0], m[1] - 6); ctx.lineTo(m[0], m[1] + 6); ctx.stroke(); } }
     }
     if (hover?.p) {
-      const s = P2(hover.p, z);
+      const s = hover.p3 ? P3(hover.p3) : P2(hover.p, z);
       ctx.strokeStyle = hover.label ? mark : acc; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(s[0], s[1], hover.label ? 8 : 5, 0, 7); ctx.stroke();
       if (hover.label) tag(s[0], s[1] - 22, hover.label, mark);
     }
@@ -2208,7 +2439,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const L = num(dyn), neg = dynNeg, from = cmd?.pts?.at(-1);
     dyn = ''; dynNeg = false;
     if (!(L > 0) || !from) { draw(); return; }
-    let dir = hover?.p && len(sub(hover.p, from)) > 1 ? norm(sub(hover.p, from)) : cmd.lastDir || [1, 0];
+    const hp3 = from.length > 2 ? (hover?.p3 || (hover?.p && [...hover.p, from[2]])) : hover?.p;
+    let dir = hp3 && len(sub(hp3, from)) > 1 ? norm(sub(hp3, from)) : from.length > 2 ? [...(cmd.lastDir || [1, 0]), 0].slice(0, 3) : cmd.lastDir || [1, 0];
     if (neg) dir = mul(dir, -1);
     const p = add(from, mul(dir, L)).map(v => Math.round(v * 10) / 10);
     if (cmd.t === 'measure') measurePoint(p); else applyPoint(p);
@@ -2222,7 +2454,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, x, y + 0.5);
   }
   function dimLine(p, q, t, c, z) {
-    const a = P2(p, z), b = P2(q, z), d = norm(sub(b.slice(0, 2), a.slice(0, 2))), n = [-d[1] * 34, d[0] * 34];
+    const a = p.length > 2 ? P3(p) : P2(p, z), b = q.length > 2 ? P3(q) : P2(q, z), d = norm(sub(b.slice(0, 2), a.slice(0, 2))), n = [-d[1] * 34, d[0] * 34];
     if (!Number.isFinite(d[0]) || Math.hypot(b[0] - a[0], b[1] - a[1]) < 4) return;
     ctx.strokeStyle = c; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(a[0] + n[0] * 1.2, a[1] + n[1] * 1.2); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] + n[0] * 1.2, b[1] + n[1] * 1.2);
@@ -2318,11 +2550,20 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
 
   // ---------- Leisten und Felder ----------
-  const fld = (k, v, label, unit = 'mm', ph = '') => `<label class="ped-f"><span>${label}</span><input data-f="${k}" inputmode="decimal" value="${v == null || v === '' ? '' : fmt(v)}"${ph ? ` placeholder="${ph}"` : ''}><i>${unit}</i></label>`;
+  const fld = (k, v, label, unit = 'mm', ph = '') => `<label class="ped-f"><span>${label}</span><input data-f="${k}" inputmode="decimal" value="${v == null || v === '' ? '' : raw(v)}"${ph ? ` placeholder="${ph}"` : ''}><i>${unit}</i></label>`;
   const seg = (k, val, opts) => `<span class="ped-seg">${opts.map(([v, t]) => `<button data-seg="${k}:${v}"${String(val) === String(v) ? ' class="on"' : ''}>${t}</button>`).join('')}</span>`;
   const profSel = (k, val) => `<label class="ped-f"><span>Profil</span><select data-sel="${k}">${STEEL_FAM.map(f => `<optgroup label="${f}">${Object.keys(STEEL).filter(n => n.startsWith(`${f} `)).map(n => `<option${n === val ? ' selected' : ''}>${n}</option>`).join('')}</optgroup>`).join('')}</select></label>`;
   const storeySel = (k, val, from) => `<label class="ped-f"><span>bis</span><select data-sel="${k}">${sorted().filter(s => !from || s.elev >= from.elev).map(s => `<option value="${s.id}"${s.id === val ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>`;
+  // Dialoge zu einem Bauteil gelten immer für die aktuelle Auswahl: anderes Bauteil gleicher Art gewählt → Dialog zeigt dieses, sonst schließt er
+  const DLG_TYPE = { window: ['window'], roof: ['roof'], ceil: ['ceil'], stair: ['stair'] };
+  function syncDlgSel() {
+    if (!dlg?.el || !DLG_TYPE[dlg.kind]) return;
+    const ids = selIds(), e = ids.length === 1 ? elById(ids[0]) : null;
+    if (e && DLG_TYPE[dlg.kind].includes(e.type)) { if (dlg.el !== e.id) dlg = { kind: dlg.kind, el: e.id }; }
+    else if (!(cmd && ['gstart', 'tiles'].includes(cmd.t))) dlg = null;
+  }
   function renderUi() {
+    syncDlgSel();
     const s = curSt();
     $('.ped-title').innerHTML = `${esc(s.name)} <span class="bau-tcar">▾</span>`;
     $('.bau-docname').textContent = B.name || 'Gebäude';
@@ -2511,7 +2752,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       h = `<h4>Achse ${esc(g.name)}</h4><div class="ped-grid"><label class="ped-f"><span>Name</span><input data-gname value="${esc(g.name)}" class="bau-short"></label>${dd('ghead', 'Achskopf', g.hideA && g.hideB ? 'none' : g.hideA ? 'b' : g.hideB ? 'a' : 'both', [['both', 'Beide Enden'], ['a', 'Nur Anfang'], ['b', 'Nur Ende'], ['none', 'Keiner']])}</div>
         ${pv || nx ? `<div class="ped-grid">${pv ? fld('ggprev', f.items[i].off - pv.off, `Abstand zu ${esc(pv.g.name)}`) : ''}${nx ? fld('ggnext', nx.off - f.items[i].off, `Abstand zu ${esc(nx.g.name)}`) : ''}</div><div class="ped-acts">${dd('gshift', 'Beim Verschieben', gMode, G_MODES)}${dd('gdside', 'Maßkette', f.side, [['a', sideN[0]], ['b', sideN[1]], ['both', 'Beide Seiten'], ['off', 'Aus']])}</div><small>Gruppe: ${f.items.length} Achsen (${esc(f.items[0].g.name)} bis ${esc(f.items.at(-1).g.name)}). Maßkette und Mitnahme gelten für diese Gruppe.</small>` : ''}
         <small>Länge ${fmt(len(sub(g.b, g.a)))} mm. Enden ziehen ändert die Länge, das Quadrat in der Mitte verschiebt parallel. Maßzahlen im Grundriss antippen ändert Abstände.</small>
+        <div class="ped-acts">${dd('gfree', 'Bauteile auf der Achse', g.free ? 'free' : 'link', [['link', 'Folgen der Achse'], ['free', 'Bleiben stehen']])}</div>
         <div class="ped-acts"><button data-b="gpar" class="on">Parallele Achse anfügen</button><button data-b="grenum">Neu nummerieren</button><button data-b="delgrid">${SVG(IC.trash)} Löschen</button></div>`;
+    }
+    if (e && h && ['wall', 'column', 'beam'].includes(e.type)) {
+      const on = B.grids.filter(g => (e.type === 'column' ? [e.p] : [e.a, e.b]).some(q => onGrid(q, g)));
+      if (on.length) h += `<div class="ped-acts">${dd('glink', `Achse ${on.map(g => esc(g.name)).join('/')}`, e.noGrid ? '0' : '1', [['1', 'Folgt der Achse'], ['0', 'Von der Achse gelöst']])}</div>`;
     }
     if (e && h) h = h.replace('<h4>', `<h4><i class="bau-dot" style="--c:${TYPE_COL[e.type] || '#999'}"></i>`);
     else if (n > 1 && h) h = h.replace('<h4>', '<h4><i class="bau-dot" style="--c:var(--accent)"></i>');
@@ -2640,7 +2886,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const DLG = {
     storeys: () => ({
       title: 'Geschosse',
-      body: `<table class="bau-tab"><thead><tr><th>Name</th><th>OK RD</th><th>Höhe</th><th></th></tr></thead><tbody>${[...sorted()].reverse().map(x => `<tr class="${x.id === cur ? 'on' : ''}"><td><input data-dst="name:${x.id}" value="${esc(x.name)}"></td><td><input data-dst="elev:${x.id}" inputmode="decimal" value="${fmt(x.elev)}"></td><td><input data-dst="height:${x.id}" inputmode="decimal" value="${fmt(x.height)}"></td><td><button class="icbtn" data-st="${x.id}" title="Zeigen" aria-label="Zeigen">${SVG(IC.chev)}</button></td></tr>`).join('')}</tbody></table>
+      body: `<table class="bau-tab"><thead><tr><th>Name</th><th>OK RD</th><th>Höhe</th><th></th></tr></thead><tbody>${[...sorted()].reverse().map(x => `<tr class="${x.id === cur ? 'on' : ''}"><td><input data-dst="name:${x.id}" value="${esc(x.name)}"></td><td><input data-dst="elev:${x.id}" inputmode="decimal" value="${raw(x.elev)}"></td><td><input data-dst="height:${x.id}" inputmode="decimal" value="${raw(x.height)}"></td><td><button class="icbtn" data-st="${x.id}" title="Zeigen" aria-label="Zeigen">${SVG(IC.chev)}</button></td></tr>`).join('')}</tbody></table>
         <div class="ped-add"><button data-b="stup">+ Geschoss oben</button><button data-b="stdown">+ unten (Keller)</button></div>
         <div class="ped-add"><button data-b="stcopy">${esc(curSt().name)} oben anfügen (Kopie)</button>${B.storeys.length > 1 ? `<button data-b="stdel">${esc(curSt().name)} löschen</button>` : ''}</div>
         <h5>Gelände</h5><div class="ped-grid"><span class="ped-seg"><button data-b="terrain"${B.terrain != null ? ' class="on"' : ''}>${B.terrain != null ? 'Gelände an' : 'Gelände aus'}</button></span>${B.terrain != null ? fld('dterrain', B.terrain, 'OK Gelände') : ''}</div>
@@ -2942,6 +3188,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       else if (k === 'shtodd' && C) C.to = v;
       else if (k === 'gshift') { gMode = v; if (dimEdit) { const hh = dimEdit; openDimEd(hh); } else renderUi(); return; }
       else if (k === 'gdside') { const g = selGrid(), G = g && grpOf(g); if (G) change(() => G.own.forEach(it => { it.g.dimSide = v; })); renderUi(); draw(); return; }
+      else if (k === 'gfree') { const g = selGrid(); if (g) change(() => { if (v === 'free') g.free = true; else delete g.free; }); renderUi(); return; }
+      else if (k === 'glink') { const e3 = selEl(); if (e3) change(() => { if (v === '0') e3.noGrid = true; else delete e3.noGrid; }); renderUi(); return; }
       else if (k === 'ghead') { const g = selGrid(); if (g) change(() => { g.hideA = v === 'b' || v === 'none'; g.hideB = v === 'a' || v === 'none'; }); renderUi(); draw(); return; }
       else if (k === 'osize' && C) { const [a2, b2] = v.split('x').map(Number); C[C.kind].w = a2; C[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; last.op.v[C.kind].w = a2; last.op.v[C.kind][C.kind === 'hole' ? 'd' : 'h'] = b2; }
       else if (k === 'wkind' && C) { C.kind = v; last.wall.kind = v; C.th = WALL_KINDS.find(x => x[0] === v)[2]; last.wall.th = C.th; }
@@ -3105,6 +3353,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   root.addEventListener('change', e => {
     const el = e.target, e2 = selEl();
     if (el.matches('[data-ualpha]')) return;
+    // nicht lesbare Zahl: alter Wert bleibt, Hinweis statt stiller Falschinterpretation
+    if ((el.dataset.f || el.matches('[data-gdim]')) && el.value.trim() !== '' && !Number.isFinite(num(el.value))) { env.toast(`„${el.value.trim()}“ ist keine Zahl. Beispiele: 1260, 1.260, 1,26 m, 2*600.`); renderUi(); if (dlg) renderDlg(); return; }
     if (el.closest('.bau-dlg')) { dlgChange(el); return; }
     if (el.matches('[data-gname]')) { const g = selGrid(), v = el.value.trim(); if (g && v) change(() => { g.name = v; }); renderUi(); draw(); return; }
     if (el.matches('[data-gdim]')) { if (dimEdit) dimEdit.val = num(el.value) || dimEdit.val; return; }
@@ -3286,6 +3536,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (k === 'v') { setPlan(!cam.plan); return; }
     if (k === 'f') { if (selBox()) fitSel(); else fitView(); draw(); }
   });
+  // Beim Anklicken eines Zahlenfelds den ganzen Wert markieren: tippen ersetzt ihn
+  root.addEventListener('focusin', e => { if (e.target.matches?.('input[data-f], input[data-gdim]')) setTimeout(() => e.target.select(), 0); });
   root.tabIndex = -1;
   const ro = new ResizeObserver(() => { const r = root.getBoundingClientRect(); W = r.width; H = r.height; draw(); });
   ro.observe(root);
@@ -3305,7 +3557,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   if (fresh) { saveNow().catch(() => {}); openDlg('new', { first: true }); }
   return {
     click: sel2 => root.querySelector(sel2)?.click(), field(key, val) { const el = root.querySelector(`[data-f="${key}"]`); if (!el) return false; el.value = String(val); el.dispatchEvent(new Event('change', { bubbles: true })); return true; },
-    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint, snapAt, detectRoom, ifcText, roofGeo, zOf, gridFams, gridGroups,
+    close, draw, startCmd, onTap, pickEl, P2, P3, fitView, setPlan, footprint, snapAt, detectRoom, ifcText, roofGeo, zOf, gridFams, gridGroups, opDims, holeDims, elemMesh, wallOutline, num,
     get B() { return B; }, get state() { return { cmd, sel, cur, cam, hover }; },
     setCur(id) { cur = id; dirty = true; renderUi(); draw(); },
     setSel(ids) { sel = ids ? { ids } : null; dirty = true; renderUi(); draw(); },

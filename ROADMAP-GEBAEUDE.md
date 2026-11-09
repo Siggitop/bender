@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 268**, siehe Abschnitt 6 bis 21. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 270**, siehe Abschnitt 6 bis 23. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -335,4 +335,17 @@ Treppen, Rampen, Aufzugsschächte, Vorsatzschalen und Trockenbau, Doppelboden, F
 
 - Raumerkennung (Raum, Rasterdecke „Ganzer Raum“) zählt Stützen als Begrenzung mit: Wände, die an Stützen enden, schließen den Raum. Raumecken ziehen auch auf Stützenflächen.
 - Getestet: vier Stützen 300 × 300, Wände 240 zwischen den Stützenflächen → Raum erkannt (vorher „nicht geschlossen“). Kleine Vorsprünge der Stützen (30 mm) werden vereinfacht; der Umriss kann an einzelnen Seiten bis 30 mm von der Wandfläche abweichen.
-- Später (zurückgestellt): Fenster/Türen über antippbare Maße ausrichten, 3D-Fang an Kanten/Flächen, X/Y/Z-Strahlen.
+
+## 22. Version 269: Achsverknüpfung, Maße an Öffnungen, 3D-Fang
+
+- **Bauteile folgen den Achsen:** Stützen auf einer Achse, Wand- und Trägerenden auf einer Achse und Stützen in einer Wand, die ganz auf der Achse liegt, wandern mit, wenn die Achse verschoben wird (Ziehen, Maß ändern, Abstand in der Tafel). Öffnungen behalten ihre Lage in der Wand. **Lösen:** in der Achs-Tafel „Bauteile auf der Achse: Bleiben stehen“ (ganze Achse) oder in der Tafel von Wand/Stütze/Träger „Achse …: Von der Achse gelöst“ (einzelnes Bauteil).
+- **Raumerkennung genauer:** zweiter Durchlauf mit feinem Raster nur um den gefundenen Raum; Stützenvorsprünge (z. B. 30 mm) bleiben im Umriss erhalten.
+- **Fenster, Türen, Wanddurchbrüche über Maße ausrichten** (3D und Grundriss, bei gewählter Öffnung): Maße auf der Wandfläche zur Kamera hin – links und rechts bis zur nächsten Kante (Wandfläche, Nachbaröffnung, Stütze in der Wand), Brüstung bzw. Unterkante, bis Unterkante Decke. Maß antippen → neuer Wert → Öffnung verschiebt sich.
+- **Deckendurchbrüche:** Maße von jeder Kante in X und Y bis zur nächsten Wandfläche bzw. Deckenkante, antippbar.
+- **Fang in 3D:** Ecken oben/unten (Wand, Stütze, Decke, Träger, Schacht, Öffnungen), Kantenmitten oben, Kanten oben/unten/senkrecht und Laibungen; verdeckte Punkte werden nicht gefangen. Beim **Messen** zusätzlich Flächen und **X/Y/Z-Strahlen** (rot/grün/blau) ab dem letzten Punkt; Ergebnis mit ΔZ, Länge eintippen läuft entlang des Strahls.
+- Getestet: Achse 2 +500 → Stützen auf 2/A und 2/B und Wandanfang folgen, Wandende auf Achse 3 bleibt; einzelne Stütze gelöst bleibt stehen; Achse „Bleiben stehen“ → nichts folgt. Raum mit Stützen: 11 Ecken exakt. Fenster: links 1000, bis UK Decke 300, Brüstung 850, rechts 500 → Lage stimmt (Summe gleich). Deckendurchbruch links auf 500. 3D: Stützenecke oben/unten, Kantenmitte, Stützenfläche, Z-Strahl 1.500 mm (ΔZ 1.500). IFC ohne fehlende Bezüge, Rohr-Selbsttest 9/9.
+- Noch nicht: Decken- und Raumecken folgen Achsen nicht; Flächenfang nur beim Messen.
+
+## 23. Version 270: Phase 0 der UX-Roadmap
+
+Zahlen-Leser für alle Felder (deutsches Format, Einheiten, Rechnen), Felder zeigen nackte Zahlen, Dialoge folgen der Auswahl, Wandkanten verschwinden hinter Stützen, Breite als antippbares Maß, Maßzahlen ohne Überdeckung. Einzelheiten und Prüfungen in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 7.
