@@ -1,6 +1,6 @@
 # Roadmap Nutzererfahrung: Gebäude-Werkzeug auf dem Prüfstand
 
-Stand: 09.11.2026, Version 273 (Phase 0 umgesetzt, Abschnitt 7; Modul-Aufteilung und Selbsttest, Abschnitt 8; Phase 1 erster Stand, Abschnitt 9). Schwerpunkt ist das Gebäude-Werkzeug (`building.js`), das hauptsächlich am **Desktop** (Mac, großer Bildschirm, Maus, Tastatur) benutzt wird; das iPad bleibt zweite Plattform. Der Rohrbiege-Assistent bleibt vorerst unverändert, der letzte Abschnitt zeigt nur, wie er später in dieselbe Oberfläche passt.
+Stand: 09.11.2026, Version 273 (Phase 0 umgesetzt, Abschnitt 7; Modul-Aufteilung und Selbsttest, Abschnitt 8; Phase 1 erster Stand, Abschnitt 9; Phase 2 erster Stand, Abschnitt 10; Phase 3 erster Stand, Abschnitt 11). Schwerpunkt ist das Gebäude-Werkzeug (`building.js`), das hauptsächlich am **Desktop** (Mac, großer Bildschirm, Maus, Tastatur) benutzt wird; das iPad bleibt zweite Plattform. Der Rohrbiege-Assistent bleibt vorerst unverändert, der letzte Abschnitt zeigt nur, wie er später in dieselbe Oberfläche passt.
 
 Die Roadmap ist in Phasen geordnet. Jede Phase ist für sich nutzbar, Phase 0 sind Fehler, die vor allem anderen behoben werden.
 
@@ -344,3 +344,31 @@ Ab **1000 px Breite** (Desktop, iPad quer) gilt das neue Gerüst, darunter bleib
 | 1.8 | *Offen:* iPad-Menüband (einzeilig mit Seitenblättern); iPad quer nutzt schon das Desktop-Gerüst. |
 
 Getestet in 1500 × 900 und 820 × 900: Umschalten in beide Richtungen (Optionsleiste wandert zwischen Band und unterer Leiste), Reiter, Befehlsstart per Band mit Hervorhebung, Auswahllisten nach unten, Fang-Menü aus der Statusleiste, Kontext-Reiter und Rückfall, Eigenschaften-Palette mit Feldern (Breite „1.200“ → 1200), Dialog neben der Palette, Rechtsklick-Menü, Koordinaten, Leertaste, ?-Übersicht. Selbsttest Gebäude 10/10, Rohr 9/9, keine Konsolenfehler.
+
+## 10. Phase 2 erster Stand (Version 274)
+
+Gilt am Desktop (ab 1000 px); darunter bleiben die schwebenden Dialoge.
+
+| Nr. | Stand |
+|---|---|
+| 2.1 | **Fertig (erste Fassung):** Eigenschaften-Palette mit einklappbaren Abschnitten **Mengen** (Länge, Höhe, Fläche …), **Bezug** (Geschoss, Wirtswand, Achsen mit „folgt/gelöst“, Sichtbarkeit) und **IFC** (Klasse, Name, Art); der Zustand jedes Abschnitts wird gemerkt. *Offen:* Abschnitt „Typ“ (kommt mit Phase 3) und die Gliederung der Felder selbst in Abschnitte (Lage, Abmessungen). |
+| 2.2 | **Teilweise:** Fenster-, Dach-, Treppen- und Rasterdecken-Editor stehen nicht mehr als schwebende Karte, sondern **in der Palette**, öffnen sich beim Wählen des Bauteils von selbst, folgen der Auswahl und lassen sich mit × schließen (öffnen wieder beim nächsten Wählen). **Geschoss** (Name, OK Rohdecke, Höhe, oben/unten/Kopie/Löschen) und **Planunterlage** (Deckkraft, Drehung, Kalibrieren, Ausrichten, Verschieben, Entfernen, Laden) stehen in der Palette, wenn nichts gewählt ist. Achse und Achsgruppe waren schon in der Palette. *Offen:* Dialoge „Gebäude“, „Neues Gebäude“, „Raster erzeugen“, „Geschosse“ (Tabelle über alle Geschosse), „Unterlage laden“ und „Kürzel“ bleiben Dialoge; „Raster erzeugen“ soll in die Optionsleiste mit Vorschau im Modell. |
+| 2.3 | **Teilweise:** Fenster-Editor ist an die Auswahl gebunden (Fenster A → B: Editor folgt, Wand: Editor weg). *Offen:* mehrere gleiche Fenster gleichzeitig bearbeiten (heute „Auf gleich große Fenster übertragen“). |
+| 2.4 | **Teilweise:** Mehrfachauswahl zeigt unterschiedliche Werte als leeres Feld mit „verschieden“ (Wand, Stütze, Träger, Decke, Öffnungen). *Offen:* gemeinsame Werte für gemischte Bauteilarten (z. B. Geschoss, Sichtbarkeit). |
+| 2.5 | *Offen:* Bedienelemente vereinheitlichen (Segmentknöpfe nur für 2–3 kurze Optionen). |
+
+Getestet (1500 × 900): Fenster wählen → Editor in der Palette, Titel „Fenster gestalten“, Felder; anderes Fenster → Editor zeigt dessen Werte (1200/900 gegen 2760/900); Breite „1.100“ im Editor → 1100; Schließen bleibt geschlossen, Wand wählen → kein Editor, wieder dasselbe Fenster → Editor wieder da; Dach → Editor „Dachform“; nichts gewählt → Abschnitte Geschoss und Planunterlage; Geschosshöhe 2.800 → Geschosse darüber rücken mit, Name ändern und beides rückgängig; Mehrfachauswahl Wand 300/365 → „verschieden“, Eingabe 200 gilt für beide; Selbsttest Gebäude 10/10, keine Konsolenfehler.
+
+## 11. Phase 3 erster Stand: Bauteiltypen (Version 275)
+
+| Nr. | Stand |
+|---|---|
+| 3.1 | **Fertig (erste Fassung):** Typenkatalog `B.types` je Gebäude mit **29 Vorgabetypen**: 6 Wandtypen mit Schichten (Außenwand 36,5: Putz 15 + Mauerwerk 175 + Dämmung 160 + Putz 15; Stahlbeton-Wand 30; Innenwand tragend 24 und 17,5; Innenwand 11,5; Trockenbauwand 10), 5 Deckentypen (Decke 20/25/30, Bodenplatte 30/40), 7 Stützentypen (eckig, rund, Stahl), die 7 Fenstervorlagen als Fenstertypen und 4 Türtypen. Vorhandene Gebäude bekommen den Katalog beim Öffnen (`typesV`); Bauteile mit genau passenden Maßen werden verknüpft, die übrigen bleiben „Eigene Maße“. |
+| 3.2 | **Fertig, mit einer Festlegung:** Das Bauteil verweist mit `typeId` auf den Typ und trägt die Werte als Kopie. **Typ bearbeiten ändert alle Exemplare** (Schichten, Maße, Name). Ändert man am Bauteil selbst einen Typwert (Dicke, Breite, Teilung …), **löst es sich vom Typ** („Eigene Maße“), statt nur die Abweichung zu merken; „Typ aus diesem Fenster übernehmen“ schreibt Änderungen ins Typ zurück. |
+| 3.3 | **Teilweise:** Auswahlknopf „Typ“ oben in der Palette (auch bei Mehrfachauswahl, „verschieden“ bei gemischt), „Eigene Maße“ und **„Neuer Typ aus Auswahl …“**; Wandbefehl wählt den Typ in der Optionsleiste (eigene Dicke löst vom Typ). *Offen:* Vorschau und Suche in der Typauswahl; Typauswahl bei Stütze, Decke und Öffnung schon beim Zeichnen. |
+| 3.4 | **Fertig:** Schichten im **Grundriss** (Bänder in Materialfarbe, nicht über Stützen, ab sichtbarer Dicke) und im **IFC** (IfcMaterialLayerSet je Typ, IfcRelAssociatesMaterial an alle Exemplare; Wand- und Deckentypen). *Offen:* Schraffuren, Typobjekte (IfcWallType). |
+| 3.5 | **Fertig:** Reiter „Typen“ im Projektbrowser (je Art, mit Zahl der Exemplare und Aufbau; Klick wählt die Exemplare im aktuellen Geschoss). |
+
+Getestet (1500 × 900, Testgebäude „Fangtest“): Katalog 29 Typen; Typ „Innenwand tragend 24“ → „Außenwand 36,5“ ändert Dicke 365 und Art; Schicht Mauerwerk 175 → 200 ändert alle Exemplare (390); Dicke von Hand → „Eigene Maße“; Typen-Reiter mit Zahlen; Grundriss mit Schichtbändern; Selbsttest Gebäude **16/16** (neu: Katalog, Typ ändern, lösen, Neuer Typ, Stützentyp, Fenstertyp, IFC-Schichten), keine Konsolenfehler. Der Abschnitt „Typ bearbeiten“ steht nur am Desktop (Palette); auf schmalen Geräten gibt es den Auswahlknopf.
+
+*Bekannt:* Wände aus dem Startfenster („Neues Gebäude“) sind noch nicht typisiert, die Vorlagen im Fenster-Editor laufen neben den Fenstertypen weiter.

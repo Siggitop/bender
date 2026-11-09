@@ -7,7 +7,7 @@
 import { sub, add, mul, dot, len, norm, cross3, cross2, perp, near, uid, fmt, fmt2, num, raw, esc, area2, segD, pip, centroid, lineX, hull, triangulate, bridge, clipBy, offsetPoly, lineInPoly } from './building-math.js';
 import { STEEL, STEEL_FAM, steelSection } from './building-steel.js';
 import { loadB, listB, delB, saveB, putFile, getFile, delFile, newBuilding, lastId, remember, download } from './building-store.js';
-import { SVG, IC, TYPE_NAME, LAYERS, ROOM_NAMES, TILE_PRESETS, WALL_PRESETS, WALL_KINDS, kindName, WOPS, wopName, WIN_TPL, WALL_SEG, TYPE_COL, WALL_OPS, OPS, OP_DEF, JUST, MORE, ABOVE, layerOf } from './building-data.js';
+import { SVG, IC, TYPE_NAME, LAYERS, ROOM_NAMES, TILE_PRESETS, WALL_PRESETS, WALL_KINDS, kindName, WOPS, wopName, WIN_TPL, WALL_SEG, TYPE_COL, WALL_OPS, OPS, OP_DEF, JUST, MORE, ABOVE, layerOf, MAT, TYPE_CATS, seedTypes } from './building-data.js';
 import { BAU_CSS } from './building-css.js';
 
 export async function openBuilding(env) {
@@ -79,7 +79,7 @@ export async function openBuilding(env) {
   const fresh = !B;
   if (!B) B = newBuilding();
   remember(B.id);
-  const fixB = () => { B.vis ||= { off: {}, hide: [] }; B.vis.off ||= {}; B.vis.hide ||= []; B.grids ||= []; B.underlays ||= []; };
+  const fixB = () => { if (!B.typesV) { B.types ||= seedTypes(); B.typesV = 1; (B.els || []).forEach(linkOne); } B.types ||= seedTypes(); B.vis ||= { off: {}, hide: [] }; B.vis.off ||= {}; B.vis.hide ||= []; B.grids ||= []; B.underlays ||= []; };
   fixB();
   let cur = [...B.storeys].sort((a, b) => Math.abs(a.elev) - Math.abs(b.elev))[0].id;
   // Liste: Reiter, aufgeklappte Geschosse und Gruppen; Fenster (Dialog) mit eigenem Zustand
@@ -103,7 +103,7 @@ export async function openBuilding(env) {
   const saveNow = () => { if (testing) return Promise.resolve(); B.updated = Date.now(); return saveB(B).then(() => { savedAt = Date.now(); if (dlg?.kind === 'docs') renderDlg(); }); };
   const persist = () => { if (testing) return; clearTimeout(saveT); saveT = setTimeout(() => saveNow().catch(e => env.toast(`Speichern fehlgeschlagen: ${e.message || e}`)), 250); };
   const snap = () => JSON.stringify(B);
-  function change(fn) { undo.push(snap()); if (undo.length > 200) undo.shift(); redo.length = 0; fn(); syncStairs(); dirty = true; persist(); renderUi(); draw(); }
+  function change(fn) { undo.push(snap()); if (undo.length > 200) undo.shift(); redo.length = 0; fn(); relinkAll(); syncStairs(); dirty = true; persist(); renderUi(); draw(); }
   const elById = id => B.els.find(e => e.id === id);
   const selIds = () => (sel?.ids || []).filter(id => B.els.some(e => e.id === id)), isSel = id => !!sel?.ids?.includes(id);
   const selEl = () => (selIds().length === 1 ? elById(selIds()[0]) : null), selGrid = () => (sel?.grid ? B.grids.find(g => g.id === sel.grid) : null);
@@ -1285,7 +1285,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
 
   // ---------- Befehle ----------
   const last = {
-    wall: { th: 240, just: 'c', kind: 'iwt' }, col: { shape: 'rect', w: 300, d: 300, prof: 'HEB 200', align: 'c' }, slab: { th: 250, base: false },
+    wall: { th: 240, just: 'c', kind: 'iwt', typeId: 'tw-iwt240' }, col: { shape: 'rect', w: 300, d: 300, prof: 'HEB 200', align: 'c' }, slab: { th: 250, base: false },
     stair: { kind: 'straight', w: 1000, g: 270, side: 1 }, meas: 'dist',
     beam: { shape: 'rect', w: 300, bh: 500, prof: 'IPE 300' }, roof: { kind: 'flat', th: 250 }, ceil: { z: 2600, gx: 625, gy: 625, mode: 'room' },
     op: { kind: 'door', v: structuredClone(OP_DEF) }, copyN: 1,
@@ -1299,7 +1299,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if ([...DRAW, 'move', 'copy', 'split', 'tiles'].includes(t) && Math.abs(basis().rz[2]) < 0.12) setPlan(true);
     cmd = { t, pts: [] }; if (!['sel', 'gstart', 'tiles', 'split'].includes(t)) lastCmdT = t;
     const s = curSt();
-    if (t === 'wall') Object.assign(cmd, { th: last.wall.th, just: last.wall.just, kind: last.wall.kind });
+    if (t === 'wall') Object.assign(cmd, { th: last.wall.th, just: last.wall.just, kind: last.wall.kind, typeId: last.wall.typeId ?? null });
     if (t === 'column') Object.assign(cmd, { ...last.col });
     if (t === 'slab') Object.assign(cmd, { th: last.slab.th, base: last.slab.base });
     if (t === 'stair') Object.assign(cmd, { ...last.stair });
@@ -1372,7 +1372,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     return [...res];
   }
   function newWall(a, b, first) {
-    const e = newEl({ type: 'wall', a: [...a], b: [...b], t: cmd.th, just: cmd.just, kind: cmd.kind, h: null });
+    const e = newEl({ type: 'wall', a: [...a], b: [...b], t: cmd.th, just: cmd.just, kind: cmd.kind, h: null, ...(cmd.typeId ? { typeId: cmd.typeId } : {}) });
     change(() => { B.els.push(e); joinWall(e, first ? ['a', 'b'] : ['b']); });
     return e;
   }
@@ -1867,6 +1867,24 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       ctx.font = '700 12px system-ui'; ctx.fillText(`${e.no ? `${e.no} ` : ''}${e.name || ''}`, c[0], c[1] - 8);
       ctx.font = '12px system-ui'; ctx.fillStyle = muted; ctx.fillText(`${fmt2(Math.abs(area2(e.pts)) / 1e6)} m²`, c[0], c[1] + 8);
     });
+    // Wandschichten (Grundriss): Bänder je Schicht in Materialfarbe, ohne die Stützen; erst ab sichtbarer Dicke
+    if (cam.plan) {
+      const cols = B.els.filter(c => c.type === 'column' && c.storey === cur && shown(c)).map(colPoly), px = len(sub(P2([1000, 0], z), P2([0, 0], z))) / 1000;
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); cols.forEach(K => K.forEach((q, i) => { const s2 = P2(q, z); if (i) ctx.lineTo(s2[0], s2[1]); else ctx.moveTo(s2[0], s2[1]); ctx.closePath(); })); ctx.clip('evenodd');
+      B.els.forEach(w => {
+        if (w.type !== 'wall' || w.storey !== cur || !shown(w)) return;
+        const ty = typeOf(w); if (!ty?.layers || ty.layers.length < 2 || w.t * px < 6) return;
+        const P = wallPoly(w), d = norm(sub(w.b, w.a)), n = perp(d), [lo] = wallOffs(w), lat = p => dot(sub(p, w.a), n);
+        let o0 = lo;
+        ty.layers.forEach(l => {
+          const o1 = o0 + l.t, A0 = o0, A1 = o1, band = clipBy(clipBy(P, p => lat(p) - A0), p => A1 - lat(p));
+          if (band.length >= 3) { polyPath(band, z); ctx.fillStyle = MAT[l.m] || '#ddd'; ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(60,60,60,.55)'; ctx.lineWidth = 0.8; ctx.stroke(); }
+          o0 = o1;
+        });
+        polyPath(P, z); ctx.strokeStyle = isSel(w.id) ? acc : 'rgba(40,40,40,.85)'; ctx.lineWidth = isSel(w.id) ? 2 : 1.1; ctx.stroke();
+      });
+      ctx.restore();
+    }
     // Über der Schnittebene (Grundriss): gestrichelt
     if (cam.plan) B.els.forEach(e => {
       if (!ABOVE.includes(e.type) || e.type === 'stair' || !onStorey(e, cur) || !shown(e)) return;
@@ -2123,6 +2141,12 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (storeys.length) E(`IFCRELAGGREGATES(${gid()},$,$,$,${bldg},(${storeys.join(',')}))`);
     // Durchbrüche: gehören als Aussparung zu ihrer Wand oder Decke
     B.els.filter(e => (e.type === 'opening' || e.type === 'hole') && ids.has(e.host)).forEach(e => E(`IFCRELVOIDSELEMENT(${gid()},$,$,$,${ids.get(e.host)},${ids.get(e.id)})`));
+    // Schichtaufbau der Wand- und Deckentypen (IfcMaterialLayerSet), je Typ einmal, alle Exemplare daran gebunden
+    { const byT = {}, mats = {}; B.els.forEach(e => { const ty = typeOf(e); if (ty?.layers && ids.has(e.id)) (byT[ty.id] ||= []).push(ids.get(e.id)); });
+      Object.entries(byT).forEach(([tid, list]) => {
+        const ty = B.types[tid], ls = ty.layers.map(l => E(`IFCMATERIALLAYER(${mats[l.m] ||= E(`IFCMATERIAL(${S(l.m)},$,$)`)},${(+l.t).toFixed(1)},$,${S(l.m)},$,$,$)`));
+        E(`IFCRELASSOCIATESMATERIAL(${gid()},$,$,$,(${list.join(',')}),${E(`IFCMATERIALLAYERSET((${ls.join(',')}),${S(ty.name)},$)`)})`);
+      }); }
     const now = new Date().toISOString().slice(0, 19);
     return `ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [ReferenceView]'),'2;1');\nFILE_NAME(${S('gebaeude.ifc')},'${now}',(''),(''),'Rohrbiegen Gebaeude','Rohrbiegen','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n${L.join('\n')}\nENDSEC;\nEND-ISO-10303-21;\n`;
   }
@@ -2141,6 +2165,101 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   const seg = (k, val, opts) => `<span class="ped-seg">${opts.map(([v, t]) => `<button data-seg="${k}:${v}"${String(val) === String(v) ? ' class="on"' : ''}>${t}</button>`).join('')}</span>`;
   const profSel = (k, val) => `<label class="ped-f"><span>Profil</span><select data-sel="${k}">${STEEL_FAM.map(f => `<optgroup label="${f}">${Object.keys(STEEL).filter(n => n.startsWith(`${f} `)).map(n => `<option${n === val ? ' selected' : ''}>${n}</option>`).join('')}</optgroup>`).join('')}</select></label>`;
   const storeySel = (k, val, from) => `<label class="ped-f"><span>bis</span><select data-sel="${k}">${sorted().filter(s => !from || s.elev >= from.elev).map(s => `<option value="${s.id}"${s.id === val ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>`;
+  // ---------- Bauteiltypen ----------
+  // Ein Typ trägt die Parameter (Wand: Schichten, Art; Decke: Schichten; Stütze: Form und Maß; Fenster/Tür: Maße, Teilung). Das Bauteil verweist mit typeId darauf.
+  // Ändert man am Bauteil einen Typwert von Hand, löst es sich vom Typ („Eigene Maße“); „Typ bearbeiten“ ändert alle Exemplare.
+  // (als function: wird schon beim Laden des Gebäudes gebraucht)
+  function catOf(e) { return ['wall', 'slab', 'column', 'window', 'door'].includes(e.type) ? e.type : null; }
+  function typeOf(e) { return (e.typeId && B.types?.[e.typeId]) || null; }
+  function typeTotal(ty) { return ty.layers ? ty.layers.reduce((a, l) => a + l.t, 0) : null; }
+  function eq1(a, c) { return Math.abs((+a || 0) - (+c || 0)) < 0.05; }
+  function typeMatches(e, ty) {
+    switch (ty.cat) {
+      case 'wall': return eq1(e.t, typeTotal(ty)) && e.kind === ty.kind;
+      case 'slab': return eq1(e.t, typeTotal(ty)) && !!e.base === !!ty.base;
+      case 'column': return e.shape === ty.shape && (ty.shape === 'steel' ? e.prof === ty.prof : eq1(e.w, ty.w) && eq1(ty.shape === 'round' ? e.w : e.d, ty.shape === 'round' ? ty.w : ty.d));
+      case 'window': case 'door': return eq1(e.w, ty.w) && eq1(e.h, ty.h) && eq1(e.sill, ty.sill) && (ty.cat === 'door' || JSON.stringify(e.cfg ?? null) === JSON.stringify(ty.cfg ?? null));
+    }
+    return false;
+  }
+  function applyType(e, ty) {
+    switch (ty.cat) {
+      case 'wall': e.t = typeTotal(ty); e.kind = ty.kind; break;
+      case 'slab': e.t = typeTotal(ty); if (ty.base) e.base = true; else delete e.base; break;
+      case 'column': e.shape = ty.shape; if (ty.shape === 'steel') e.prof = ty.prof; else { e.w = ty.w; e.d = ty.shape === 'round' ? ty.w : ty.d; } break;
+      case 'window': case 'door': {
+        const w = hostOf(e), Lw = w ? wallAxis(w).L : ty.w;
+        e.w = Math.min(ty.w, Lw); e.h = ty.h; e.sill = ty.sill || 0; e.at = Math.max(e.w / 2, Math.min(Lw - e.w / 2, e.at));
+        if (ty.cat === 'window') { if (ty.cfg) e.cfg = JSON.parse(JSON.stringify(ty.cfg)); else delete e.cfg; }
+        break;
+      }
+    }
+    e.typeId = ty.id;
+  }
+  function linkOne(e) { const cat = catOf(e); if (!cat || e.typeId) return; const ty = Object.values(B.types || {}).find(t => t.cat === cat && typeMatches(e, t)); if (ty) e.typeId = ty.id; }
+  function relinkAll() { for (const e of B.els) if (e.typeId) { const ty = B.types?.[e.typeId]; if (!ty || ty.cat !== catOf(e) || !typeMatches(e, ty)) delete e.typeId; } }
+  const typeName = (cat, base) => { let n = base, i = 2; const have = new Set(Object.values(B.types).filter(t => t.cat === cat).map(t => t.name)); while (have.has(n)) n = `${base} (${i++})`; return n; };
+  function typeFromEl(e) {
+    const id = `ty-${uid()}`, cat = catOf(e);
+    let t;
+    if (cat === 'wall') t = { id, cat, name: typeName(cat, `${kindName(e.kind) || 'Wand'} ${fmt(e.t / 10)}`), kind: e.kind || 'iwt', layers: [{ m: 'Mauerwerk', t: e.t }] };
+    else if (cat === 'slab') t = { id, cat, name: typeName(cat, `${e.base ? 'Bodenplatte' : 'Decke'} ${fmt(e.t / 10)}`), ...(e.base ? { base: true } : {}), layers: [{ m: 'Stahlbeton', t: e.t }] };
+    else if (cat === 'column') t = e.shape === 'steel' ? { id, cat, name: typeName(cat, `Stahlstütze ${e.prof}`), shape: 'steel', prof: e.prof } : e.shape === 'round' ? { id, cat, name: typeName(cat, `Rundstütze Ø ${fmt(e.w / 10)}`), shape: 'round', w: e.w, d: e.w } : { id, cat, name: typeName(cat, `Stütze ${fmt(e.w / 10)} × ${fmt(e.d / 10)}`), shape: 'rect', w: e.w, d: e.d };
+    else t = { id, cat, name: typeName(cat, cat === 'door' ? `Tür ${fmt(e.w)} × ${fmt(e.h)}` : `${winText(e).split(' · ')[0]} ${fmt(e.w)} × ${fmt(e.h)}`), w: e.w, h: e.h, sill: e.sill || 0, ...(cat === 'window' && e.cfg ? { cfg: JSON.parse(JSON.stringify(e.cfg)) } : {}) };
+    return t;
+  }
+  function newTypeFrom(els) { const t = typeFromEl(els[0]); change(() => { B.types[t.id] = t; els.forEach(e => applyType(e, t)); }); env.toast(`Neuer Typ „${t.name}“ angelegt und angewendet.`); return t; }
+  function editType(id, mut) { const ty = B.types?.[id]; if (!ty) return; change(() => { mut(ty); B.els.forEach(e => { if (e.typeId === id) applyType(e, ty); }); }); }
+  const curTypeId = () => { const ids = new Set(selIds().map(elById).filter(Boolean).map(e => e.typeId || '')); return ids.size === 1 ? [...ids][0] : ''; };
+  const typeOpts = (cat, withNew = true) => [...Object.values(B.types || {}).filter(t => t.cat === cat).sort((a, c) => a.name.localeCompare(c.name, 'de', { numeric: true })).map(t => [t.id, t.name]), ['', 'Eigene Maße'], ...(withNew ? [['__new', 'Neuer Typ aus Auswahl …']] : [])];
+  function typeRow(els) {
+    const cats = new Set(els.map(catOf));
+    if (cats.size !== 1 || [...cats][0] == null) return '';
+    const ids = new Set(els.map(e => e.typeId || '')), val = ids.size === 1 ? [...ids][0] : '__mixed', opts = typeOpts([...cats][0]);
+    if (val === '__mixed') opts.unshift(['__mixed', 'verschieden']);
+    return `<div class="ped-acts">${dd('etype', 'Typ', val, opts)}</div>`;
+  }
+  const layerSum = ty => (ty.layers || []).map(l => fmt(l.t)).join(' + ');
+  const typeInfo = ty => (ty.layers ? `${layerSum(ty)} = ${fmt(typeTotal(ty))} mm` : ty.cat === 'column' ? (ty.shape === 'steel' ? ty.prof : ty.shape === 'round' ? `Ø ${fmt(ty.w)} mm` : `${fmt(ty.w)} × ${fmt(ty.d)} mm`) : `${fmt(ty.w)} × ${fmt(ty.h)} mm`);
+  // Typ bearbeiten (Abschnitt der Palette): Name, Parameter, Schichten; gilt für alle Exemplare
+  function typeEditHtml(e) {
+    const ty = typeOf(e);
+    if (!ty) return `<small>Dieses Bauteil hat eigene Maße. Oben „Typ“ wählen oder „Neuer Typ aus Auswahl …“, um die Maße als Typ festzuhalten und für weitere Bauteile zu nutzen.</small>`;
+    const n = B.els.filter(x => x.typeId === ty.id).length;
+    let h = `<label class="ped-f bau-wname"><span>Name</span><input data-tyf="name" value="${esc(ty.name)}" class="bau-short"></label>`;
+    if (ty.cat === 'wall') h += `<div class="ped-acts">${seg('tykind', ty.kind, WALL_SEG)}</div>`;
+    if (ty.layers) {
+      h += `<datalist id="bau-mats">${Object.keys(MAT).map(m => `<option value="${esc(m)}">`).join('')}</datalist><table class="bau-tb bau-lay"><tbody>${ty.layers.map((l, i) => `<tr><td><i class="bau-sw2" style="background:${MAT[l.m] || '#ddd'}"></i></td><td><input data-tyl="m:${i}" list="bau-mats" value="${esc(l.m)}"></td><td><input data-tyl="t:${i}" inputmode="decimal" value="${raw(l.t)}"> <span>mm</span></td><td>${ty.layers.length > 1 ? `<button class="icbtn" data-b="tyldel:${i}" title="Schicht entfernen" aria-label="Schicht entfernen">${SVG(IC.x)}</button>` : ''}</td></tr>`).join('')}</tbody></table>
+        <div class="ped-acts"><button data-b="tyladd">+ Schicht</button><span class="bprompt">Gesamt ${fmt(typeTotal(ty))} mm</span></div>${ty.cat === 'wall' ? '<small>Schicht 1 liegt links in Zeichenrichtung der Wand.</small>' : ''}`;
+      if (ty.cat === 'slab') h += `<div class="ped-acts">${seg('tybase', ty.base ? '1' : '0', [['0', 'Decke'], ['1', 'Bodenplatte']])}</div>`;
+    } else if (ty.cat === 'column') {
+      h += `<div class="ped-acts">${seg('tyshape', ty.shape, [['rect', 'Eckig'], ['round', 'Rund'], ['steel', 'Stahl']])}</div>${ty.shape === 'steel' ? profSel('typrof', ty.prof) : `<div class="ped-grid">${fld('tyw', ty.w, ty.shape === 'round' ? 'Ø' : 'Breite')}${ty.shape === 'round' ? '' : fld('tyd', ty.d, 'Tiefe')}</div>`}`;
+    } else {
+      h += `<div class="ped-grid">${fld('tyw', ty.w, 'Breite')}${fld('tyh', ty.h, 'Höhe')}${ty.cat === 'window' ? fld('tysill', ty.sill, 'Brüstung') : ''}</div>`;
+      if (ty.cat === 'window') h += `<small>Teilung und Öffnungsarten: im Fenster-Editor einstellen, dann hier übernehmen.</small>`;
+    }
+    h += `<div class="ped-acts">${ty.cat === 'window' ? `<button data-b="typeupd" class="on">Typ aus diesem Fenster übernehmen</button>` : ''}<button data-b="tydel">Typ löschen</button></div><small>${n} Exemplar${n === 1 ? '' : 'e'} nutzen diesen Typ.</small>`;
+    return h;
+  }
+  function tyField(el) {
+    const ty = B.types?.[curTypeId()];
+    if (!ty) return;
+    const v = num(el.value), pos = v > 0, f = el.dataset.f;
+    if (el.dataset.tyf === 'name') { const nm = el.value.trim(); if (nm) editType(ty.id, t => { t.name = nm; }); }
+    else if (el.dataset.tyl) { const [k, i] = el.dataset.tyl.split(':'); editType(ty.id, t => { const l = t.layers[+i]; if (!l) return; if (k === 'm') l.m = el.value.trim() || l.m; else if (pos) l.t = v; }); }
+    else if (f === 'tyw' && pos) editType(ty.id, t => { t.w = v; if (t.shape === 'round') t.d = v; });
+    else if (f === 'tyd' && pos) editType(ty.id, t => { t.d = v; });
+    else if (f === 'tyh' && pos) editType(ty.id, t => { t.h = v; });
+    else if (f === 'tysill' && Number.isFinite(v) && v >= 0) editType(ty.id, t => { t.sill = v; });
+    renderUi(); draw();
+  }
+  function typesHtml() {
+    return Object.entries(TYPE_CATS).map(([cat, title]) => {
+      const ts = Object.values(B.types || {}).filter(t => t.cat === cat).sort((a, c) => a.name.localeCompare(c.name, 'de', { numeric: true }));
+      return `<h5 class="bau-th">${title}</h5>${ts.map(t => { const n = B.els.filter(e => e.typeId === t.id).length; return `<button class="bau-trow" data-tysel="${t.id}"><b>${esc(t.name)}</b><small>${n} ${n === 1 ? 'Exemplar' : 'Exemplare'} · ${esc(typeInfo(t))}</small></button>`; }).join('') || '<small class="bau-none">keine</small>'}`;
+    }).join('');
+  }
+
   // ---------- Desktop-Gerüst: Menüband, Optionsleiste, Statusleiste ----------
   // Ab 1000 px Breite: Menüband oben, Paletten angedockt, Optionsleiste unter dem Band, Statusleiste unten; schmaler: wie bisher schwebende Leisten
   function applyDesk() {
@@ -2217,10 +2336,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   // Dialoge zu einem Bauteil gelten immer für die aktuelle Auswahl: anderes Bauteil gleicher Art gewählt → Dialog zeigt dieses, sonst schließt er
   const DLG_TYPE = { window: ['window'], roof: ['roof'], ceil: ['ceil'], stair: ['stair'] };
+  let dlgAutoFor = null;
   function syncDlgSel() {
+    const ids0 = selIds(), e0 = ids0.length === 1 ? elById(ids0[0]) : null;
+    if (!e0 || !DLG_TYPE[e0.type]) dlgAutoFor = null;
+    // Desktop: der Editor zum gewählten Fenster, Dach, Treppe oder zur Rasterdecke erscheint von selbst in der Palette (einmal je Auswahl; mit × schließbar)
+    if (desk && !cmd && !dlg && e0 && dlgAutoFor !== e0.id && Object.keys(DLG_TYPE).includes(e0.type)) { dlg = { kind: e0.type, el: e0.id }; dlgAutoFor = e0.id; }
     if (!dlg?.el || !DLG_TYPE[dlg.kind]) return;
     const ids = selIds(), e = ids.length === 1 ? elById(ids[0]) : null;
-    if (e && DLG_TYPE[dlg.kind].includes(e.type)) { if (dlg.el !== e.id) dlg = { kind: dlg.kind, el: e.id }; }
+    if (e && DLG_TYPE[dlg.kind].includes(e.type)) { if (dlg.el !== e.id) { dlg = { kind: dlg.kind, el: e.id }; dlgAutoFor = e.id; } }
     else if (!(cmd && ['gstart', 'tiles'].includes(cmd.t))) dlg = null;
   }
   function renderUi() {
@@ -2267,7 +2391,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     let h = '';
     switch (c.t) {
       case 'wall':
-        h = P(c.pts.length ? 'Nächster Punkt' : 'Wand: Startpunkt tippen') + G(dd('wkind', 'Typ', c.kind, WALL_KINDS.map(([k, n]) => [k, n])), dd('wth', 'Dicke', c.th, mmOpts(WALL_PRESETS, c.th), `<div class="bau-ddx">${fld('th', c.th, 'Andere Dicke')}</div>`), dd('just', 'Lage', c.just, [['l', 'Links der Achse'], ['c', 'Mittig'], ['r', 'Rechts der Achse']]));
+        h = P(c.pts.length ? 'Nächster Punkt' : 'Wand: Startpunkt tippen') + G(dd('wtype', 'Typ', c.typeId || '', typeOpts('wall', false)), dd('wth', 'Dicke', c.th, mmOpts(WALL_PRESETS, c.th), `<div class="bau-ddx">${fld('th', c.th, 'Andere Dicke')}</div>`), dd('just', 'Lage', c.just, [['l', 'Links der Achse'], ['c', 'Mittig'], ['r', 'Rechts der Achse']]));
         if (c.pts.length) h += G(fld('len', c.len ?? '', 'Länge', 'mm', '0'), `<span class="ped-seg">${c.lastDir ? '<button data-dir="last" title="In Richtung der letzten Wand">↗︎</button>' : ''}${[['1,0', '→'], ['0,1', '↑'], ['-1,0', '←'], ['0,-1', '↓']].map(([v, t]) => `<button data-dir="${v}" title="Länge in diese Richtung">${t}</button>`).join('')}</span>`) + '<button data-b="chain">Neu ansetzen</button>';
         h += helpers + done; break;
       case 'column': {
@@ -2340,24 +2464,57 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   }
   const closeDD = () => { ddPop.hidden = true; delete ddPop.dataset.k; };
   const acts = (extra = '') => `<div class="ped-acts"><button data-b="xmove">Verschieben</button><button data-b="xcopy">Kopieren</button>${extra}<button data-b="addsel"${addMode ? ' class="on"' : ''}>+ Weitere</button><button data-b="hidesel" title="Ausblenden">${SVG(IC.eyeoff)}</button><button data-b="del">${SVG(IC.trash)} Löschen</button></div>`;
+  // Geschoss in der Palette: Name, Höhe der Oberkante Rohdecke, Geschosshöhe; Geschosse anfügen
+  const storeyForm = sc => `<div class="ped-grid"><label class="ped-f bau-wname"><span>Name</span><input data-stf="name" value="${esc(sc.name)}" class="bau-short"></label>${fld('stelev', sc.elev, 'OK Rohdecke')}${fld('stheight', sc.height, 'Höhe')}</div>
+    <div class="ped-acts"><button data-b="stup">+ Geschoss oben</button><button data-b="stdown">+ unten (Keller)</button><button data-b="stcopy">Kopie oben</button>${B.storeys.length > 1 ? '<button data-b="stdel">Löschen</button>' : ''}</div>`;
+  // Planunterlage in der Palette: Deckkraft, Drehung, Kalibrieren, Ausrichten, Verschieben, Entfernen
+  const ulForm = () => {
+    const u = curUl();
+    return u ? `<small>${esc(u.name || 'Bild')} · 1 Bildpunkt = ${fmt(u.s)} mm</small><label class="ped-f bau-range"><span>Deckkraft</span><input type="range" data-ualpha min="0.1" max="1" step="0.05" value="${u.alpha ?? 0.55}"></label><div class="ped-grid">${fld('urot', u.rot || 0, 'Drehung', '°')}</div>
+      <div class="ped-acts"><button data-b="cal">Kalibrieren</button><button data-b="ualign">Ausrichten</button><button data-b="umove">Verschieben</button><button data-b="uload">Andere laden</button><button data-b="udel">Entfernen</button></div>`
+      : '<small>Architektenplan als Bild oder PDF unterlegen, mit zwei Punkten kalibrieren, nachzeichnen. Jedes Geschoss hat seine eigene Unterlage.</small><div class="ped-acts"><button data-b="uload" class="on">Bild oder PDF laden</button></div>';
+  };
+  // Einklappbare Abschnitte der Eigenschaften-Palette (Zustand wird gemerkt)
+  const secOpen = (k, def) => { try { const v = localStorage.getItem(`biege.bau.sec.${k}`); return v == null ? def : v === '1'; } catch { return def; } };
+  const sec = (k, title, body, def = false) => `<details class="bau-sec" data-sec="${k}"${secOpen(k, def) ? ' open' : ''}><summary>${title}</summary><div class="bau-secb">${body}</div></details>`;
+  const IFC_CLASS = { wall: 'IfcWall', column: 'IfcColumn', beam: 'IfcBeam', slab: 'IfcSlab', roof: 'IfcSlab (Dach)', ceil: 'IfcCovering', space: 'IfcSpace', shaft: 'IfcSpace', stair: 'IfcStair', door: 'IfcDoor', window: 'IfcWindow', opening: 'IfcOpeningElement', hole: 'IfcOpeningElement' };
+  const rows = L => `<table class="bau-tb">${L.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('')}</table>`;
+  function secsHtml(e, g) {
+    if (g) return '';
+    if (!e) return '';
+    const s0 = st(e.storey), host = e.host && elById(e.host), pts = e.type === 'column' ? [e.p] : e.a && e.b ? [e.a, e.b] : [];
+    const onG = B.grids.filter(gr => pts.some(q => onGrid(q, gr)));
+    const bez = [['Geschoss', esc(s0?.name || '–')]];
+    if (host) bez.push([host.type === 'wall' ? 'Wand' : 'Decke', esc(elLabel(host))]);
+    if (onG.length) bez.push(['Achse', `${onG.map(x => esc(x.name)).join(' / ')} · ${e.noGrid ? 'gelöst' : 'folgt'}`]);
+    if (B.vis.hide.includes(e.id)) bez.push(['Sichtbarkeit', 'ausgeblendet']);
+    const ty0 = typeOf(e);
+    if (catOf(e)) bez.unshift(['Typ', ty0 ? esc(ty0.name) : 'Eigene Maße']);
+    if (ty0?.layers) bez.splice(1, 0, ['Aufbau', esc(layerSum(ty0))]);
+    const ifc = [['Klasse', IFC_CLASS[e.type] || e.type], ['Name', esc(e.type === 'wall' ? kindName(e.kind) || 'Wand' : e.name || elLabel(e))]];
+    if (e.type === 'wall') ifc.push(['Art', e.kind === 'tb' ? 'PARTITIONING' : 'STANDARD']);
+    const mm = elMeasure(e);
+    return `<div class="bau-secs">${catOf(e) ? sec('typed', 'Typ bearbeiten', typeEditHtml(e)) : ''}${mm?.length ? sec('mengen', 'Mengen', rows(mm), true) : ''}${sec('bezug', 'Bezug', rows(bez))}${sec('ifc', 'IFC', rows(ifc))}</div>`;
+  }
   function renderInfo() {
     const e = selEl(), g = selGrid(), n = selIds().length;
     let h = '';
     if (n > 1) {
       const cnt = {}; selIds().map(elById).filter(Boolean).forEach(x => { cnt[TYPE_NAME[x.type]] = (cnt[TYPE_NAME[x.type]] || 0) + 1; });
-      const els = selIds().map(elById).filter(Boolean), ty = els.every(x => x.type === els[0].type) ? els[0].type : null, same = f => (els.every(x => (x[f] ?? null) === (els[0][f] ?? null)) ? els[0][f] : '');
+      const els = selIds().map(elById).filter(Boolean), ty = els.every(x => x.type === els[0].type) ? els[0].type : null, same = f => (els.every(x => (x[f] ?? null) === (els[0][f] ?? null)) ? (els[0][f] ?? null) : undefined);
+      const fm = (k, v, label, unit = 'mm', ph = '') => fld(k, v, label, unit, ph || (v === undefined ? 'verschieden' : ''));
       let common = '';
-      if (ty === 'wall') common = `<div class="ped-acts">${seg('mwkind', same('kind') || '', WALL_SEG)}</div><div class="ped-grid">${fld('mt', same('t'), 'Dicke')}${fld('mh', same('h') ?? '', 'Höhe', 'mm', 'Geschoss')}${fld('mbase', same('base') || 0, 'Fuß')}</div>`;
-      else if (ty === 'column') common = `<div class="ped-grid">${fld('mh', same('h') ?? '', 'Höhe', 'mm', 'Geschoss')}</div>`;
-      else if (ty === 'beam') common = `<div class="ped-grid">${fld('mtop', same('top'), 'OK')}</div>`;
-      else if (ty === 'slab') common = `<div class="ped-grid">${fld('mt', same('t'), 'Dicke')}</div>`;
-      else if (ty && WALL_OPS.includes(ty)) common = `<div class="ped-grid">${fld('mw', same('w'), 'Breite')}${fld('mhh', same('h'), 'Höhe')}${ty === 'door' ? '' : fld('msill', same('sill'), 'Brüstung')}</div>`;
+      if (ty === 'wall') common = `<div class="ped-acts">${seg('mwkind', same('kind') || '', WALL_SEG)}</div><div class="ped-grid">${fm('mt', same('t'), 'Dicke')}${fm('mh', same('h'), 'Höhe', 'mm', 'Geschoss')}${fm('mbase', same('base') || 0, 'Fuß')}</div>`;
+      else if (ty === 'column') common = `<div class="ped-grid">${fm('mh', same('h'), 'Höhe', 'mm', 'Geschoss')}</div>`;
+      else if (ty === 'beam') common = `<div class="ped-grid">${fm('mtop', same('top'), 'OK')}</div>`;
+      else if (ty === 'slab') common = `<div class="ped-grid">${fm('mt', same('t'), 'Dicke')}</div>`;
+      else if (ty && WALL_OPS.includes(ty)) common = `<div class="ped-grid">${fm('mw', same('w'), 'Breite')}${fm('mhh', same('h'), 'Höhe')}${ty === 'door' ? '' : fm('msill', same('sill'), 'Brüstung')}</div>`;
       h = `<h4>${n} Bauteile</h4><small>${Object.entries(cnt).map(([k, v]) => `${v} × ${k}`).join(' · ')}${common ? ' · Werte gelten für alle' : ''}</small>${common}${acts('<button data-b="selnone">Aufheben</button>')}`;
     } else if (e) {
       const s = st(e.storey);
       switch (e.type) {
         case 'wall':
-          h = `<h4>${esc(kindName(e.kind) || 'Wand')}</h4><div class="ped-acts">${dd('ewkind', 'Wandtyp', e.kind || '', WALL_KINDS.map(([k, n]) => [k, n]))}</div><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
+          h = `<h4>${esc(kindName(e.kind) || 'Wand')}</h4><div class="ped-grid">${fld('wl', len(sub(e.b, e.a)), 'Länge')}${fld('wt', e.t, 'Dicke')}</div>
             <div class="ped-grid">${fld('wh', e.h ?? '', 'Höhe', 'mm', fmt(autoTop(e, s) - s.elev))}${fld('wbase', e.base || 0, 'Fuß')}</div>
             <div class="ped-acts"><span class="bprompt">Lage zur Achse</span>${seg('wjust', e.just, JUST)}</div>
             <small>Länge ändert das Ende, der Anfang bleibt. Höhe leer: ${slabOver(e, s) ? `bis UK Decke ${esc(nextName(s))}` : `bis OK Rohdecke ${esc(nextName(s))}`}, jetzt ${fmt(zRange(e)[1] - zRange(e)[0])} mm.</small>${acts(`<button data-b="split">Teilen</button>${wallChain(e).length > 1 ? `<button data-b="chainsel">Wandzug (${wallChain(e).length})</button>` : ''}<button data-b="joinall">Ecken verbinden</button>`)}`; break;
@@ -2424,12 +2581,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const on = B.grids.filter(g => (e.type === 'column' ? [e.p] : [e.a, e.b]).some(q => onGrid(q, g)));
       if (on.length) h += `<div class="ped-acts">${dd('glink', `Achse ${on.map(g => esc(g.name)).join('/')}`, e.noGrid ? '0' : '1', [['1', 'Folgt der Achse'], ['0', 'Von der Achse gelöst']])}</div>`;
     }
+    if (e && h && catOf(e)) h = h.replace('</h4>', `</h4>${typeRow([e])}`);
+    else if (n > 1 && h && catOf(selIds().map(elById).filter(Boolean)[0] || {})) h = h.replace('</h4>', `</h4>${typeRow(selIds().map(elById).filter(Boolean))}`);
     if (e && h) h = h.replace('<h4>', `<h4><i class="bau-dot" style="--c:${TYPE_COL[e.type] || '#999'}"></i>`);
     else if (n > 1 && h) h = h.replace('<h4>', '<h4><i class="bau-dot" style="--c:var(--accent)"></i>');
+    if (h && desk) h += secsHtml(e, g);
     if (!h && desk) {
       const cnt = {}; B.els.filter(x => x.storey === cur && !OPS.includes(x.type)).forEach(x => { cnt[TYPE_NAME[x.type]] = (cnt[TYPE_NAME[x.type]] || 0) + 1; });
       const sc = curSt();
-      h = `<h4>${esc(sc.name)}</h4><small>OK Rohdecke ${fmt(sc.elev)} mm · Höhe ${fmt(sc.height)} mm</small>${Object.keys(cnt).length ? `<table>${Object.entries(cnt).map(([k, v]) => `<tr><td>${k}</td><td style="text-align:right">${v}</td></tr>`).join('')}</table>` : '<small>Noch keine Bauteile in diesem Geschoss.</small>'}<small>Nichts gewählt: Bauteil antippen, um seine Eigenschaften zu sehen, oder im Menüband einen Befehl starten.</small>`;
+      h = `<h4>${esc(sc.name)}</h4><small>OK Rohdecke ${fmt(sc.elev)} mm · Höhe ${fmt(sc.height)} mm</small>${Object.keys(cnt).length ? `<table>${Object.entries(cnt).map(([k, v]) => `<tr><td>${k}</td><td style="text-align:right">${v}</td></tr>`).join('')}</table>` : '<small>Noch keine Bauteile in diesem Geschoss.</small>'}<small>Nichts gewählt: Bauteil antippen, um seine Eigenschaften zu sehen, oder im Menüband einen Befehl starten.</small>${sec('geschoss', 'Geschoss', storeyForm(sc), true)}${sec('unterlage', 'Planunterlage', ulForm(), !!curUl())}`;
     }
     infoEl.hidden = desk ? false : (!h || !!dlg); infoEl.innerHTML = h;
   }
@@ -2499,8 +2659,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function renderList() {
     if (!listOpen) { listEl.innerHTML = ''; return; }
     const sc = listEl.querySelector('.bau-tree')?.scrollTop || 0;
-    listEl.innerHTML = `<div class="bau-tabs">${seg('tab', tab, [['tree', 'Struktur'], ['layer', 'Layer']])}</div>
-      <div class="bau-tree">${tab === 'tree' ? treeHtml() : layerHtml()}</div>
+    listEl.innerHTML = `<div class="bau-tabs">${seg('tab', tab, [['tree', 'Struktur'], ['layer', 'Layer'], ['types', 'Typen']])}</div>
+      <div class="bau-tree">${tab === 'tree' ? treeHtml() : tab === 'types' ? typesHtml() : layerHtml()}</div>
       <div class="bau-foot"><button data-dlg="storeys">Geschosse</button><button data-dlg="grid">Raster</button><button data-dlg="under">Unterlage</button></div>`;
     listEl.querySelector('.bau-tree').scrollTop = sc;
   }
@@ -2735,6 +2895,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function renderDlg() {
     const d = dlg && DLG[dlg.kind]?.();
     if (dlg && !d) dlg = null;
+    infoEl.querySelector('.bau-dock')?.remove();
+    // Desktop: Bauteil-Editoren (Fenster, Dach, Treppe, Rasterdecke) stehen in der Eigenschaften-Palette, gebunden an die Auswahl
+    if (d && desk && DLG_TYPE[dlg.kind]) {
+      dlgEl.hidden = true; dlgEl.innerHTML = '';
+      const host = document.createElement('div'); host.className = 'bau-dlg bau-dock';
+      host.innerHTML = `<div class="bau-dlg-head"><b>${d.title}</b><button class="icbtn" data-b="dlgclose" title="Schließen" aria-label="Schließen">${SVG(IC.x)}</button></div><div class="bau-dlg-body">${d.body}</div>`;
+      const secs = infoEl.querySelector('.bau-secs'); if (secs) secs.before(host); else infoEl.appendChild(host);
+      return;
+    }
     dlgEl.hidden = !d;
     if (!d) { dlgEl.innerHTML = ''; return; }
     const sc = dlgEl.querySelector('.bau-dlg-body')?.scrollTop || 0;
@@ -2822,6 +2991,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     }
     if (!b.closest('.bau-stpop') && b.dataset.b !== 'stpick') stPop.hidden = true;
     if (b.dataset.st) { setCurrent(b.dataset.st); stPop.hidden = true; return; }
+    if (b.dataset.tysel) { const ids = B.els.filter(x => x.typeId === b.dataset.tysel && x.storey === cur).map(x => x.id); if (!ids.length) env.toast('Kein Exemplar dieses Typs in diesem Geschoss.'); else { sel = { ids }; dirty = true; renderUi(); draw(); } return; }
     if (b.dataset.pick) { const x = elById(b.dataset.pick); if (x) { if (!onStorey(x, cur)) setCurrent(x.storey, true); sel = { ids: [x.id] }; addMode = false; if (cmd && cmd.t !== 'measure') cmd = null; dirty = true; renderUi(); draw(); } return; }
     if (b.dataset.eye) { const id = b.dataset.eye; B.vis.hide = B.vis.hide.includes(id) ? B.vis.hide.filter(i => i !== id) : [...B.vis.hide, id]; if (B.vis.hide.includes(id) && isSel(id)) sel = null; visPersist(); return; }
     if (b.dataset.layer) { const k = b.dataset.layer; B.vis.off[k] = !B.vis.off[k]; if (B.vis.off[k]) sel = null; visPersist(); return; }
@@ -2856,7 +3026,17 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (k === 'tab') { tab = v; renderList(); return; }
       if (k.startsWith('nw.') && dlg?.kind === 'new') { dlg[k.slice(3)] = v; renderDlg(); return; }
       if (k === 'just' && C) { C.just = v; last.wall.just = v; }
-      else if (k === 'wth' && C) { C.th = +v; last.wall.th = C.th; }
+      else if (k === 'wth' && C) { C.th = +v; last.wall.th = C.th; C.typeId = null; last.wall.typeId = null; }
+      else if (k === 'wtype' && C) { C.typeId = v || null; last.wall.typeId = C.typeId; const ty = v && B.types[v]; if (ty) { C.kind = ty.kind; C.th = typeTotal(ty); last.wall.kind = C.kind; last.wall.th = C.th; } }
+      else if (k === 'etype') {
+        const els = selIds().map(elById).filter(Boolean);
+        if (v === '__new') { if (els.length) newTypeFrom(els); }
+        else if (v === '') change(() => els.forEach(x => { delete x.typeId; }));
+        else if (v !== '__mixed' && B.types[v]) { const ty = B.types[v]; change(() => els.forEach(x => applyType(x, ty))); }
+      }
+      else if (k === 'tykind') { const id = curTypeId(); if (id) editType(id, t => { t.kind = v; }); }
+      else if (k === 'tybase') { const id = curTypeId(); if (id) editType(id, t => { if (v === '1') t.base = true; else delete t.base; }); }
+      else if (k === 'tyshape') { const id = curTypeId(); if (id) editType(id, t => { t.shape = v; if (v === 'steel') t.prof ||= 'HEB 200'; else { t.w ||= 300; t.d = v === 'round' ? t.w : (t.d || t.w); } }); }
       else if (k === 'sth' && C) { C.th = +v; if (C.t === 'roof') last.roof.th = C.th; else last.slab.th = C.th; }
       else if (k === 'calign' && C) { C.align = v; last.col.align = v; }
       else if (k === 'cdim' && C) { if (v[0] === 'r') { C.w = C.d = +v.slice(1); } else { const [a2, b2] = v.split('x').map(Number); C.w = a2; C.d = b2; } last.col.w = C.w; last.col.d = C.d; }
@@ -2903,6 +3083,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (a === 'midpick' && cmd) { cmd.mid = cmd.mid ? null : {}; renderUi(); draw(); return; }
     if (a.startsWith('op:')) { moreOpen = false; if (cmd?.t === 'open' && cmd.kind === a.slice(3)) endCmd(); else startCmd('open', { kind: a.slice(3) }); return; }
     if (!ctxm.hidden) ctxm.hidden = true;
+    if (a === 'tyladd' || a.startsWith('tyldel:') || a === 'typeupd' || a === 'tydel') {
+      const id = curTypeId(), ty = B.types?.[id], e0 = selEl();
+      if (!ty) return;
+      if (a === 'tyladd') editType(id, t => { t.layers.push({ m: 'Putz', t: 10 }); });
+      else if (a.startsWith('tyldel:')) editType(id, t => { if (t.layers.length > 1) t.layers.splice(+a.slice(7), 1); });
+      else if (a === 'typeupd' && e0) editType(id, t => { t.w = e0.w; t.h = e0.h; t.sill = e0.sill || 0; if (e0.cfg) t.cfg = JSON.parse(JSON.stringify(e0.cfg)); else delete t.cfg; });
+      else if (a === 'tydel') { const n = B.els.filter(x => x.typeId === id).length; if (!n || await env.ask(`Typ „${ty.name}“ löschen? ${n} Bauteil${n === 1 ? ' behält' : 'e behalten'} die Maße als „Eigene Maße“.`, 'Löschen')) change(() => { delete B.types[id]; B.els.forEach(x => { if (x.typeId === id) delete x.typeId; }); }); }
+      renderUi(); draw(); return;
+    }
     if (a.startsWith('t:')) { const t = a.slice(2); moreOpen = false; if (cmd?.t === t) endCmd(); else startCmd(t); return; }
     switch (a) {
       case 'done': close(); return;
@@ -3035,6 +3224,15 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   root.addEventListener('change', e => {
     const el = e.target, e2 = selEl();
     if (el.matches('[data-ualpha]')) return;
+    if (!el.closest('.bau-dlg') && el.matches('[data-stf], [data-f="stelev"], [data-f="stheight"], [data-f="urot"]')) {
+      const sc = curSt(), v = num(el.value);
+      if (el.dataset.stf === 'name') { const nm = el.value.trim(); if (nm) change(() => { sc.name = nm; }); }
+      else if (el.dataset.f === 'stheight' && v > 0) change(() => { const dz = v - sc.height; B.storeys.forEach(y => { if (y !== sc && y.elev > sc.elev + 1e-6) y.elev += dz; }); sc.height = v; });
+      else if (el.dataset.f === 'stelev' && Number.isFinite(v)) change(() => { sc.elev = v; });
+      else if (el.dataset.f === 'urot' && Number.isFinite(v)) { const u = curUl(); if (u) change(() => { u.rot = v; }); }
+      renderUi(); draw(); return;
+    }
+    if ((el.dataset.tyf || el.dataset.tyl || el.dataset.f?.startsWith('ty')) && !el.closest('.bau-dlg')) { tyField(el); return; }
     // nicht lesbare Zahl: alter Wert bleibt, Hinweis statt stiller Falschinterpretation
     if ((el.dataset.f || el.matches('[data-gdim]')) && el.value.trim() !== '' && !Number.isFinite(num(el.value))) { env.toast(`„${el.value.trim()}“ ist keine Zahl. Beispiele: 1260, 1.260, 1,26 m, 2*600.`); renderUi(); if (dlg) renderDlg(); return; }
     if (el.closest('.bau-dlg')) { dlgChange(el); return; }
@@ -3057,7 +3255,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const v = num(el.value), pos = x => Number.isFinite(x) && x > 0, fin = Number.isFinite(v);
     if (cmd && el.closest('.ped-cmd, .bau-ddpop')) {
       const C = cmd;
-      if (k === 'th' && pos(v)) { C.th = v; if (C.t === 'wall') last.wall.th = v; else if (C.t === 'roof') last.roof.th = v; else last.slab.th = v; }
+      if (k === 'th' && pos(v)) { C.th = v; if (C.t === 'wall') { last.wall.th = v; C.typeId = null; last.wall.typeId = null; } else if (C.t === 'roof') last.roof.th = v; else last.slab.th = v; }
       else if (k === 'len') C.len = fin ? v : null;
       else if (k === 'w' && pos(v)) { C.w = v; last.col.w = v; }
       else if (k === 'd' && pos(v)) { C.d = v; last.col.d = v; }
@@ -3223,6 +3421,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   });
   // Beim Anklicken eines Zahlenfelds den ganzen Wert markieren: tippen ersetzt ihn
   root.addEventListener('focusin', e => { if (e.target.matches?.('input[data-f], input[data-gdim]')) setTimeout(() => e.target.select(), 0); });
+  root.addEventListener('toggle', e => { const d = e.target.closest?.('[data-sec]'); if (d) try { localStorage.setItem(`biege.bau.sec.${d.dataset.sec}`, d.open ? '1' : '0'); } catch {} }, true);
   root.tabIndex = -1;
   const ro = new ResizeObserver(() => { applyDesk(); const r = cv.getBoundingClientRect(); W = r.width; H = r.height; draw(); });
   ro.observe(root); ro.observe(cv);
@@ -3251,7 +3450,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       clearTimeout(saveT); testing = true;
       B = newBuilding('Selbsttest'); fixB(); cur = B.storeys[0].id; sel = null; cmd = null; dlg = null;
       try {
-        return await runBuildingTests({ get B() { return B; }, cur: () => cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf });
+        return await runBuildingTests({ get B() { return B; }, cur: () => cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType });
       } finally {
         B = keep.B; cur = keep.cur; sel = keep.sel; cmd = keep.cmd; hover = keep.hover; dlg = keep.dlg;
         undo.splice(0, undo.length, ...keep.undo); redo.splice(0, redo.length, ...keep.redo); testing = false; dirty = true; renderUi(); draw();

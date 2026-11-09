@@ -257,6 +257,37 @@ const BAU_CSS = `
 .bau .bau-keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; }
 .bau .bau-keys kbd { justify-self: start; padding: 1px 7px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--bg); font: 650 12px system-ui; }
 .bau .bau-keys h5 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+
+/* ===== Eigenschaften-Palette (Version 274) ===== */
+.bau.desk .bau-dlg.bau-dock { position: static; display: flex; width: auto; max-height: none; margin-top: 12px; border-radius: 12px; box-shadow: none; border: 1px solid var(--line); }
+.bau .bau-dock .bau-dlg-head { padding: 6px 6px 6px 12px; }
+.bau .bau-dock .bau-dlg-body { padding: 4px 10px 10px; overflow: visible; }
+.bau .bau-secs { margin-top: 12px; border-top: 1px solid var(--line); }
+.bau .bau-sec { border-bottom: 1px solid var(--line); }
+.bau .bau-sec > summary { display: flex; align-items: center; gap: 6px; padding: 9px 2px; list-style: none; cursor: pointer; font-size: 11.5px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.bau .bau-sec > summary::-webkit-details-marker { display: none; }
+.bau .bau-sec > summary::before { content: '▸'; font-size: 10px; color: var(--muted); transition: transform .12s; }
+.bau .bau-sec[open] > summary::before { transform: rotate(90deg); }
+.bau .bau-secb { padding: 0 2px 10px; }
+.bau .bau-tb { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bau .bau-tb td { padding: 3px 0; vertical-align: top; }
+.bau .bau-tb td:first-child { width: 40%; color: var(--muted); }
+.bau .bau-tb td:last-child { font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* ===== Bauteiltypen (Version 275) ===== */
+.bau .bau-th { margin: 12px 4px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.bau .bau-trow { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 40px; padding: 5px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--text); text-align: left; }
+.bau .bau-trow b { font-size: 13px; }
+.bau .bau-trow small, .bau .bau-none { font-size: 11.5px; color: var(--muted); padding: 0 10px; }
+@media (hover: hover) { .bau .bau-trow:hover { background: var(--accent-soft); } }
+.bau .bau-lay td { padding: 2px 3px; vertical-align: middle; }
+.bau .bau-lay td:first-child { width: 14px; }
+.bau .bau-lay input { width: 100%; min-height: 32px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 13px; }
+.bau .bau-lay input[data-tyl^="t"] { width: 62px; text-align: right; }
+.bau .bau-lay td:nth-child(3) { white-space: nowrap; width: 1%; }
+.bau .bau-lay td:nth-child(3) span { font-size: 11px; color: var(--muted); }
+.bau .bau-lay .icbtn { min-height: 28px; width: 28px; }
+.bau .bau-sw2 { display: block; width: 14px; height: 22px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, .25); }
 `;
 
 export { BAU_CSS };

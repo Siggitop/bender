@@ -67,4 +67,25 @@ const MORE = [['stair', 'Treppe'], ['roof', 'Dach'], ['ceil', 'Rasterdecke'], ['
 const ABOVE = ['beam', 'roof', 'ceil', 'shaft', 'stair'];
 const layerOf = e => (OPS.includes(e.type) ? 'ops' : e.type);
 
-export { SVG, IC, TYPE_NAME, LAYERS, ROOM_NAMES, TILE_PRESETS, WALL_PRESETS, WALL_KINDS, kindName, WOPS, wopName, WIN_TPL, WALL_SEG, TYPE_COL, WALL_OPS, OPS, OP_DEF, JUST, MORE, ABOVE, layerOf };
+// Bauteiltypen (Version 275): Katalog je Gebäude, Vorgabetypen mit festen Kennungen
+const MAT = { Putz: '#e9e3d6', Mauerwerk: '#cf9473', 'Dämmung': '#f2dc72', Stahlbeton: '#9ea8b3', Gipskarton: '#f5f5f1', 'Ständerwerk': '#d5d9dd' };
+const TYPE_CATS = { wall: 'Wandtypen', slab: 'Deckentypen', column: 'Stützentypen', window: 'Fenstertypen', door: 'Türtypen' };
+function seedTypes() {
+  const T = {}, add = o => { T[o.id] = o; }, L = (m, t) => ({ m, t });
+  add({ id: 'tw-aw365', cat: 'wall', name: 'Außenwand 36,5', kind: 'aw', layers: [L('Putz', 15), L('Mauerwerk', 175), L('Dämmung', 160), L('Putz', 15)] });
+  add({ id: 'tw-sb300', cat: 'wall', name: 'Stahlbeton-Wand 30', kind: 'iwt', layers: [L('Putz', 15), L('Stahlbeton', 270), L('Putz', 15)] });
+  add({ id: 'tw-iwt240', cat: 'wall', name: 'Innenwand tragend 24', kind: 'iwt', layers: [L('Putz', 15), L('Mauerwerk', 210), L('Putz', 15)] });
+  add({ id: 'tw-iwt175', cat: 'wall', name: 'Innenwand tragend 17,5', kind: 'iwt', layers: [L('Putz', 10), L('Mauerwerk', 155), L('Putz', 10)] });
+  add({ id: 'tw-iwn115', cat: 'wall', name: 'Innenwand 11,5', kind: 'iwn', layers: [L('Putz', 10), L('Mauerwerk', 95), L('Putz', 10)] });
+  add({ id: 'tw-tb100', cat: 'wall', name: 'Trockenbauwand 10', kind: 'tb', layers: [L('Gipskarton', 12.5), L('Ständerwerk', 75), L('Gipskarton', 12.5)] });
+  [[200, 'Decke 20'], [250, 'Decke 25'], [300, 'Decke 30']].forEach(([t, n]) => add({ id: `ts-d${t / 10}`, cat: 'slab', name: n, layers: [L('Stahlbeton', t)] }));
+  [[300, 'Bodenplatte 30'], [400, 'Bodenplatte 40']].forEach(([t, n]) => add({ id: `ts-bp${t / 10}`, cat: 'slab', name: n, base: true, layers: [L('Stahlbeton', t)] }));
+  [240, 300, 400, 500].forEach(w => add({ id: `tc-${w / 10}`, cat: 'column', name: `Stütze ${w / 10} × ${w / 10}`, shape: 'rect', w, d: w }));
+  [300, 400].forEach(w => add({ id: `tc-r${w / 10}`, cat: 'column', name: `Rundstütze Ø ${w / 10}`, shape: 'round', w, d: w }));
+  add({ id: 'tc-heb200', cat: 'column', name: 'Stahlstütze HEB 200', shape: 'steel', prof: 'HEB 200' });
+  WIN_TPL.forEach(([k, n, dim, cfg]) => { const d = dim || OP_DEF.window; add({ id: `tf-${k}`, cat: 'window', name: n, w: d.w, h: d.h, sill: d.sill, cfg: JSON.parse(JSON.stringify(cfg)) }); });
+  [[885, 'Tür 88,5 × 213,5'], [1010, 'Tür 101 × 213,5'], [1135, 'Tür 113,5 × 213,5'], [1760, 'Doppeltür 176 × 213,5']].forEach(([w, n]) => add({ id: `tt-${w}`, cat: 'door', name: n, w, h: 2135, sill: 0 }));
+  return T;
+}
+
+export { SVG, IC, TYPE_NAME, LAYERS, ROOM_NAMES, TILE_PRESETS, WALL_PRESETS, WALL_KINDS, kindName, WOPS, wopName, WIN_TPL, WALL_SEG, TYPE_COL, WALL_OPS, OPS, OP_DEF, JUST, MORE, ABOVE, layerOf, MAT, TYPE_CATS, seedTypes };

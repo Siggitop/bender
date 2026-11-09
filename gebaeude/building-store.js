@@ -1,5 +1,6 @@
 // Speicher (IndexedDB „biege-bau“), neues Gebäude, Datei-Download. Teil von building.js.
 import { uid } from './building-math.js';
+import { seedTypes } from './building-data.js';
 // ---------- Speicher ----------
 const DBN = 'biege-bau';
 function idb() {
@@ -24,7 +25,7 @@ const saveB = b => dbDo('buildings', 'readwrite', s => s.put(b));
 const putFile = (id, blob) => dbDo('files', 'readwrite', s => s.put(blob, id));
 const getFile = id => dbDo('files', 'readonly', s => s.get(id));
 const delFile = id => dbDo('files', 'readwrite', s => s.delete(id));
-const newBuilding = (name = 'Gebäude') => ({ id: uid(), name, ver: 1, storeys: [{ id: uid(), name: 'EG', elev: 0, height: 3000 }], grids: [], els: [], underlays: [] });
+const newBuilding = (name = 'Gebäude') => ({ id: uid(), name, ver: 1, storeys: [{ id: uid(), name: 'EG', elev: 0, height: 3000 }], grids: [], els: [], underlays: [], types: seedTypes(), typesV: 1 });
 const LAST_KEY = 'biege.bau.last';
 const lastId = () => { try { return localStorage.getItem(LAST_KEY); } catch { return null; } };
 const remember = id => { try { localStorage.setItem(LAST_KEY, id); } catch {} };

@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 273**, siehe Abschnitt 6 bis 26. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 275**, siehe Abschnitt 6 bis 28. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -366,3 +366,11 @@ Die Gebäude-App liegt jetzt im Ordner `gebaeude/` und läuft für sich: eigene 
 - **Daten:** Der Speicher (IndexedDB „biege-bau“) gehört zur Adresse (Ursprung), nicht zum Pfad. Alle bisher angelegten Gebäude sind unter `…/gebaeude/` auf demselben Rechner und Server weiter da (geprüft auf localhost:8767: „Fangtest“ mit 24 Bauteilen).
 - **Grundstile:** `style.css` ist eine Kopie der Rohr-App-Grundstile; sie kann später auf das Nötige beschnitten werden. Änderungen am gemeinsamen Aussehen müssen an beiden Stellen gemacht werden.
 - Getestet: Rohrteil ohne Gebäude (9/9, keine Konsolenfehler); Gebäude-App allein (10/10, Desktop-Gerüst bei 1500 px, Schließen → Startseite → „Gebäude öffnen“, eigener Service Worker mit Bereich `/gebaeude/`).
+
+## 27. Version 274: Eigenschaften-Palette (Phase 2, erster Stand)
+
+Einklappbare Abschnitte Mengen/Bezug/IFC, Bauteil-Editoren (Fenster, Dach, Treppe, Rasterdecke) angedockt und an die Auswahl gebunden, Geschoss und Planunterlage in der Palette, „verschieden“ bei Mehrfachauswahl. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 10.
+
+## 28. Version 275: Bauteiltypen (Phase 3, erster Stand)
+
+Typenkatalog mit 29 Vorgabetypen (Wand mit Schichten, Decke, Stütze, Fenster, Tür), Typauswahl in Palette und Wandbefehl, Typ bearbeiten ändert alle Exemplare, Typen-Reiter im Projektbrowser, Schichten im Grundriss und im IFC. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 11.

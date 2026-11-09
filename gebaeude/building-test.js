@@ -2,7 +2,7 @@
 // Läuft in einem eigenen Test-Gebäude im Speicher; das geöffnete Gebäude, Rückgängig und die Datenbank bleiben unberührt.
 // api kommt aus building.js (Funktionen aus der Hülle), Rückgabe wie beim Rohr-Selbsttest: Liste { Fall, ok, Info }.
 export async function runBuildingTests(api) {
-  const { B, cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf } = api;
+  const { B, cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType } = api;
   const R = [];
   const t = (Fall, fn) => { try { const r = fn(); R.push({ Fall, ok: r === true || r?.ok ? 'ok' : 'FEHLER', Info: r === true ? '' : r?.info ?? String(r) }); } catch (e) { R.push({ Fall, ok: 'FEHLER', Info: `Ausnahme: ${e.message || e}` }); } };
   const wall = (a, b, th = 240, extra = {}) => { const w = { id: `tw${B.els.length}`, storey: cur(), type: 'wall', a, b, t: th, just: 'c', kind: 'iwt', h: null, ...extra }; B.els.push(w); return w; };
@@ -74,10 +74,20 @@ export async function runBuildingTests(api) {
     return { ok: near(l + w + r, 6000, 1) && w === 1260, info: `${Math.round(l)} + ${w} + ${Math.round(r)} = ${Math.round(l + w + r)}` };
   });
 
-  // 7. IFC
+  // 7. Bauteiltypen
+  B.els.length = 0; B.grids.length = 0;
+  t('Typen: Vorgabetypen vorhanden', () => { const n = Object.values(B.types), c = k => n.filter(x => x.cat === k).length; return { ok: c('wall') === 6 && c('slab') === 5 && c('column') === 7 && c('window') >= 7 && c('door') === 4, info: `${n.length} Typen (Wand ${c('wall')}, Decke ${c('slab')}, Stütze ${c('column')}, Fenster ${c('window')}, Tür ${c('door')})` }; });
+  const tw1 = wall([0, 0], [6000, 0], 365, { kind: 'aw', typeId: 'tw-aw365' }), tw2 = wall([0, 4000], [6000, 4000], 365, { kind: 'aw', typeId: 'tw-aw365' });
+  t('Wandtyp ändern: alle Exemplare folgen (Schicht +10 mm)', () => { editType('tw-aw365', ty => { ty.layers.push({ m: 'Putz', t: 10 }); }); return { ok: tw1.t === 375 && tw2.t === 375 && tw1.typeId === 'tw-aw365', info: `${tw1.t} / ${tw2.t}` }; });
+  t('Eigene Dicke löst die Wand vom Typ', () => { tw2.t = 250; relinkAll(); return { ok: !tw2.typeId && tw1.typeId === 'tw-aw365', info: `Wand 2: ${tw2.typeId || 'Eigene Maße'}` }; });
+  t('Neuer Typ aus Auswahl wird angewendet', () => { const ty = newTypeFrom([tw2]); return { ok: tw2.typeId === ty.id && B.types[ty.id].layers[0].t === 250, info: ty.name }; });
+  t('Typ der Stütze: Maße und Verknüpfung', () => { const c = col([0, 8000], 300); applyType(c, B.types['tc-40']); const ok1 = c.w === 400 && c.d === 400; c.w = 450; relinkAll(); return { ok: ok1 && !c.typeId, info: `Stütze ${c.w}, Typ ${c.typeId || 'Eigene Maße'}` }; });
+  t('Fenstertyp: Maße und Teilung werden übernommen', () => { const w = { id: 'twt', storey: cur(), type: 'window', host: tw1.id, at: 3000, w: 1260, h: 1385, sill: 900 }; B.els.push(w); applyType(w, B.types['tf-3']); return { ok: w.typeId === 'tf-3' && w.cfg?.cols?.length === 3, info: `${w.cfg?.cols?.length} Felder` }; });
+
+  // 8. IFC
   t('IFC: alle Bezüge vorhanden', () => {
     const ifc = ifcText(), ids = new Set([...ifc.matchAll(/^#(\d+)=/gm)].map(m => m[1])), miss = [...ifc.matchAll(/#(\d+)/g)].map(m => m[1]).filter(x => !ids.has(x));
-    return { ok: !miss.length && ifc.includes('IFCWINDOW'), info: `${miss.length} fehlende Bezüge` };
+    return { ok: !miss.length && ifc.includes('IFCWINDOW') && ifc.includes('IFCMATERIALLAYERSET') && ifc.includes('IFCRELASSOCIATESMATERIAL'), info: `${miss.length} fehlende Bezüge, Schichtaufbau ${ifc.includes('IFCMATERIALLAYERSET') ? 'ja' : 'nein'}` };
   });
   return R;
 }
