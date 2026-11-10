@@ -1,1 +1,1 @@
-self.APP_VERSION = 278; self.APP_DATE = '09.11.2026';
+self.APP_VERSION = 284; self.APP_DATE = '10.11.2026';

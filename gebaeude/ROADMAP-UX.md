@@ -1,6 +1,6 @@
 # Roadmap Nutzererfahrung: Gebäude-Werkzeug auf dem Prüfstand
 
-Stand: 09.11.2026, Version 273 (Phase 0 umgesetzt, Abschnitt 7; Modul-Aufteilung und Selbsttest, Abschnitt 8; Phase 1 erster Stand, Abschnitt 9; Phase 2 erster Stand, Abschnitt 10; Phase 3 erster Stand, Abschnitt 11; Phase 4 erster Stand, Abschnitt 12; Phase 5 erster Stand, Abschnitt 13; Phase 6 erster Stand, Abschnitt 14). Schwerpunkt ist das Gebäude-Werkzeug (`building.js`), das hauptsächlich am **Desktop** (Mac, großer Bildschirm, Maus, Tastatur) benutzt wird; das iPad bleibt zweite Plattform. Der Rohrbiege-Assistent bleibt vorerst unverändert, der letzte Abschnitt zeigt nur, wie er später in dieselbe Oberfläche passt.
+Stand: 10.11.2026, Version 284 (Phase 0 umgesetzt, Abschnitt 7; Modul-Aufteilung und Selbsttest, Abschnitt 8; Phase 1 erster Stand, Abschnitt 9; Phase 2 erster Stand, Abschnitt 10; Phase 3 erster Stand, Abschnitt 11; Phase 4 erster Stand, Abschnitt 12; Phase 5 erster Stand, Abschnitt 13; Phase 6 abgerundet, Abschnitt 14 und 15; Phase 7 erster Stand, Abschnitt 16; Phase 8 und Gesamtstand, Abschnitt 17). Schwerpunkt ist das Gebäude-Werkzeug (`building.js`), das hauptsächlich am **Desktop** (Mac, großer Bildschirm, Maus, Tastatur) benutzt wird; das iPad bleibt zweite Plattform. Der Rohrbiege-Assistent bleibt vorerst unverändert, der letzte Abschnitt zeigt nur, wie er später in dieselbe Oberfläche passt.
 
 Die Roadmap ist in Phasen geordnet. Jede Phase ist für sich nutzbar, Phase 0 sind Fehler, die vor allem anderen behoben werden.
 
@@ -422,3 +422,68 @@ Getestet (1500 × 900, Testgebäude „Fangtest“): Selbsttest Gebäude **24/24
 | 6.5 | **Fertig:** **Maßstab** im Grundriss: Balken unten links (100 mm bis 50 m, je nach Zoom) und „Maßstab ≈ 1 : n“ in der Statusleiste (bei 96 dpi); Zeigerkoordinaten gab es schon. |
 
 Getestet (1500 × 900, Testgebäude „Fangtest“): Unterzug anlegen, in die Wand kopieren → Wandstücke zeigen den Ausschnitt 2000–2500 mm und das schmale Seitenstück, 3D-Bild; Vorne/Links/Oben/Iso mit Hervorhebung, Oben → „Maßstab ≈ 1 : 75“; Kanten und Röntgen im Bild; Ansicht speichern/aufrufen/löschen (stellt auch die Darstellung wieder her); Selbsttest Gebäude **27/27** (neu: Unterzug in der Wand, Unterzug schmaler als die Wand, Ansicht speichern und aufrufen); keine Konsolenfehler.
+
+## 15. Phase 6 abgerundet (Version 279)
+
+| Nr. | Stand |
+|---|---|
+| 6.1 | **Fertig:** **Ansichtswürfel** oben rechts (Desktop): zeigt die aktuelle Blickrichtung (Flächen Oben, Vorne, Rechts, Hinten, Links, Unten mit Beschriftung, aktuelle Fläche farbig). Klick auf eine **Fläche** = Ansicht von dort, auf eine **Ecke oder Kante** (kleine Punkte) = Schrägansicht aus dieser Richtung. Die Knöpfe daneben bleiben. *Offen:* Ziehen am Würfel zum Drehen, Ansicht von unten. |
+| 6.2 | **Fertig (waagerecht):** **Schnitthöhe** über OK Rohdecke des aktuellen Geschosses (Standard 1.200 mm): Wände, Stützen, Träger, Decken und Dächer werden oberhalb gekappt, die Körper bleiben geschlossen; gilt im Grundriss und in 3D, Schalter im Band (Ansicht → Schnitt) und Abschnitt „Schnitt“ in der Palette (Höhe eintippbar); Fenster oberhalb der Schnitthöhe entfallen, Fenster, die durch den Schnitt laufen, bleiben ganz. IFC und Mengen sind nicht betroffen (Schnitt gilt nur für die Darstellung). Wird in gespeicherten Ansichten mit abgelegt. *Offen:* senkrechte Schnittebene, Schnittbox. |
+| 6.3 | **Fertig:** Gespeicherte Ansichten lassen sich **umbenennen** (Stift am Eintrag; Enter übernimmt, Verlassen des Felds bricht ab); der Eintrag zeigt auch Darstellung und Schnitthöhe. |
+| 6.4 | **Fertig:** **Schraffuren im Grundriss**: Mauerwerk schräg, Stahlbeton schräg mit Punkten, Dämmung Zickzack, Ständerwerk senkrecht (in den Schichtbändern der Wandtypen, ab 5 Bildpunkten Schichtdicke); Betonstützen mit Schraffur. Wände ohne Typ und Stahlstützen bleiben unschraffiert. |
+
+Getestet (1500 × 900, Testgebäude „Fangtest“): Selbsttest Gebäude **29/29** (neu: Schnitthöhe kappt die Körper bei 1.200 mm, IFC bleibt vollständig; Ansicht umbenennen); am Modell: Schnitt an/aus im Band und in der Palette, Grundriss mit Schnitt, Maßstab „1 : 25“ und Balken, Betonstütze mit Schraffur, 3D mit Schnitt, Würfel in Grundriss und Iso, Klick auf Fläche → „Vorne“, Klick auf Oberseite → „Oben“, Ansicht speichern, Stift, Umbenennen; keine Konsolenfehler.
+
+## 16. Phase 7 erster Stand: Listen und Ausgabe (Version 280)
+
+| Nr. | Stand |
+|---|---|
+| 7.1 | **Fertig:** **Listen** (Band: Messen → Listen und Mengen): Fenster, Türen, Räume, Wände, Stützen, Decken, Typen als Tabelle in einem breiten Fenster. **Spaltenkopf** sortiert (auf/ab), Feld „Filtern“ durchsucht alle Spalten, Umschalter aktuelles Geschoss / alle Geschosse, **Zeile antippen** wählt das Bauteil im Modell (wechselt das Geschoss und zoomt darauf; bei Typen werden alle Exemplare gewählt). Summenzeile für Länge, Fläche und Volumen. Inhalt: Fenster (Typ, Breite, Höhe, Brüstung, Fläche, Wand, Teilung), Türen, Räume (Nr., Name, Fläche, Umfang, Höhe, Volumen), Wände (Typ, Art, Länge, Dicke, Höhe, Nettofläche ohne Öffnungen und Stützen/Träger, Volumen), Stützen (Form, Maß, Höhe, Volumen), Decken (Art, Dicke, Fläche ohne Durchbrüche, Volumen), Typen (Aufbau, Exemplare, Menge). |
+| 7.2 | **Teilweise:** **CSV** je Liste (Knopf „CSV“, Semikolon, Dezimalkomma, UTF-8 mit Kennzeichen: öffnet in Excel mit deutschen Einstellungen direkt; berücksichtigt Sortierung und Filter, Summenzeile am Ende). *Offen:* echte .xlsx-Datei, alle Listen in einer Datei. |
+| 7.3 | **Fertig (erste Fassung):** **Plan als PDF** (Band: Gebäude → Ausgabe und Messen → Ausgabe): Vektor-PDF (ohne Bibliothek erzeugt) auf A4 oder A3 quer, Maßstab passend oder 1:50 / 1:100 / 1:200; Wände mit Schichten (Bänder in Materialfarbe), Stützen, Türen mit Schwenkbogen, Fenster, Raumflächen, **Achsen mit Köpfen und Maßketten** (Einzelmaße und Gesamtmaß je Gruppe und Seite), **Raumstempel** (Nr., Name, Fläche), Maßstabsbalken 1 m / 5 m, Schriftfeld (Gebäude, Geschoss, Maßstab, Datum). Das PDF wurde mit pdf.js gelesen und im Bild geprüft. *Offen:* Schraffuren und Treppen im PDF, mehrere Geschosse in einer Datei, Schnittdarstellung, Wahl von Linienstärken, Hochformat. |
+| 7.4 | **Fertig (erste Fassung):** IFC mit **Typobjekten** (IfcWallType, IfcSlabType, IfcColumnType, IfcWindowType, IfcDoorType, verbunden über IfcRelDefinesByType), **Raumbegrenzungen** (IfcRelSpaceBoundary zu den Wänden und Stützen am Raumumriss, ohne Geometrie) und **Geschosshöhe** (Pset_BuildingStoreyCommon.GrossHeight); Schichtaufbau gab es schon. *Offen:* Geometrie der Raumbegrenzungen, Typen mit Schichtaufbau am Typobjekt statt an den Exemplaren, Prüfung in einem IFC-Programm. |
+
+Getestet (1500 × 900, Testgebäude „Fangtest“): Selbsttest Gebäude **33/33** (neu: Listen mit Summen, Sortieren, Filtern; Fenster-, Raum-, Stützen- und Typenliste; CSV mit Kennzeichen und Dezimalkomma; PDF mit gültiger Objekt- und Verweistabelle, Stempel und Maßstab; IFC mit Typobjekten, Raumbegrenzung und Geschosshöhe ohne fehlende Bezüge); am Modell: Liste Wände (11 Zeilen, Summe 62,86 m Länge), Sortieren, Filter „Innen“ → 5, Zeilenklick wählt, Wechsel der Liste setzt den Filter zurück, CSV-Datei, PDF-Dialog (A3, 1:100) mit Datei; das PDF mit Achsen und Maßketten im Bild geprüft; keine Konsolenfehler. Ein Fehler beim Testen behoben: Schriftgrößen im PDF waren um den Faktor 2,8 zu groß.
+
+## 17. Phase 8 und Gesamtstand (Version 281 bis 283)
+
+### Neu in dieser Runde
+
+- **Projektbrowser, Reiter:** Die vier Reiter (Struktur, Layer, Typen, Ansichten) passen jetzt nebeneinander; „Ansichten“ war am rechten Rand abgeschnitten („Ansichte“). Die Reiter richten ihre Breite nach dem Text.
+- **Doppelflügeltür mit ungleichen Flügeln:** Eine Tür hat jetzt einen oder zwei Flügel (`leaves`: Breite, Anschlag links/rechts, Aufschlag hier/drüben je Flügel). **Tür-Editor** in der Palette (öffnet sich beim Wählen einer Tür, Knopf „Tür gestalten …“ in der Tafel): Breite und Höhe, Einflügelig/Zweiflügelig, **Gangflügel- und Standflügelbreite** als Felder (der zweite Flügel ergibt sich aus der Türbreite), Aufteilung per Knopf (gleich, 2/3 : 1/3, 885 + Rest, 1010 + Rest), Anschlag und Aufschlag je Flügel. Ändert man die Türbreite, behalten die Flügel ihr Verhältnis. Im **Grundriss** und im **PDF** hat jeder Flügel sein Blatt mit eigenem Schwenkbogen, in **3D** erscheinen die Türblätter als Platten (je Flügel, mit Fuge), im **IFC** eine Platte je Flügel, Öffnungsart „DOUBLE_DOOR_SINGLE_SWING“ bzw. SINGLE_SWING_LEFT/RIGHT und die Flügelbreiten als Eigenschaft. **Türtypen:** drei Doppeltüren in den Vorgaben (88 + 88, 88,5 + 37,5, 101 + 50); Flügelbreiten gehören zum Typ („Typ aus dieser Tür übernehmen“); die **Türliste** zeigt die Flügel („2 Flügel: 885 + 375“).
+- **Palettenbreite per Ziehen:** Griffe zwischen Projektbrowser, Zeichenfläche und Eigenschaften (Desktop, 200–520 bzw. 260–640 px), Breite wird je Gerät gemerkt.
+- **Auswahl einschränken:** Bei gemischter Mehrfachauswahl bietet die Palette Knöpfe „Wand (11)“, „Stütze (5)“ …, die die Auswahl auf eine Art begrenzen.
+- **Startfenster:** Wände und Decken, die „Neues Gebäude“ anlegt, tragen jetzt gleich ihren Typ.
+- **Excel (.xlsx) ohne Bibliothek:** in den Listen „Excel“ (diese Liste) und „Alle Listen“ (sieben Blätter, fixierte Kopfzeile, Zahlen als Zahlen, Summenzeile); Prüfsummen und XML werden im Selbsttest gegengeprüft.
+- **Plan als PDF für alle Geschosse:** „Geschosse: Alle“ erzeugt eine Seite je Geschoss.
+- **Geschwindigkeit:** Die Ansicht merkt sich je Bauteil ihre Dreiecke und Linien (Schlüssel aus Geschoss, Nachbargeschossen, Schächten/Durchbrüchen, Ansicht, Schnitt, Auswahl); Auswahl ändern oder ein Bauteil bearbeiten baut nur das betroffene Geschoss bzw. das gewählte Bauteil neu. Wände, Stützen, Träger, Öffnungen und Decken werden beim Aufbau je Geschoss vorsortiert statt je Wand durchsucht. Gemessen an einem Modell mit 2.358 Bauteilen (9 Geschosse): erster Aufbau etwa 2 s, Auswahl wechseln rund 0,15 s.
+
+### Phase 8: Qualität
+
+| Nr. | Stand |
+|---|---|
+| 8.1 | **Fertig:** Selbsttest Gebäude (`biegeDebug.bau.selfTest()`) mit **41 Fällen** (Zahlen, Räume, Stützen und Unterzüge in Wänden, Achsen, Öffnungsmaße, Typen, Verlauf, Schema, Wandecken, Raum folgt, Drehen/Spiegeln, Ansichten, Schnitt, Zwischenspeicher, Listen, CSV, Excel, PDF, Doppeltür, IFC). Läuft in einem Testgebäude im Speicher, ändert nichts am geöffneten Gebäude. |
+| 8.2 | **Fertig:** **Prüfmodelle** als Dateien im Ordner `pruefmodelle/`: `einfamilienhaus.json` (2 Geschosse, Außen- und Innenwände, 11 Fenster, 6 Türen mit einer ungleichen Doppeltür, 7 Räume, Achsen, Bodenplatte und Decke) und `buerokomplex.json` (4 Geschosse, Stützenraster 6 × 4 mit 96 Stützen, Kern, 112 Fenster, Unterzüge, 264 Bauteile). Beide sind bewusst **ohne Schemanummer** gespeichert, damit das Öffnen der Migrationskette mitgeprüft wird. `biegeDebug.bau.modelTest()` prüft je Modell: Migration, Zahl der Bauteile, Lage der Öffnungen, Wiedererkennung aller Räume (Fläche), Wandstücke, alle Listen, IFC (vollständige Verweise, Anzahl Wände/Fenster/Türen/Geschosse), PDF je Geschoss: **16 von 16 bestanden**. Ein schiefer Plan wird im Selbsttest über „Plan ausrichten“ geprüft (3,2° Schräge → Drehung −3,2°). |
+| 8.3 | **Fertig:** Leistungsmessung `biegeDebug.bau.perfTest()` mit einem erzeugten Modell von 2.358 Bauteilen: Ansicht aufbauen, Wandstücke, Raumerkennung, Änderungsprüfung, Liste, PDF, IFC mit Grenzwerten; alle bestanden (Stand auf dem Prüfrechner: Ansicht 2,2 s, IFC 0,5 s, Raum 0,1 s, PDF 0,02 s). |
+
+### Gesamtstand aller Phasen
+
+| Phase | Stand | Was noch offen ist |
+|---|---|---|
+| 0 Fehler | fertig (Version 270) | – |
+| 1 Desktop-Gerüst | fertig bis auf Kleinigkeiten | ganzseitiger Bereich „Gebäude“, zweibuchstabige Kürzel, einzeiliges Band für das iPad hochkant |
+| 2 Eigenschaften-Palette | größtenteils | mehrere gleiche Fenster gleichzeitig im Editor, gemeinsame Werte bei gemischter Auswahl, „Raster erzeugen“ in die Optionsleiste, Vereinheitlichung der Bedienelemente |
+| 3 Bauteiltypen | größtenteils | Vorschau und Suche in der Typauswahl, Typ schon beim Zeichnen von Stütze, Decke und Öffnung wählen, Typ bearbeiten auf schmalen Geräten |
+| 4 Datenmodell | teilweise | Höhen als Bezug plus Versatz (4.3), allgemeine Wandverbindungen speichern, Decken-/Dachränder folgen den Wänden, Aufteilung der Hülle mit ausdrücklichem Zustand (4.8) |
+| 5 Bearbeiten im Modell | teilweise | Maße für Raum (Räume folgen den Wänden), Dach und Abstände der Wandenden, Maße festsetzen, einheitliche Griffe, Flächenfang in 3D beim Zeichnen, Ausrichten, Drehen/Spiegeln von Treppen, Dächern und Rasterdecken |
+| 6 Ansicht | größtenteils | senkrechte Schnittebene und Schnittbox, Ziehen am Würfel, Ansicht von unten |
+| 7 Listen und Ausgabe | größtenteils | PDF: Schraffuren, Treppen, Hochformat, Linienstärken; IFC: Geometrie der Raumbegrenzungen, Schichtaufbau am Typobjekt |
+| 8 Qualität | fertig | – |
+
+Warum nicht alles bis zum Schluss: Die offenen Punkte in 4 und 5 berühren das Zeichnen und die Datenhaltung an vielen Stellen (Höhenbezüge, Verbindungen, Hülle aufteilen) und sollten mit dir zusammen in kleinen Schritten angegangen werden, weil sie das Verhalten vorhandener Gebäude ändern.
+
+### Nachtrag (Version 284)
+
+- **4.5 Öffnungen mit wählbarem Bezug – fertig:** Bei Fenster, Tür und Wanddurchbruch wählt „Lage messen ab“ **Wandanfang** oder **Wandende**. Mit Wandende zeigt die Palette „bis Wandende“, und wird die Wand länger oder kürzer (Maß, Ziehen am Griff, Eingabe), **bleibt der Abstand zum Wandende**; ändert man die Lage selbst, gilt die Eingabe. Standard bleibt Wandanfang.
+- **5.1 Maße der Decke – fertig für Decken und Bodenplatten:** Länge jeder Kante als antippbares Maß außen neben der Kante. Bei rechtwinkligen Vierecken verschiebt die Eingabe die gegenüberliegende Kante mit (Rechteck bleibt Rechteck), sonst nur die Endecke der Kante.
+- Selbsttest Gebäude **43 von 43**, Prüfmodelle 16/16, Leistungsmessung ohne Überschreitung.

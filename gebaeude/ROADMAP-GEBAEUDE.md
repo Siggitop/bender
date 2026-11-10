@@ -1,6 +1,6 @@
 # Roadmap: Gebäude-Experiment
 
-Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 278**, siehe Abschnitt 6 bis 31. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
+Stand: 08.11.2026. **Phase 0 bis 6 und IFC-Export aus Phase 8 umgesetzt, Stand Version 284**, siehe Abschnitt 6 bis 35. Phase 7 (Verbindung zum Rohrteil) ist zurückgestellt und wieder ausgebaut: Das Gebäude wird vorerst als eigenständiges Werkzeug entwickelt. Ziel: Gebäudestruktur (Tragwerk, Wände, Decken, Öffnungen, Dächer, Ausbau) im Rohrbiege-Assistenten erfassen, zunächst als versteckte Experiment-Option. Später geht der Rohrteil im Gebäude auf, das Gebäude ist der Rahmen für die HLK-Infrastruktur.
 
 ## 1. Leitlinien
 
@@ -386,3 +386,19 @@ Startpunkt mit Abstand (Taste A), antippbare Maße an Wand und Stütze, Rahmenau
 ## 31. Version 278: Ansicht und Navigation (Phase 6, erster Stand)
 
 Unterzüge und Träger schneiden Wände aus (Fehler behoben), Ansichtssteuerung (Oben, Vorne, Rechts, Hinten, Links, Iso), gespeicherte Ansichten, Darstellungen (Schattiert, Kanten, Röntgen), Maßstab. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 14.
+
+## 32. Version 279: Phase 6 abgerundet
+
+Ansichtswürfel, Schnitthöhe (Grundriss und 3D), Ansichten umbenennen, Schraffuren im Grundriss. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 15.
+
+## 33. Version 280: Listen und Ausgabe (Phase 7, erster Stand)
+
+Listen als Tabelle (sortieren, filtern, Zeile wählt), CSV, Plan als PDF, IFC mit Typobjekten, Raumbegrenzungen und Geschosshöhe. Einzelheiten in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 16.
+
+## 34. Version 281 bis 283: Doppelflügeltür, Reiter, Prüfmodelle, Leistung
+
+Reiter im Projektbrowser korrigiert, Doppelflügeltür mit ungleichen Flügeln (Editor, Plan, 3D, PDF, IFC, Typen, Liste), Auswahl einschränken, Excel-Ausgabe, PDF für alle Geschosse, Prüfmodelle (`pruefmodelle/`), Leistungsmessung und Zwischenspeicher der Ansicht, Selbsttest mit 41 Fällen. Einzelheiten und Gesamtstand in [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 17.
+
+## 35. Version 284: Öffnungsbezug, Deckenmaße
+
+Öffnungen messen wahlweise ab Wandanfang oder Wandende (Abstand zum Ende bleibt bei Längenänderung), antippbare Kantenlängen an Decken und Bodenplatten. Siehe [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 17, Nachtrag.

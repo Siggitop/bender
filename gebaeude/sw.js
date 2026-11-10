@@ -1,7 +1,7 @@
 // Offline-Cache der Gebäude-App: erst Netz (damit Updates ankommen), sonst Cache.
 importScripts('version.js'); // setzt self.APP_VERSION
 const CACHE = 'gebaeude-v' + self.APP_VERSION;
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'building.js', 'building-math.js', 'building-steel.js', 'building-store.js', 'building-schema.js', 'building-data.js', 'building-css.js', 'building-test.js', 'version.js', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'building.js', 'building-math.js', 'building-steel.js', 'building-store.js', 'building-lists.js', 'building-pdf.js', 'building-xlsx.js', 'building-schema.js', 'building-data.js', 'building-css.js', 'building-test.js', 'version.js', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

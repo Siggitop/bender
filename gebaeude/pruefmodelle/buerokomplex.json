@@ -1,0 +1,3668 @@
+{
+ "id": "pm-buero",
+ "name": "Prüfmodell Bürokomplex",
+ "ver": 1,
+ "storeys": [
+  {
+   "id": "sB0",
+   "name": "EG",
+   "elev": 0,
+   "height": 3500
+  },
+  {
+   "id": "sB1",
+   "name": "1. OG",
+   "elev": 3500,
+   "height": 3500
+  },
+  {
+   "id": "sB2",
+   "name": "2. OG",
+   "elev": 7000,
+   "height": 3500
+  },
+  {
+   "id": "sB3",
+   "name": "3. OG",
+   "elev": 10500,
+   "height": 3500
+  }
+ ],
+ "grids": [
+  {
+   "id": "g0265",
+   "name": "1",
+   "a": [
+    0,
+    -2000
+   ],
+   "b": [
+    0,
+    20000
+   ]
+  },
+  {
+   "id": "g0266",
+   "name": "2",
+   "a": [
+    7500,
+    -2000
+   ],
+   "b": [
+    7500,
+    20000
+   ]
+  },
+  {
+   "id": "g0267",
+   "name": "3",
+   "a": [
+    15000,
+    -2000
+   ],
+   "b": [
+    15000,
+    20000
+   ]
+  },
+  {
+   "id": "g0268",
+   "name": "4",
+   "a": [
+    22500,
+    -2000
+   ],
+   "b": [
+    22500,
+    20000
+   ]
+  },
+  {
+   "id": "g0269",
+   "name": "5",
+   "a": [
+    30000,
+    -2000
+   ],
+   "b": [
+    30000,
+    20000
+   ]
+  },
+  {
+   "id": "g0270",
+   "name": "6",
+   "a": [
+    37500,
+    -2000
+   ],
+   "b": [
+    37500,
+    20000
+   ]
+  },
+  {
+   "id": "g0271",
+   "name": "A",
+   "a": [
+    -2000,
+    0
+   ],
+   "b": [
+    39500,
+    0
+   ]
+  },
+  {
+   "id": "g0272",
+   "name": "B",
+   "a": [
+    -2000,
+    6000
+   ],
+   "b": [
+    39500,
+    6000
+   ]
+  },
+  {
+   "id": "g0273",
+   "name": "C",
+   "a": [
+    -2000,
+    12000
+   ],
+   "b": [
+    39500,
+    12000
+   ]
+  },
+  {
+   "id": "g0274",
+   "name": "D",
+   "a": [
+    -2000,
+    18000
+   ],
+   "b": [
+    39500,
+    18000
+   ]
+  }
+ ],
+ "els": [
+  {
+   "id": "d0001",
+   "storey": "sB0",
+   "type": "slab",
+   "pts": [
+    [
+     -300,
+     -300
+    ],
+    [
+     37800,
+     -300
+    ],
+    [
+     37800,
+     18300
+    ],
+    [
+     -300,
+     18300
+    ]
+   ],
+   "t": 280
+  },
+  {
+   "id": "w0002",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    0,
+    0
+   ],
+   "b": [
+    37500,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0003",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    37500,
+    0
+   ],
+   "b": [
+    37500,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0004",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    37500,
+    18000
+   ],
+   "b": [
+    0,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0005",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    0,
+    18000
+   ],
+   "b": [
+    0,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "f0006",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0007",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0008",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0009",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0010",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0011",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0012",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0013",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0014",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0015",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0002",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0016",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0017",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0018",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0019",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0020",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0021",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0022",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0023",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0024",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0025",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0004",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0026",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0003",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0027",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0005",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0028",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0003",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0029",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0005",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0030",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0003",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0031",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0005",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0032",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0003",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0033",
+   "storey": "sB0",
+   "type": "window",
+   "host": "w0005",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "s0034",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    0,
+    0
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0035",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    0,
+    6000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0036",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    0,
+    12000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0037",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    0,
+    18000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0038",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    7500,
+    0
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0039",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    7500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0040",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    7500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0041",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    7500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0042",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    15000,
+    0
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0043",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0044",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    15000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0045",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    15000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0046",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    22500,
+    0
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0047",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    22500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0048",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    22500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0049",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    22500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0050",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    30000,
+    0
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0051",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    30000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0052",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    30000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0053",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    30000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0054",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    37500,
+    0
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0055",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    37500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0056",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0057",
+   "storey": "sB0",
+   "type": "column",
+   "p": [
+    37500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 400,
+   "d": 400,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "w0058",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    15000,
+    6000
+   ],
+   "b": [
+    22500,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0059",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    22500,
+    6000
+   ],
+   "b": [
+    22500,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0060",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    15000,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0061",
+   "storey": "sB0",
+   "type": "wall",
+   "a": [
+    15000,
+    12000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "t0062",
+   "storey": "sB0",
+   "type": "door",
+   "host": "w0058",
+   "at": 3750,
+   "w": 1010,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1
+  },
+  {
+   "id": "t0063",
+   "storey": "sB0",
+   "type": "door",
+   "host": "w0060",
+   "at": 3750,
+   "w": 1260,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1,
+   "leaves": [
+    {
+     "w": 885,
+     "hinge": "l",
+     "swing": 1
+    },
+    {
+     "w": 375,
+     "hinge": "r",
+     "swing": 1
+    }
+   ]
+  },
+  {
+   "id": "b0064",
+   "storey": "sB0",
+   "type": "beam",
+   "a": [
+    0,
+    6000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "b0065",
+   "storey": "sB0",
+   "type": "beam",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "r0066",
+   "storey": "sB0",
+   "type": "space",
+   "no": "0.1",
+   "name": "Treppenhaus",
+   "pts": [
+    [
+     15150,
+     6150
+    ],
+    [
+     22350,
+     6150
+    ],
+    [
+     22350,
+     11850
+    ],
+    [
+     15150,
+     11850
+    ]
+   ],
+   "seed": [
+    18750.0,
+    9000.0
+   ],
+   "auto": true
+  },
+  {
+   "id": "d0067",
+   "storey": "sB1",
+   "type": "slab",
+   "pts": [
+    [
+     -300,
+     -300
+    ],
+    [
+     37800,
+     -300
+    ],
+    [
+     37800,
+     18300
+    ],
+    [
+     -300,
+     18300
+    ]
+   ],
+   "t": 280
+  },
+  {
+   "id": "w0068",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    0,
+    0
+   ],
+   "b": [
+    37500,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0069",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    37500,
+    0
+   ],
+   "b": [
+    37500,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0070",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    37500,
+    18000
+   ],
+   "b": [
+    0,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0071",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    0,
+    18000
+   ],
+   "b": [
+    0,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "f0072",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0073",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0074",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0075",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0076",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0077",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0078",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0079",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0080",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0081",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0068",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0082",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0083",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0084",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0085",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0086",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0087",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0088",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0089",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0090",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0091",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0070",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0092",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0069",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0093",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0071",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0094",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0069",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0095",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0071",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0096",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0069",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0097",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0071",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0098",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0069",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0099",
+   "storey": "sB1",
+   "type": "window",
+   "host": "w0071",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "s0100",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    0,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0101",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    0,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0102",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    0,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0103",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    0,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0104",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    7500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0105",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    7500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0106",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    7500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0107",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    7500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0108",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    15000,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0109",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0110",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    15000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0111",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    15000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0112",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    22500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0113",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    22500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0114",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    22500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0115",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    22500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0116",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    30000,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0117",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    30000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0118",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    30000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0119",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    30000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0120",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    37500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0121",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    37500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0122",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0123",
+   "storey": "sB1",
+   "type": "column",
+   "p": [
+    37500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "w0124",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    15000,
+    6000
+   ],
+   "b": [
+    22500,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0125",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    22500,
+    6000
+   ],
+   "b": [
+    22500,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0126",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    15000,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0127",
+   "storey": "sB1",
+   "type": "wall",
+   "a": [
+    15000,
+    12000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "t0128",
+   "storey": "sB1",
+   "type": "door",
+   "host": "w0124",
+   "at": 3750,
+   "w": 1010,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1
+  },
+  {
+   "id": "t0129",
+   "storey": "sB1",
+   "type": "door",
+   "host": "w0126",
+   "at": 3750,
+   "w": 1260,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1,
+   "leaves": [
+    {
+     "w": 885,
+     "hinge": "l",
+     "swing": 1
+    },
+    {
+     "w": 375,
+     "hinge": "r",
+     "swing": 1
+    }
+   ]
+  },
+  {
+   "id": "b0130",
+   "storey": "sB1",
+   "type": "beam",
+   "a": [
+    0,
+    6000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "b0131",
+   "storey": "sB1",
+   "type": "beam",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "r0132",
+   "storey": "sB1",
+   "type": "space",
+   "no": "1.1",
+   "name": "Treppenhaus",
+   "pts": [
+    [
+     15150,
+     6150
+    ],
+    [
+     22350,
+     6150
+    ],
+    [
+     22350,
+     11850
+    ],
+    [
+     15150,
+     11850
+    ]
+   ],
+   "seed": [
+    18750.0,
+    9000.0
+   ],
+   "auto": true
+  },
+  {
+   "id": "d0133",
+   "storey": "sB2",
+   "type": "slab",
+   "pts": [
+    [
+     -300,
+     -300
+    ],
+    [
+     37800,
+     -300
+    ],
+    [
+     37800,
+     18300
+    ],
+    [
+     -300,
+     18300
+    ]
+   ],
+   "t": 280
+  },
+  {
+   "id": "w0134",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    0,
+    0
+   ],
+   "b": [
+    37500,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0135",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    37500,
+    0
+   ],
+   "b": [
+    37500,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0136",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    37500,
+    18000
+   ],
+   "b": [
+    0,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0137",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    0,
+    18000
+   ],
+   "b": [
+    0,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "f0138",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0139",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0140",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0141",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0142",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0143",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0144",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0145",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0146",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0147",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0134",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0148",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0149",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0150",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0151",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0152",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0153",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0154",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0155",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0156",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0157",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0136",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0158",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0135",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0159",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0137",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0160",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0135",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0161",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0137",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0162",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0135",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0163",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0137",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0164",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0135",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0165",
+   "storey": "sB2",
+   "type": "window",
+   "host": "w0137",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "s0166",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    0,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0167",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    0,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0168",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    0,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0169",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    0,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0170",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    7500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0171",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    7500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0172",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    7500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0173",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    7500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0174",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    15000,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0175",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0176",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    15000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0177",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    15000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0178",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    22500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0179",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    22500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0180",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    22500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0181",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    22500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0182",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    30000,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0183",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    30000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0184",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    30000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0185",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    30000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0186",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    37500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0187",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    37500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0188",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0189",
+   "storey": "sB2",
+   "type": "column",
+   "p": [
+    37500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "w0190",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    15000,
+    6000
+   ],
+   "b": [
+    22500,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0191",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    22500,
+    6000
+   ],
+   "b": [
+    22500,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0192",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    15000,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0193",
+   "storey": "sB2",
+   "type": "wall",
+   "a": [
+    15000,
+    12000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "t0194",
+   "storey": "sB2",
+   "type": "door",
+   "host": "w0190",
+   "at": 3750,
+   "w": 1010,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1
+  },
+  {
+   "id": "t0195",
+   "storey": "sB2",
+   "type": "door",
+   "host": "w0192",
+   "at": 3750,
+   "w": 1260,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1,
+   "leaves": [
+    {
+     "w": 885,
+     "hinge": "l",
+     "swing": 1
+    },
+    {
+     "w": 375,
+     "hinge": "r",
+     "swing": 1
+    }
+   ]
+  },
+  {
+   "id": "b0196",
+   "storey": "sB2",
+   "type": "beam",
+   "a": [
+    0,
+    6000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "b0197",
+   "storey": "sB2",
+   "type": "beam",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "r0198",
+   "storey": "sB2",
+   "type": "space",
+   "no": "2.1",
+   "name": "Treppenhaus",
+   "pts": [
+    [
+     15150,
+     6150
+    ],
+    [
+     22350,
+     6150
+    ],
+    [
+     22350,
+     11850
+    ],
+    [
+     15150,
+     11850
+    ]
+   ],
+   "seed": [
+    18750.0,
+    9000.0
+   ],
+   "auto": true
+  },
+  {
+   "id": "d0199",
+   "storey": "sB3",
+   "type": "slab",
+   "pts": [
+    [
+     -300,
+     -300
+    ],
+    [
+     37800,
+     -300
+    ],
+    [
+     37800,
+     18300
+    ],
+    [
+     -300,
+     18300
+    ]
+   ],
+   "t": 280
+  },
+  {
+   "id": "w0200",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    0,
+    0
+   ],
+   "b": [
+    37500,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0201",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    37500,
+    0
+   ],
+   "b": [
+    37500,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0202",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    37500,
+    18000
+   ],
+   "b": [
+    0,
+    18000
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "w0203",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    0,
+    18000
+   ],
+   "b": [
+    0,
+    0
+   ],
+   "t": 365,
+   "just": "c",
+   "kind": "aw",
+   "h": null
+  },
+  {
+   "id": "f0204",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0205",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0206",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0207",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0208",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0209",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0210",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0211",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0212",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0213",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0200",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0214",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 1875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0215",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 5625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0216",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 9375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0217",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 13125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0218",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 16875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0219",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 20625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0220",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 24375,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0221",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 28125,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0222",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 31875,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0223",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0202",
+   "at": 35625,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0224",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0201",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0225",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0203",
+   "at": 1500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0226",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0201",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0227",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0203",
+   "at": 6000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0228",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0201",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0229",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0203",
+   "at": 10500,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0230",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0201",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "f0231",
+   "storey": "sB3",
+   "type": "window",
+   "host": "w0203",
+   "at": 15000,
+   "w": 2010,
+   "h": 1500,
+   "sill": 800
+  },
+  {
+   "id": "s0232",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    0,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0233",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    0,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0234",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    0,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0235",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    0,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0236",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    7500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0237",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    7500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0238",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    7500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0239",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    7500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0240",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    15000,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0241",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0242",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    15000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0243",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    15000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0244",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    22500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0245",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    22500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0246",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    22500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0247",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    22500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0248",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    30000,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0249",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    30000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0250",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    30000,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0251",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    30000,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0252",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    37500,
+    0
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0253",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    37500,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0254",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "s0255",
+   "storey": "sB3",
+   "type": "column",
+   "p": [
+    37500,
+    18000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "d": 300,
+   "rot": 0,
+   "h": null
+  },
+  {
+   "id": "w0256",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    15000,
+    6000
+   ],
+   "b": [
+    22500,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0257",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    22500,
+    6000
+   ],
+   "b": [
+    22500,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0258",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    15000,
+    12000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "w0259",
+   "storey": "sB3",
+   "type": "wall",
+   "a": [
+    15000,
+    12000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "t": 300,
+   "just": "c",
+   "kind": "iwt",
+   "h": null
+  },
+  {
+   "id": "t0260",
+   "storey": "sB3",
+   "type": "door",
+   "host": "w0256",
+   "at": 3750,
+   "w": 1010,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1
+  },
+  {
+   "id": "t0261",
+   "storey": "sB3",
+   "type": "door",
+   "host": "w0258",
+   "at": 3750,
+   "w": 1260,
+   "h": 2135,
+   "sill": 0,
+   "hinge": "l",
+   "swing": 1,
+   "leaves": [
+    {
+     "w": 885,
+     "hinge": "l",
+     "swing": 1
+    },
+    {
+     "w": 375,
+     "hinge": "r",
+     "swing": 1
+    }
+   ]
+  },
+  {
+   "id": "b0262",
+   "storey": "sB3",
+   "type": "beam",
+   "a": [
+    0,
+    6000
+   ],
+   "b": [
+    15000,
+    6000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "b0263",
+   "storey": "sB3",
+   "type": "beam",
+   "a": [
+    22500,
+    12000
+   ],
+   "b": [
+    37500,
+    12000
+   ],
+   "shape": "rect",
+   "w": 300,
+   "bh": 500,
+   "top": 3220,
+   "rot90": false
+  },
+  {
+   "id": "r0264",
+   "storey": "sB3",
+   "type": "space",
+   "no": "3.1",
+   "name": "Treppenhaus",
+   "pts": [
+    [
+     15150,
+     6150
+    ],
+    [
+     22350,
+     6150
+    ],
+    [
+     22350,
+     11850
+    ],
+    [
+     15150,
+     11850
+    ]
+   ],
+   "seed": [
+    18750.0,
+    9000.0
+   ],
+   "auto": true
+  }
+ ],
+ "underlays": []
+}

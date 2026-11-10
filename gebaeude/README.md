@@ -16,14 +16,20 @@ Weiterführend: [ROADMAP-GEBAEUDE.md](ROADMAP-GEBAEUDE.md) (Stand und Versionsge
 | `building.js` | Gebäude-Werkzeug: Geschosse, Achsraster, Planunterlage, Wände, Stützen, Decken. Eigener Speicher in IndexedDB |
 | `building-math.js` | Gebäude: Vektoren, Polygone, Zahlen lesen und formatieren (rein, ohne Zustand) |
 | `building-steel.js` | Gebäude: Stahlprofile und Profilumriss |
+| `building-xlsx.js` | Gebäude: Excel-Datei (.xlsx) ohne Bibliothek |
+| `building-lists.js` | Gebäude: Listen und Mengen als Tabelle, CSV-Ausgabe |
+| `building-pdf.js` | Gebäude: PDF-Schreiber und Zeichnung des Grundrisses |
 | `building-schema.js` | Gebäude: Schemaversion und Migrationen der Gebäudedaten |
 | `building-store.js` | Gebäude: Speicher (IndexedDB), neues Gebäude, Datei-Download |
 | `building-data.js` | Gebäude: Symbole, Namen, Vorgaben, Fenstervorlagen |
 | `building-css.js` | Gebäude: Gestaltung (CSS kommt mit dem Modul) |
-| `building-test.js` | Gebäude: Selbsttest, nur im Testmodus (`?debug`, in der Konsole `biegeDebug.bau.selfTest()`) |
+| `building-test.js` | Gebäude: Selbsttest, nur im Testmodus (`?debug`, in der Konsole `biegeDebug.bau.selfTest()`, `modelTest()`, `perfTest()`) |
 
 ## Funktionen
 
+- **Version 281 bis 283:** Doppelflügeltür mit ungleichen Flügeln (Tür-Editor, Gangflügel/Standflügel, Plan, 3D, PDF, IFC), Excel-Ausgabe (.xlsx), Plan-PDF für alle Geschosse, Prüfmodelle im Ordner `pruefmodelle/` (Einfamilienhaus, Bürokomplex), Selbsttest mit 41 Fällen (`biegeDebug.bau.selfTest()`, `modelTest()`, `perfTest()`), schnellere Ansicht bei großen Modellen.
+- **Listen und Ausgabe (Version 280):** Listen (Fenster, Türen, Räume, Wände, Stützen, Decken, Typen) mit Sortieren, Filtern und CSV; Plan als Vektor-PDF (A4/A3, Maßstab, Achsen mit Maßketten, Raumstempel, Schriftfeld); IFC mit Typobjekten, Raumbegrenzungen und Geschosshöhe.
+- **Phase 6 abgerundet (Version 279):** Ansichtswürfel (Fläche oder Ecke anklicken), Schnitthöhe über dem Geschoss (Grundriss und 3D), Ansichten umbenennen, Schraffuren im Grundriss (Mauerwerk, Stahlbeton, Dämmung).
 - **Ansicht und Navigation (Version 278):** Ansichtssteuerung (Oben, Vorne, Rechts, Hinten, Links, Iso), gespeicherte Ansichten, Darstellungen (Schattiert, Kanten, Röntgen), Maßstab im Grundriss; Wände werden auch von Unterzügen und Trägern ausgespart.
 - **Bearbeiten im Modell (Version 277):** Punkt mit Abstand von einem Bezugspunkt (Taste A), antippbare Maße an Wand und Stütze, Rahmenauswahl mit Shift + Ziehen, Drehen und Spiegeln.
 - **Datenmodell (Version 276):** Schemaversion mit Migrationen, Verlauf mit benannten Schritten, Wandecke von Hand (Gehrung oder stumpf), Räume folgen den Wänden.

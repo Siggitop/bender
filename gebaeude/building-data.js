@@ -85,7 +85,10 @@ function seedTypes() {
   [300, 400].forEach(w => add({ id: `tc-r${w / 10}`, cat: 'column', name: `Rundstütze Ø ${w / 10}`, shape: 'round', w, d: w }));
   add({ id: 'tc-heb200', cat: 'column', name: 'Stahlstütze HEB 200', shape: 'steel', prof: 'HEB 200' });
   WIN_TPL.forEach(([k, n, dim, cfg]) => { const d = dim || OP_DEF.window; add({ id: `tf-${k}`, cat: 'window', name: n, w: d.w, h: d.h, sill: d.sill, cfg: JSON.parse(JSON.stringify(cfg)) }); });
-  [[885, 'Tür 88,5 × 213,5'], [1010, 'Tür 101 × 213,5'], [1135, 'Tür 113,5 × 213,5'], [1760, 'Doppeltür 176 × 213,5']].forEach(([w, n]) => add({ id: `tt-${w}`, cat: 'door', name: n, w, h: 2135, sill: 0 }));
+  [[885, 'Tür 88,5 × 213,5'], [1010, 'Tür 101 × 213,5'], [1135, 'Tür 113,5 × 213,5']].forEach(([w, n]) => add({ id: `tt-${w}`, cat: 'door', name: n, w, h: 2135, sill: 0 }));
+  add({ id: 'tt-1760', cat: 'door', name: 'Doppeltür 176 (88 + 88)', w: 1760, h: 2135, sill: 0, leaves: [{ w: 880, hinge: 'l', swing: 1 }, { w: 880, hinge: 'r', swing: 1 }] });
+  add({ id: 'tt-1260u', cat: 'door', name: 'Doppeltür 126 (88,5 + 37,5)', w: 1260, h: 2135, sill: 0, leaves: [{ w: 885, hinge: 'l', swing: 1 }, { w: 375, hinge: 'r', swing: 1 }] });
+  add({ id: 'tt-1510u', cat: 'door', name: 'Doppeltür 151 (101 + 50)', w: 1510, h: 2135, sill: 0, leaves: [{ w: 1010, hinge: 'l', swing: 1 }, { w: 500, hinge: 'r', swing: 1 }] });
   return T;
 }
 

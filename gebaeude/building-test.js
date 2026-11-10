@@ -2,8 +2,11 @@
 // Läuft in einem eigenen Test-Gebäude im Speicher; das geöffnete Gebäude, Rückgängig und die Datenbank bleiben unberührt.
 // api kommt aus building.js (Funktionen aus der Hülle), Rückgabe wie beim Rohr-Selbsttest: Liste { Fall, ok, Info }.
 import { SCHEMA, migrate } from './building-schema.js';
+import { LISTS, listTable, listView, csvOf, xlsxSheet } from './building-lists.js';
+import { makeXlsx, unzipCheck } from './building-xlsx.js';
+import { planPdf } from './building-pdf.js';
 export async function runBuildingTests(api) {
-  const { B, cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType, syncSigs, updateRooms, describeStep, roomSeed, transformSel, rotF, mirF, moveEl, saveView, gotoView, setView, cam } = api;
+  const { B, cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType, syncSigs, updateRooms, describeStep, roomSeed, ulAlign, transformSel, rotF, mirF, moveEl, saveView, gotoView, setView, cam, leavesOf, doorPlates, twoLeaves, fixLeaves } = api;
   const R = [];
   const t = (Fall, fn) => { try { const r = fn(); R.push({ Fall, ok: r === true || r?.ok ? 'ok' : 'FEHLER', Info: r === true ? '' : r?.info ?? String(r) }); } catch (e) { R.push({ Fall, ok: 'FEHLER', Info: `Ausnahme: ${e.message || e}` }); } };
   const wall = (a, b, th = 240, extra = {}) => { const w = { id: `tw${B.els.length}`, storey: cur(), type: 'wall', a, b, t: th, just: 'c', kind: 'iwt', h: null, ...extra }; B.els.push(w); return w; };
@@ -77,7 +80,7 @@ export async function runBuildingTests(api) {
 
   // 7. Bauteiltypen
   B.els.length = 0; B.grids.length = 0;
-  t('Typen: Vorgabetypen vorhanden', () => { const n = Object.values(B.types), c = k => n.filter(x => x.cat === k).length; return { ok: c('wall') === 6 && c('slab') === 5 && c('column') === 7 && c('window') >= 7 && c('door') === 4, info: `${n.length} Typen (Wand ${c('wall')}, Decke ${c('slab')}, Stütze ${c('column')}, Fenster ${c('window')}, Tür ${c('door')})` }; });
+  t('Typen: Vorgabetypen vorhanden', () => { const n = Object.values(B.types), c = k => n.filter(x => x.cat === k).length; return { ok: c('wall') === 6 && c('slab') === 5 && c('column') === 7 && c('window') >= 7 && c('door') === 6, info: `${n.length} Typen (Wand ${c('wall')}, Decke ${c('slab')}, Stütze ${c('column')}, Fenster ${c('window')}, Tür ${c('door')})` }; });
   const tw1 = wall([0, 0], [6000, 0], 365, { kind: 'aw', typeId: 'tw-aw365' }), tw2 = wall([0, 4000], [6000, 4000], 365, { kind: 'aw', typeId: 'tw-aw365' });
   t('Wandtyp ändern: alle Exemplare folgen (Schicht +10 mm)', () => { editType('tw-aw365', ty => { ty.layers.push({ m: 'Putz', t: 10 }); }); return { ok: tw1.t === 375 && tw2.t === 375 && tw1.typeId === 'tw-aw365', info: `${tw1.t} / ${tw2.t}` }; });
   t('Eigene Dicke löst die Wand vom Typ', () => { tw2.t = 250; relinkAll(); return { ok: !tw2.typeId && tw1.typeId === 'tw-aw365', info: `Wand 2: ${tw2.typeId || 'Eigene Maße'}` }; });
@@ -150,11 +153,175 @@ export async function runBuildingTests(api) {
     return { ok: ok && top, info: `Ansicht „${v.name}“, Oben = Grundriss` };
   });
 
-  // 11. IFC
-  t('IFC: alle Bezüge vorhanden', () => {
-    B.els.length = 0; const iw = wall([0, 0], [6000, 0], 365, { kind: 'aw', typeId: 'tw-aw365' }); B.els.push({ id: 'tifw', storey: cur(), type: 'window', host: iw.id, at: 3000, w: 1260, h: 1385, sill: 900 });
-    const ifc = ifcText(), ids = new Set([...ifc.matchAll(/^#(\d+)=/gm)].map(m => m[1])), miss = [...ifc.matchAll(/#(\d+)/g)].map(m => m[1]).filter(x => !ids.has(x));
-    return { ok: !miss.length && ifc.includes('IFCWINDOW') && ifc.includes('IFCMATERIALLAYERSET') && ifc.includes('IFCRELASSOCIATESMATERIAL'), info: `${miss.length} fehlende Bezüge, Schichtaufbau ${ifc.includes('IFCMATERIALLAYERSET') ? 'ja' : 'nein'}` };
+  // 11. Schnitthöhe, Ansichten umbenennen
+  t('Schnitthöhe kappt Körper, IFC bleibt vollständig', () => {
+    B.els.length = 0; const w = wall([0, 0], [6000, 0], 240); cam.cutH = 1200; api.buildGeom();
+    const cut = api.triCount(), top = api.maxTriZ(); cam.cutH = null; api.buildGeom(); const full = api.maxTriZ();
+    return { ok: Math.abs(top - 1200) < 1 && full > 2000, info: `höchster Punkt mit Schnitt ${Math.round(top)} mm, ohne ${Math.round(full)} mm, ${cut} Dreiecke` };
   });
+  t('Ansicht umbenennen', () => { const v = B.views[0]; const n0 = v.name; v.name = 'Grundriss EG, 1:50'; return { ok: B.views.some(x => x.name === 'Grundriss EG, 1:50'), info: `„${n0}“ → „${v.name}“` }; });
+
+  // 12. Listen, CSV, PDF
+  B.els.length = 0; B.grids.length = 0;
+  const lw1 = wall([0, 0], [6000, 0], 240, { typeId: 'tw-iwt240' }), lw2 = wall([0, 4000], [4000, 4000], 365, { kind: 'aw', typeId: 'tw-aw365' }), lwin = { id: 'tlw', storey: cur(), type: 'window', host: lw1.id, at: 3000, w: 1260, h: 1385, sill: 900 };
+  B.els.push(lwin); B.els.push({ id: 'tlr', storey: cur(), type: 'space', no: '1', name: 'Wohnen', pts: [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], seed: [3000, 2000], auto: true });
+  col([0, 0], 300); B.grids.push({ id: 'tg1', name: '1', a: [0, -1000], b: [0, 5000] }, { id: 'tg2', name: '2', a: [6000, -1000], b: [6000, 5000] });
+  t('Listen: Wände mit Summen, Sortieren und Filtern', () => {
+    const T = listTable('walls', api.listCtx(), true), V = listView(T, {}), sumLen = V.sums[T.cols.findIndex(c => c.k === 'len')];
+    const V2 = listView(T, { sort: 'len', dir: -1 }), V3 = listView(T, { filter: 'außen' });
+    return { ok: T.rows.length === 2 && near(sumLen, 10, 0.01) && V2.rows[0].id === lw1.id && V3.rows.length === 1, info: `${T.rows.length} Wände, Summe ${sumLen} m, größte zuerst: ${V2.rows[0].cells.type.t}, Filter „außen“: ${V3.rows.length}` };
+  });
+  t('Listen: Fenster, Räume, Stützen, Typen', () => {
+    const w = listTable('windows', api.listCtx(), true), r = listTable('rooms', api.listCtx(), true), c = listTable('columns', api.listCtx(), true), ty = listTable('types', api.listCtx(), true);
+    const ar = r.rows[0].cells.area.v, wa = w.rows[0].cells.area.v;
+    return { ok: w.rows.length === 1 && near(wa, 1.26 * 1.385, 0.001) && near(ar, 24, 0.001) && c.rows.length === 1 && ty.rows.length >= 20, info: `Fenster ${wa.toFixed(2)} m², Raum ${ar} m², ${c.rows.length} Stütze, ${ty.rows.length} Typen` };
+  });
+  t('CSV: Kennzeichen, Semikolon, Dezimalkomma, Summenzeile', () => {
+    const T = listTable('walls', api.listCtx(), true), csv = csvOf(T, listView(T, {})), L = csv.split('\r\n');
+    return { ok: csv.charCodeAt(0) === 0xfeff && L[0].includes(';') && L[0].includes('Länge m') && /\d,\d/.test(L[1]) && L[3].startsWith('Summe'), info: `${L.length - 1} Zeilen, Kopf: ${L[0].slice(1, 40)}…` };
+  });
+  t('PDF: gültiger Aufbau, Stempel und Maßstab', () => {
+    const r = planPdf(api.pdfCtx(), { paper: 'a3', scale: 'auto' }); if (!r) return 'kein PDF';
+    let txt = ''; for (let i = 0; i < r.bytes.length; i++) txt += String.fromCharCode(r.bytes[i]);
+    const xr = txt.lastIndexOf('\nxref\n') + 1, n = +txt.slice(xr).match(/xref\n0 (\d+)/)[1], offs = [...txt.slice(xr).matchAll(/(\d{10}) 00000 n/g)].map(m => +m[1]);
+    const okObj = offs.length === n - 1 && offs.every((o, i) => txt.slice(o, o + 12).startsWith(`${i + 1} 0 obj`));
+    return { ok: txt.startsWith('%PDF-1.4') && txt.trimEnd().endsWith('%%EOF') && okObj && txt.includes('Wohnen') && txt.includes('24,00 m') && txt.includes(`1 : ${r.den}`), info: `${r.bytes.length} Bytes, ${n - 1} Objekte, Maßstab 1 : ${r.den}` };
+  });
+
+  t('Excel: gültige Datei, Blätter, Zahlen bleiben Zahlen', () => {
+    const sheets = ['walls', 'windows', 'rooms'].map(k => { const T = listTable(k, api.listCtx(), true); return xlsxSheet(T, listView(T, {}), k); });
+    const z = unzipCheck(makeXlsx(sheets)), dp = new DOMParser(), good = Object.values(z.files).every(x => !dp.parseFromString(x, 'application/xml').querySelector('parsererror'));
+    const sh1 = z.files['xl/worksheets/sheet1.xml'] || '';
+    return { ok: z.ok && z.entries === 8 && good && /<v>\d/.test(sh1) && z.files['xl/workbook.xml'].includes('sheetId="3"') && sh1.includes('Summe'), info: `${z.entries} Teile, Prüfsummen ${z.ok ? 'stimmen' : 'FALSCH'}, ${sheets.map(x => x.rows.length).join('/')} Zeilen` };
+  });
+  t('PDF: alle Geschosse, eine Seite je Geschoss', () => {
+    B.storeys.push({ id: 'tps2', name: 'OG', elev: 3000, height: 3000 }); B.els.push({ id: 'tw2a', storey: 'tps2', type: 'wall', a: [0, 0], b: [6000, 0], t: 240, just: 'c', kind: 'iwt', h: null });
+    const r = planPdf(api.pdfCtx(), { paper: 'a4', scale: 'auto', all: true }); if (!r) return 'kein PDF';
+    let txt = ''; for (let i = 0; i < r.bytes.length; i++) txt += String.fromCharCode(r.bytes[i]);
+    const xr = txt.lastIndexOf('\nxref\n') + 1, offs = [...txt.slice(xr).matchAll(/(\d{10}) 00000 n/g)].map(m => +m[1]), okObj = offs.every((o, i) => txt.slice(o, o + 12).startsWith(`${i + 1} 0 obj`));
+    return { ok: r.pages === 2 && txt.includes('/Count 2') && okObj && txt.includes('Grundriss OG') && txt.includes('Grundriss EG'), info: `${r.pages} Seiten, ${offs.length} Objekte` };
+  });
+
+  // 13. Doppelflügeltür mit ungleichen Flügeln
+  t('Doppeltür: ungleiche Flügel, Breite ändern behält das Verhältnis', () => {
+    B.els.length = 0; const w = wall([0, 0], [8000, 0], 240), d = { id: 'tdt', storey: cur(), type: 'door', host: w.id, at: 2000, w: 1260, h: 2135, sill: 0 }; B.els.push(d);
+    d.leaves = twoLeaves(d); const a = d.leaves.map(l => l.w).join('+'); d.w = 1500; fixLeaves(d);
+    const sum = d.leaves.reduce((x, l) => x + l.w, 0);
+    return { ok: leavesOf(d).length === 2 && a === '840+420' && Math.abs(sum - 1500) < 0.2 && d.leaves[0].w === 1000 && d.leaves[1].w === 500 && doorPlates(d).length === 2, info: `${a} → ${d.leaves.map(l => l.w).join('+')}, ${doorPlates(d).length} Türblätter` };
+  });
+  t('Doppeltür als Typ: Flügelbreiten werden übernommen und gelöst', () => {
+    const d = B.els.find(e => e.id === 'tdt'); applyType(d, B.types['tt-1260u']); const ok1 = d.w === 1260 && d.leaves.map(l => l.w).join('+') === '885+375' && d.typeId === 'tt-1260u';
+    d.leaves[0].w = 800; d.leaves[1].w = 460; relinkAll(); return { ok: ok1 && !d.typeId, info: `Typ „${B.types['tt-1260u'].name}“ angewendet, nach Änderung der Flügel: ${d.typeId || 'Eigene Maße'}` };
+  });
+  t('Doppeltür in Liste und IFC', () => {
+    const d = B.els.find(e => e.id === 'tdt'), T = listTable('doors', api.listCtx(), true), cell = T.rows[0].cells.leaves.t, ifc = ifcText();
+    return { ok: cell.startsWith('2 Flügel') && ifc.includes('DOUBLE_DOOR_SINGLE_SWING') && ifc.includes('Flügelbreiten') || (cell.startsWith('2 Flügel') && ifc.includes('DOUBLE_DOOR_SINGLE_SWING') && ifc.includes('X2')), info: `${cell}; IFC Flügel ${ifc.includes('DOUBLE_DOOR_SINGLE_SWING') ? 'ja' : 'nein'}` };
+  });
+
+  // Zwischenspeicher der Ansicht: gleiches Ergebnis wie ein voller Neuaufbau, bearbeitete Geschosse werden neu gebaut
+  t('Ansicht: Zwischenspeicher liefert dasselbe wie ein Neuaufbau', () => {
+    B.els.length = 0; B.storeys.push({ id: 'tgs2', name: 'OG', elev: 3000, height: 3000 });
+    const w = wall([0, 0], [6000, 0], 240), c1 = col([0, 0], 300), sl = { id: 'tgsl', storey: 'tgs2', type: 'slab', pts: [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], t: 250 }; B.els.push(sl);
+    api.clearGeomCache(); api.buildGeom(); const s0 = api.geomSum();
+    api.buildGeom(); const s1 = api.geomSum(), st1 = api.geomStats();
+    w.b = [8000, 0]; B.els[B.els.indexOf(sl)].pts[1] = [8000, 0]; api.buildGeom(); const s2 = api.geomSum();
+    api.clearGeomCache(); api.buildGeom(); const s3 = api.geomSum();
+    return { ok: Math.abs(s0 - s1) < 1e-6 && st1.hits > 0 && Math.abs(s2 - s3) < 1e-6 && Math.abs(s2 - s1) > 1, info: `Treffer ${st1.hits}, nach Änderung ${Math.abs(s2 - s3) < 1e-6 ? 'identisch zum Neuaufbau' : 'ABWEICHUNG'}` };
+  });
+  t('Ansicht: Auswahl ändert nur das gewählte Bauteil', () => {
+    B.els.length = 0; for (let i = 0; i < 6; i++) wall([0, i * 3000], [5000, i * 3000], 240); api.clearGeomCache(); api.buildGeom(); const m0 = api.geomStats().miss;
+    api.setSel?.([B.els[2].id]); api.buildGeom(); const m1 = api.geomStats().miss - m0; api.setSel?.([]);
+    return { ok: m1 >= 1 && m1 <= 2, info: `${m1} Bauteil(e) neu gebaut von ${B.els.length}` };
+  });
+
+  // Schiefer Plan: „Ausrichten“ dreht die Unterlage, bis die gewählte Linie waagerecht liegt
+  t('Plan ausrichten: schiefe Linie wird waagerecht', () => {
+    B.underlays.length = 0; const u = { id: 'tul', storey: cur(), file: 'none', name: 'x', w: 100, h: 100, s: 10, rot: 0, alpha: 0.5, pos: [0, 1000] }; B.underlays.push(u);
+    const ang = 3.2 * Math.PI / 180; ulAlign([0, 0], [Math.cos(ang) * 4000, Math.sin(ang) * 4000]);
+    return { ok: near(u.rot, -3.2, 0.01), info: `Drehung ${u.rot}°` };
+  });
+
+  // Öffnung mit Maß ab Wandende, Kantenmaße der Decke
+  t('Öffnung ab Wandende: Abstand zum Ende bleibt bei längerer Wand', () => {
+    B.els.length = 0; const w = wall([0, 0], [6000, 0], 240), fb = { id: 'tfb', storey: cur(), type: 'window', host: w.id, at: 5000, w: 1000, h: 1200, sill: 900, ref: 'b' }, fa = { id: 'tfa', storey: cur(), type: 'window', host: w.id, at: 1000, w: 1000, h: 1200, sill: 900 }; B.els.push(fb, fa);
+    api.change(() => { w.b = [7000, 0]; });
+    return { ok: fb.at === 6000 && fa.at === 1000, info: `ab Wandende: ${fb.at} (vorher 5000), ab Wandanfang: ${fa.at}` };
+  });
+  t('Decke: Kantenlänge ändern verschiebt die gegenüberliegende Kante', () => {
+    B.els.length = 0; const sl = { id: 'tsd', storey: cur(), type: 'slab', pts: [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], t: 250 }; B.els.push(sl);
+    const D = api.slabDims(sl), d0 = D[0]; api.applyDim({ op: sl.id, kind: 'se', idx: 0, rect: d0.rect, val: d0.val }, 7000);
+    return { ok: d0.rect && D.length === 4 && sl.pts[1][0] === 7000 && sl.pts[2][0] === 7000 && sl.pts[0][0] === 0 && sl.pts[3][0] === 0, info: `Rechteck ${d0.rect ? 'erkannt' : 'nicht erkannt'}, Punkte ${sl.pts.map(p => p.join('|')).join(' ')}` };
+  });
+
+  // 14. IFC
+  t('IFC: alle Bezüge vorhanden', () => {
+    B.els.length = 0; const iw = wall([0, 0], [6000, 0], 365, { kind: 'aw', typeId: 'tw-aw365' }); B.els.push({ id: 'tifw', storey: cur(), type: 'window', host: iw.id, at: 3000, w: 1260, h: 1385, sill: 900, typeId: 'tf-1' });
+    B.els.push({ id: 'tifr', storey: cur(), type: 'space', no: '1', name: 'Raum', pts: [[200, 182.5], [5800, 182.5], [5800, 3800], [200, 3800]] });
+    const ifc = ifcText(), ids = new Set([...ifc.matchAll(/^#(\d+)=/gm)].map(m => m[1])), miss = [...ifc.matchAll(/#(\d+)/g)].map(m => m[1]).filter(x => !ids.has(x));
+    return { ok: !miss.length && ifc.includes('IFCWINDOW') && ifc.includes('IFCMATERIALLAYERSET') && ifc.includes('IFCRELASSOCIATESMATERIAL') && ifc.includes('IFCWALLTYPE') && ifc.includes('IFCWINDOWTYPE') && ifc.includes('IFCRELDEFINESBYTYPE') && ifc.includes('IFCRELSPACEBOUNDARY') && ifc.includes('Pset_BuildingStoreyCommon'), info: `${miss.length} fehlende Bezüge, Typobjekte ${ifc.includes('IFCWALLTYPE') ? 'ja' : 'nein'}, Raumbegrenzung ${ifc.includes('IFCRELSPACEBOUNDARY') ? 'ja' : 'nein'}, Geschosshöhe ${ifc.includes('Pset_BuildingStoreyCommon') ? 'ja' : 'nein'}` };
+  });
+  return R;
+}
+
+// ---------- Prüfmodelle (Dateien im Ordner pruefmodelle) ----------
+const pdfOk = bytes => {
+  let txt = ''; for (let i = 0; i < bytes.length; i++) txt += String.fromCharCode(bytes[i]);
+  const xr = txt.lastIndexOf('\nxref\n') + 1, n = +txt.slice(xr).match(/xref\n0 (\d+)/)[1], offs = [...txt.slice(xr).matchAll(/(\d{10}) 00000 n/g)].map(m => +m[1]);
+  return txt.startsWith('%PDF-1.4') && txt.trimEnd().endsWith('%%EOF') && offs.length === n - 1 && offs.every((o, i) => txt.slice(o, o + 12).startsWith(`${i + 1} 0 obj`));
+};
+export async function runBuildingModels(api) {
+  const R = [], MODELS = [
+    ['einfamilienhaus.json', { wall: 13, window: 11, door: 6, space: 7, slab: 2, column: 0, beam: 0, dbl: 1, storeys: 2 }],
+    ['buerokomplex.json', { wall: 32, window: 112, door: 8, space: 4, slab: 4, column: 96, beam: 8, dbl: 4, storeys: 4 }],
+  ];
+  const t = (Fall, fn) => { const t0 = performance.now(); try { const r = fn(); R.push({ Fall, ok: r === true || r?.ok ? 'ok' : 'FEHLER', Info: `${r?.info ?? (r === true ? '' : String(r))} · ${Math.round(performance.now() - t0)} ms` }); } catch (e) { R.push({ Fall, ok: 'FEHLER', Info: `Ausnahme: ${e.message || e}` }); } };
+  for (const [file, ex] of MODELS) {
+    let obj;
+    try { obj = await (await fetch(new URL(`./pruefmodelle/${file}`, import.meta.url), { cache: 'no-store' })).json(); } catch (e) { R.push({ Fall: `${file}: laden`, ok: 'FEHLER', Info: String(e) }); continue; }
+    const from = obj.schema ?? 'ohne Nummer', N = file.replace('.json', '');
+    api.setB(obj); const B = () => api.B, cnt = k => B().els.filter(e => e.type === k).length;
+    t(`${N}: Datei öffnen und migrieren`, () => ({ ok: B().schema === SCHEMA && !!B().types && B().els.some(e => e.typeId), info: `Schema ${from} → ${B().schema}, ${B().els.filter(e => e.typeId).length} von ${B().els.length} Bauteilen mit Typ` }));
+    t(`${N}: Bauteile gezählt`, () => { const got = { wall: cnt('wall'), window: cnt('window'), door: cnt('door'), space: cnt('space'), slab: cnt('slab'), column: cnt('column'), beam: cnt('beam'), dbl: B().els.filter(e => e.leaves?.length === 2).length, storeys: B().storeys.length }; const bad = Object.keys(ex).filter(k => got[k] !== ex[k]); return { ok: !bad.length, info: bad.length ? `abweichend: ${bad.map(k => `${k} ${got[k]} statt ${ex[k]}`).join(', ')}` : `${B().els.length} Bauteile` }; });
+    t(`${N}: Öffnungen sitzen in ihren Wänden`, () => { const bad = B().els.filter(e => (e.type === 'window' || e.type === 'door') && (() => { const w = B().els.find(x => x.id === e.host); if (!w) return true; const L = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]); return e.at - e.w / 2 < -0.5 || e.at + e.w / 2 > L + 0.5; })()); return { ok: !bad.length, info: `${bad.length} fehlerhaft` }; });
+    t(`${N}: Räume werden wieder erkannt (Fläche stimmt)`, () => {
+      let n = 0, bad = [];
+      B().els.filter(e => e.type === 'space').forEach(sp => { api.setCur(sp.storey); const r = api.detectRoom(sp.seed); n++; if (r.err) { bad.push(`${sp.name}: ${r.err}`); return; } const A = P => { let a = 0; P.forEach((p, i) => { const q = P[(i + 1) % P.length]; a += p[0] * q[1] - q[0] * p[1]; }); return Math.abs(a) / 2; }; if (Math.abs(A(r.pts) - A(sp.pts)) > A(sp.pts) * 0.02) bad.push(`${sp.name}: ${Math.round(A(r.pts) / 1e4) / 100} statt ${Math.round(A(sp.pts) / 1e4) / 100} m²`); });
+      api.setCur(B().storeys[0].id); return { ok: !bad.length, info: bad.length ? bad.join('; ') : `${n} Räume` };
+    });
+    t(`${N}: Wandstücke ohne Ausfälle`, () => { let n = 0, bad = 0; B().els.filter(e => e.type === 'wall').forEach(w => { const P = api.wallPieces(w); n += P.length; if (!P.length || P.some(p => !(p.z1 > p.z0) || p.poly.some(q => !Number.isFinite(q[0] + q[1])))) bad++; }); return { ok: bad === 0, info: `${n} Stücke, ${bad} Wände mit Fehler` }; });
+    t(`${N}: alle Listen`, () => { const bad = []; for (const [k] of LISTS) { const T = listTable(k, api.listCtx(), true); T.rows.forEach(r => T.cols.forEach(c => { const v = r.cells[c.k]?.v; if (typeof v === 'number' && !Number.isFinite(v)) bad.push(`${k}.${c.k}`); })); } return { ok: !bad.length, info: bad.length ? bad.slice(0, 4).join(', ') : `${LISTS.length} Listen ohne ungültige Zahlen` }; });
+    t(`${N}: IFC vollständig`, () => { const ifc = api.ifcText(), ids = new Set([...ifc.matchAll(/^#(\d+)=/gm)].map(m => m[1])), miss = [...ifc.matchAll(/#(\d+)/g)].map(m => m[1]).filter(x => !ids.has(x)), c = k => (ifc.match(new RegExp(`=${k}\\(`, 'g')) || []).length; return { ok: !miss.length && c('IFCWALL') === ex.wall && c('IFCDOOR') === ex.door && c('IFCWINDOW') === ex.window && c('IFCBUILDINGSTOREY') === ex.storeys, info: `${miss.length} fehlende Bezüge, ${c('IFCWALL')} Wände, ${c('IFCWINDOW')} Fenster, ${c('IFCDOOR')} Türen, ${Math.round(ifc.length / 1024)} KB` }; });
+    t(`${N}: Plan als PDF für jedes Geschoss`, () => { const bad = []; B().storeys.forEach(s => { api.setCur(s.id); const r = planPdf(api.pdfCtx(), { paper: 'a3', scale: 'auto' }); if (!r || !pdfOk(r.bytes)) bad.push(s.name); }); api.setCur(B().storeys[0].id); return { ok: !bad.length, info: bad.length ? `fehlerhaft: ${bad.join(', ')}` : `${B().storeys.length} Geschosse` }; });
+  }
+  return R;
+}
+
+// ---------- Leistung mit großem Modell ----------
+export async function runBuildingPerf(api) {
+  const R = [], B = api.B, N = 9, G = 8, SP = 5000, H = 3000;
+  B.storeys.length = 0; B.els.length = 0; B.grids.length = 0;
+  for (let s = 0; s < N; s++) B.storeys.push({ id: `ps${s}`, name: `G${s}`, elev: s * H, height: H });
+  let id = 0;
+  for (let s = 0; s < N; s++) {
+    const sid = `ps${s}`;
+    for (let i = 0; i <= G; i++) for (let j = 0; j < G; j++) {
+      const h = { id: `p${id++}`, storey: sid, type: 'wall', a: [j * SP, i * SP], b: [(j + 1) * SP, i * SP], t: i === 0 || i === G ? 365 : 240, just: 'c', kind: i === 0 || i === G ? 'aw' : 'iwt', h: null };
+      const v = { id: `p${id++}`, storey: sid, type: 'wall', a: [i * SP, j * SP], b: [i * SP, (j + 1) * SP], t: i === 0 || i === G ? 365 : 240, just: 'c', kind: i === 0 || i === G ? 'aw' : 'iwt', h: null };
+      B.els.push(h, v);
+      if (j % 2 === 0) { B.els.push({ id: `p${id++}`, storey: sid, type: i === 0 || i === G ? 'window' : 'door', host: h.id, at: 2500, w: 1260, h: 1385, sill: 900 }); }
+    }
+    for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) B.els.push({ id: `p${id++}`, storey: sid, type: 'column', p: [i * SP, j * SP], shape: 'rect', w: 300, d: 300, rot: 0, h: null });
+    B.els.push({ id: `p${id++}`, storey: sid, type: 'slab', pts: [[-300, -300], [G * SP + 300, -300], [G * SP + 300, G * SP + 300], [-300, G * SP + 300]], t: 250 });
+  }
+  api.setCur(`ps${N - 1}`);
+  const T = (Fall, limit, fn) => { const t0 = performance.now(); let info = ''; try { info = fn() ?? ''; } catch (e) { info = `Ausnahme: ${e.message || e}`; R.push({ Fall, ok: 'FEHLER', Info: info }); return; } const ms = Math.round(performance.now() - t0); R.push({ Fall, ok: ms <= limit ? 'ok' : 'FEHLER', Info: `${ms} ms (Grenze ${limit} ms)${info ? ` · ${info}` : ''}` }); };
+  R.push({ Fall: `Modell: ${B.els.length} Bauteile, ${N} Geschosse`, ok: 'ok', Info: `${B.els.filter(e => e.type === 'wall').length} Wände, ${B.els.filter(e => e.type === 'column').length} Stützen` });
+  T('Ansicht aufbauen (alle Geschosse sichtbar)', 3000, () => { api.buildGeom(); return `${api.triCount()} Dreiecke`; });
+  T('Wandstücke aller Wände', 3000, () => { let n = 0; B.els.filter(e => e.type === 'wall').forEach(w => { n += api.wallPieces(w).length; }); return `${n} Stücke`; });
+  T('Raum erkennen (ein Raum im obersten Geschoss)', 3000, () => { const r = api.detectRoom([2500, 2500]); return r.err || `${r.pts.length} Ecken`; });
+  T('Änderungsprüfung (Signaturen, Verknüpfungen)', 400, () => { api.syncSigs(); api.relinkAll(); });
+  T('Listen: Wände aller Geschosse', 1000, () => `${listTable('walls', api.listCtx(), true).rows.length} Zeilen`);
+  T('Plan als PDF (ein Geschoss)', 3000, () => `${planPdf(api.pdfCtx(), { paper: 'a3', scale: 'auto' }).bytes.length} Bytes`);
+  T('IFC-Export (alle Geschosse)', 20000, () => `${Math.round(api.ifcText().length / 1024)} KB`);
   return R;
 }

@@ -304,6 +304,31 @@ const BAU_CSS = `
 .bau .bau-vrow { display: flex; align-items: center; gap: 2px; }
 .bau .bau-vrow .bau-trow { flex: 1; }
 .bau .bau-status .bau-ss { font-variant-numeric: tabular-nums; }
+
+.bau .bau-vrow input { margin: 2px 4px; min-height: 34px; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 8px; background: var(--bg); font-size: 13px; }
+
+/* ===== Listen und Ausgabe (Version 280) ===== */
+.bau.desk .bau-dlg.wide { width: min(900px, calc(100vw - var(--rw) - var(--lw) - 40px)); }
+.bau .bau-lbar { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.bau .bau-lbar input { flex: 1; min-height: 34px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 13px; }
+.bau .bau-lwrap { overflow: auto; max-height: 56vh; border: 1px solid var(--line); border-radius: 10px; }
+.bau .bau-lt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.bau .bau-lt th { position: sticky; top: 0; z-index: 1; padding: 7px 8px; background: var(--card); border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; cursor: pointer; font-size: 11.5px; color: var(--muted); }
+.bau .bau-lt td { padding: 5px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); white-space: nowrap; }
+.bau .bau-lt .num { text-align: right; font-variant-numeric: tabular-nums; }
+.bau .bau-lt tbody tr { cursor: pointer; }
+@media (hover: hover) { .bau .bau-lt tbody tr:hover { background: var(--accent-soft); } }
+.bau .bau-lt tfoot td { position: sticky; bottom: 0; background: var(--card); border-top: 2px solid var(--line); font-weight: 750; }
+
+/* Reiter im Projektbrowser: vier Reiter nebeneinander (Version 281) */
+.bau .bau-tabs .ped-seg { display: flex; gap: 2px; }
+.bau .bau-tabs .ped-seg button { flex: 1 1 auto; min-width: 0; padding: 0 5px; font-size: 12px; white-space: nowrap; }
+
+/* Palettenbreite ziehen (Version 283) */
+.bau .bau-spl { display: none; }
+.bau.desk .bau-spl { display: block; flex: none; width: 5px; margin: 0 -2px; z-index: 3; cursor: col-resize; background: transparent; }
+.bau.desk:not(.list-open) .bau-spl[data-sp="l"] { display: none; }
+@media (hover: hover) { .bau.desk .bau-spl:hover, .bau.desk .bau-spl:active { background: var(--accent); opacity: .5; } }
 `;
 
 export { BAU_CSS };
