@@ -341,6 +341,9 @@ const BAU_CSS = `
 .bau.desk .bau-spl { display: block; flex: none; width: 5px; margin: 0 -2px; z-index: 3; cursor: col-resize; background: transparent; }
 .bau.desk:not(.list-open) .bau-spl[data-sp="l"] { display: none; }
 @media (hover: hover) { .bau.desk .bau-spl:hover, .bau.desk .bau-spl:active { background: var(--accent); opacity: .5; } }
+.bau .bau-rcmd .bau-wname { flex-direction: row; align-items: center; gap: 6px; }
+.bau .bau-rcmd .bau-wname input { width: 120px; height: 32px; }
+.bau .bau-rcmd .bau-wname span { white-space: nowrap; }
 `;
 
 export { BAU_CSS };

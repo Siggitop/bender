@@ -432,3 +432,12 @@ Siehe ROADMAP-UX, Nachtrag v290.
 
 ## 41. Version 291: Griffe auf Bauteilhöhe, Rasterstart an jeder Ecke
 Siehe ROADMAP-UX, Nachtrag v291.
+
+## 42. Versionen 292 und 293: Wand an schräger Stütze, Fang, Unterzug-Durchbruch
+Siehe ROADMAP-UX, Nachtrag v292/v293.
+
+## 43. Version 294: Gehrung nach Kantenlinien
+Siehe ROADMAP-UX, Nachtrag v294.
+
+## 44. Version 295: PDF als Vektorunterlage
+Siehe ROADMAP-UX, Nachtrag v295.

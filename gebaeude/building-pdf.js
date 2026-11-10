@@ -1,5 +1,5 @@
 // Grundriss als PDF (Vektor): kleiner PDF-Schreiber ohne Bibliothek und die Zeichnung des Geschosses. Teil von building.js.
-import { sub, add, mul, dot, len, norm, perp, fmt, fmt2, area2, centroid, clipBy } from './building-math.js';
+import { sub, add, mul, dot, len, norm, perp, fmt, fmt2, area2, centroid, clipBy, lineInPoly } from './building-math.js';
 
 const PT = 72 / 25.4, f = n => (Math.round(n * 100) / 100).toString();
 const WIN = { '–': 0x96, '—': 0x97, '„': 0x84, '“': 0x93, '”': 0x94, '€': 0x80, '≈': 0x7e, '·': 0xb7 };
@@ -48,13 +48,22 @@ const PAPER = { a4: [297, 210], a3: [420, 297] };
 const NICE = [20, 25, 50, 75, 100, 125, 150, 200, 250, 500];
 
 // ctx: { B, st, cur, wallPoly, colPoly, opPoly, wallAxis, wallOffs, gridFams, gridGroups, elLabel, hostOf, fmtDate }
-function planPdf(ctx, { paper = 'a3', scale = 'auto', all = false } = {}) {
-  const [PW, PH] = PAPER[paper] || PAPER.a3, pdf = makePdf(PW, PH), dens = [];
+// Schraffur eines Vielecks (Papier-Millimeter): parallele Linien im Winkel deg, Abstand sp
+function hatch(pdf, poly, deg, sp, opt = {}) {
+  if (poly.length < 3) return;
+  const a = deg * Math.PI / 180, d = [Math.cos(a), Math.sin(a)], n = [-d[1], d[0]], ns = poly.map(q => dot(q, n)), lo = Math.min(...ns), hi = Math.max(...ns), ds = poly.map(q => dot(q, d)), s0 = Math.min(...ds) - 1, L = Math.max(...ds) + 1 - s0;
+  for (let t = Math.ceil(lo / sp) * sp; t < hi; t += sp) lineInPoly(poly, add(mul(n, t), mul(d, s0)), mul(d, L)).forEach(([p0, p1]) => pdf.line(p0, p1, { stroke: [0.15, 0.15, 0.15], lw: 0.08, ...opt }));
+}
+// Schraffur je Werkstoff; null = keine
+const HATCH = { Mauerwerk: [[45, 1.1]], Stahlbeton: [[45, 1.6], [135, 3.2]], 'Dämmung': [[0, 1.0, [0.6, 0.5]]], Gipskarton: null, Putz: null, 'Ständerwerk': [[90, 2.4]] };
+function planPdf(ctx, { paper = 'a3', scale = 'auto', all = false, orient = 'landscape', lw = 1 } = {}) {
+  const base = PAPER[paper] || PAPER.a3, [PW, PH] = orient === 'portrait' ? [base[1], base[0]] : base, pdf = makePdf(PW, PH), dens = []; pdf.lwk = +lw || 1;
   const sids = all ? [...ctx.B.storeys].sort((a, c) => a.elev - c.elev).map(s => s.id) : [ctx.cur];
   for (const sid of sids) { const d = planPage(pdf, ctx, sid, PW, PH, scale, dens.length > 0); if (d) dens.push(d); }
   return dens.length ? { bytes: pdf.finish(), den: dens[0], dens, paper, pages: dens.length } : null;
 }
 function planPage(pdf, ctx, sid, PW, PH, scale, newPage) {
+  const LW = x => x * (pdf.lwk || 1);
   const { B, wallPoly, colPoly, wallAxis, wallOffs, gridFams, gridGroups, hostOf } = ctx, S = ctx.st(sid), M = 10, TB = 24; // Rand und Schriftfeld in mm
   const walls = B.els.filter(e => e.type === 'wall' && e.storey === sid), cols = B.els.filter(e => e.type === 'column' && e.storey === sid), ops = B.els.filter(e => (e.type === 'door' || e.type === 'window') && e.storey === sid), rooms = B.els.filter(e => e.type === 'space' && e.storey === sid);
   const pts = [...walls.flatMap(wallPoly), ...cols.flatMap(colPoly), ...B.grids.flatMap(g => [g.a, g.b])];
@@ -73,15 +82,30 @@ function planPage(pdf, ctx, sid, PW, PH, scale, newPage) {
   const MAT = { Putz: [0.93, 0.9, 0.84], Mauerwerk: [0.85, 0.6, 0.47], 'Dämmung': [0.95, 0.86, 0.45], Stahlbeton: [0.62, 0.66, 0.7], Gipskarton: [0.96, 0.96, 0.94], 'Ständerwerk': [0.84, 0.86, 0.87] };
   walls.forEach(w => {
     const Pw = wallPoly(w), ty = ctx.typeOf(w);
-    pdf.poly(Pw.map(P), { fill: [0.78, 0.78, 0.78], stroke: INK, lw: 0.25 });
+    pdf.poly(Pw.map(P), { fill: [0.78, 0.78, 0.78], stroke: INK, lw: LW(0.35) });
     if (ty?.layers?.length > 1 && w.t * k > 1.2) {
       const { d } = wallAxis(w), n = perp(d), [lo] = wallOffs(w); let o0 = lo; const lat = q => dot(sub(q, w.a), n);
       ty.layers.forEach(l => { const o1 = o0 + l.t, a0 = o0, a1 = o1, band = clipBy(clipBy(Pw, q => lat(q) - a0), q => a1 - lat(q)); if (band.length >= 3) pdf.poly(band.map(P), { fill: MAT[l.m] || [0.8, 0.8, 0.8], stroke: INK, lw: 0.08 }); o0 = o1; });
-      pdf.poly(Pw.map(P), { stroke: INK, lw: 0.3 });
+      pdf.poly(Pw.map(P), { stroke: INK, lw: LW(0.45) });
+    }
+    // Schraffur: je Schicht nach Werkstoff, sonst eine feine Schräge über die ganze Wand
+    if (w.t * k > 0.9) {
+      if (ty?.layers?.length > 1 && w.t * k > 1.2) {
+        const { d } = wallAxis(w), n = perp(d), [lo] = wallOffs(w); let o0 = lo; const lat = q => dot(sub(q, w.a), n);
+        ty.layers.forEach(l => { const a0 = o0, a1 = o0 + l.t, band = clipBy(clipBy(Pw, q => lat(q) - a0), q => a1 - lat(q)); o0 = a1; const H = HATCH[l.m]; if (H && band.length >= 3) H.forEach(([deg, sp, dash]) => hatch(pdf, band.map(P), deg, sp, dash ? { dash, lw: 0.1 } : {})); });
+      } else hatch(pdf, Pw.map(P), 45, 1.6);
     }
   });
   // Stützen
-  cols.forEach(c => pdf.poly(colPoly(c).map(P), { fill: c.shape === 'steel' ? [0.55, 0.6, 0.66] : [0.7, 0.74, 0.78], stroke: INK, lw: 0.3 }));
+  cols.forEach(c => { pdf.poly(colPoly(c).map(P), { fill: c.shape === 'steel' ? [0.35, 0.38, 0.42] : [0.82, 0.84, 0.86], stroke: INK, lw: LW(0.45) }); if (c.shape !== 'steel' && Math.min(c.w, c.d || c.w) * k > 1.2) { hatch(pdf, colPoly(c).map(P), 45, 1.6); hatch(pdf, colPoly(c).map(P), 135, 3.2); } });
+  // Treppen: Stufenlinien, Lauflinie mit Pfeil und „auf“
+  B.els.filter(e => e.type === 'stair' && e.storey === sid && ctx.stairGeo).forEach(e => {
+    const g = ctx.stairGeo(e);
+    pdf.poly(g.foot.map(P), { stroke: INK, lw: LW(0.3) });
+    g.steps.forEach(s2 => pdf.poly(s2.poly.map(P), { stroke: INK, lw: LW(0.12) }));
+    if (g.land) pdf.poly(g.land.poly.map(P), { stroke: INK, lw: LW(0.2) });
+    if (g.walk?.length > 1) { const A = P(g.walk[0]), Bq = P(g.walk.at(-1)), dd = norm(sub(Bq, A)), nn = [-dd[1], dd[0]]; pdf.circle(A, 0.7, { fill: INK }); pdf.line(A, Bq, { stroke: INK, lw: LW(0.2) }); pdf.poly([Bq, [Bq[0] - dd[0] * 2.4 + nn[0] * 0.9, Bq[1] - dd[1] * 2.4 + nn[1] * 0.9], [Bq[0] - dd[0] * 2.4 - nn[0] * 0.9, Bq[1] - dd[1] * 2.4 - nn[1] * 0.9]], { fill: INK }); pdf.text(Bq[0] + dd[0] * 2.4, Bq[1] + dd[1] * 2.4 - 0.8, 'auf', { size: 6, align: 'c' }); }
+  });
   // Türen und Fenster: Öffnung weiß, Symbole
   ops.forEach(o => {
     const w = hostOf(o); if (!w) return;
@@ -92,7 +116,7 @@ function planPage(pdf, ctx, sid, PW, PH, scale, newPage) {
       let sx = s0;
       ctx.leavesOf(o).forEach(lf => {
         const sw = lf.swing ?? 1, face = sw > 0 ? hi : lo, left = (lf.hinge || 'l') === 'l', H = add(at(left ? sx : sx + lf.w), mul(n, face)), Fr = add(at(left ? sx + lf.w : sx), mul(n, face)), Op = add(H, mul(n, sw * lf.w));
-        pdf.line(P(H), P(Op), { stroke: INK, lw: 0.2 });
+        pdf.line(P(H), P(Op), { stroke: INK, lw: LW(0.2) });
         const a0 = Math.atan2(Fr[1] - H[1], Fr[0] - H[0]), a1 = Math.atan2(Op[1] - H[1], Op[0] - H[0]); let da = a1 - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
         pdf.poly(Array.from({ length: 17 }, (_, i) => { const a = a0 + da * i / 16; return P([H[0] + Math.cos(a) * lf.w, H[1] + Math.sin(a) * lf.w]); }), { stroke: INK, lw: 0.12, close: false });
         sx += lf.w;

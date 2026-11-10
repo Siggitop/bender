@@ -5,7 +5,9 @@ import { SCHEMA, migrate } from './building-schema.js';
 import { LISTS, listTable, listView, csvOf, xlsxSheet } from './building-lists.js';
 import { makeXlsx, unzipCheck } from './building-xlsx.js';
 import { planPdf } from './building-pdf.js';
+import { clipBy, area2, sub, dot } from './building-math.js';
 import { buildPart, evalExpr, prim, meshFromGlb, packMesh } from './building-parts.js';
+import { extractVectors, buildGrid, nearSegs } from './building-pdfvec.js';
 export async function runBuildingTests(api) {
   const { B, cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType, syncSigs, updateRooms, describeStep, roomSeed, ulAlign, transformSel, rotF, mirF, moveEl, saveView, gotoView, setView, cam, leavesOf, doorPlates, twoLeaves, fixLeaves } = api;
   const R = [];
@@ -297,6 +299,109 @@ export async function runBuildingTests(api) {
     const P = { id: 'c', name: 'c', params: [], prims: [prim({ kind: 'mesh', mesh: r, col: '' }), prim({ op: 'sub', x: '50', y: '-1', z: '-1', w: '60', d: '102', h: '102' })] }, res = buildPart(P);
     return { ok: Math.abs(vol(res.out) - 500000) < 50 && Math.abs(res.mx[0] - 50) < 0.1, info: `Rauminhalt ${Math.round(vol(res.out))} (500000), Breite ${res.mx[0]}` };
   });
+  t('Wand und schräge Stütze: Wand folgt der Stützenkontur, keine Keile', () => {
+    B.els.length = 0; const ang = 40 * Math.PI / 180, d = [Math.cos(ang), Math.sin(ang)];
+    const w = wall([-4000 * d[0], -4000 * d[1]], [4000 * d[0], 4000 * d[1]], 240), c = col([0, 0], 400);
+    const K = api.colPoly(c), P = api.wallPoly(w); let inter = P; const sg = area2(K) >= 0 ? 1 : -1; K.forEach((q, i) => { const e = sub(K[(i + 1) % 4], q), nx = [e[1] * sg, -e[0] * sg]; inter = inter.length ? clipBy(inter, p => -dot(nx, sub(p, q))) : inter; });
+    const want = Math.abs(area2(P)) - (inter.length >= 3 ? Math.abs(area2(inter)) : 0), got = api.wallPieces(w).reduce((s, pc) => s + Math.abs(area2(pc.poly)), 0);
+    return { ok: Math.abs(want - got) < 5, info: `Fläche Wand ohne Stütze ${Math.round(want)} mm², Stücke ${Math.round(got)} mm²` };
+  });
+  t('Fang: Mittellinie und Mitte bei Wand mit Achse rechts', () => {
+    B.els.length = 0; const w = wall([0, 0], [6000, 0], 240, { just: 'r' });
+    const L = api.snapLines(null).filter(l => l.label === 'Wandachse'), P = api.snapPoints({}).filter(q => q.label === 'Wandmitte');
+    const ok = L.length === 1 && Math.abs(Math.abs(L[0].a[1]) - 120) < 0.5 && P.length === 1 && Math.abs(P[0].p[0] - 3000) < 0.5 && Math.abs(Math.abs(P[0].p[1]) - 120) < 0.5;
+    return { ok, info: `Mittellinie bei y=${L[0]?.a[1]}, Wandmitte ${P[0]?.p.join('|')}` };
+  });
+  t('Durchbruch im Unterzug: Volumen und Maße', () => {
+    B.els.length = 0; const bm = { id: 'tbm', storey: cur(), type: 'beam', a: [0, 0], b: [6000, 0], shape: 'rect', w: 300, bh: 500, top: 2600 }; B.els.push(bm);
+    const op = { id: 'tbo', storey: cur(), type: 'opening', host: bm.id, at: 3000, w: 600, h: 300, sill: 100 }; B.els.push(op);
+    const vol = api.wallPieces(bm).reduce((s, pc) => s + Math.abs(area2(pc.poly)) * (pc.z1 - pc.z0), 0), want = 6000 * 300 * 500 - 600 * 300 * 300;
+    const D = api.opDims(op), poly = api.footprint(op);
+    return { ok: Math.abs(vol - want) < 1000 && D.length > 0 && poly.length === 4, info: `Volumen ${Math.round(vol / 1e6)} Liter (soll ${Math.round(want / 1e6)}), ${D.length} Maße, Umriss ${poly.length} Ecken` };
+  });
+  t('Wandecke mit Achse links/rechts und verschiedener Dicke: Gehrung ohne Lücke', () => {
+    B.els.length = 0; const A = wall([0, 3000], [0, 0], 200, { just: 'r' }), C = wall([0, 0], [4000, 0], 200, { just: 'l' }), D = wall([-3000, 3000], [-3000, 0], 115), E = wall([-3000, 0], [-1000, 0], 300, { just: 'r' });
+    const key = p => `${Math.round(p[0])},${Math.round(p[1])}`, ends = (w, k) => (k ? [api.wallPoly(w)[1], api.wallPoly(w)[2]] : [api.wallPoly(w)[0], api.wallPoly(w)[3]]).map(key).sort().join('|');
+    const ok1 = ends(A, 1) === ends(C, 0), ok2 = ends(D, 1) === ends(E, 0);
+    return { ok: ok1 && ok2, info: `Ecke r/l: ${ends(A, 1)} gegen ${ends(C, 0)}; Ecke 115/300: ${ends(D, 1)} gegen ${ends(E, 0)}` };
+  });
+  t('PDF-Vektoren: Operatorliste → Strecken, Matrix, Gruppen, Fangraster', () => {
+    const OPS = { save: 1, restore: 2, transform: 3, setLineWidth: 4, setStrokeRGBColor: 5, setFillRGBColor: 6, constructPath: 7, stroke: 8, fill: 9, endPath: 10, moveTo: 11, lineTo: 12, curveTo: 13, curveTo2: 14, curveTo3: 15, closePath: 16, rectangle: 17, closeStroke: 18, fillStroke: 19, eoFill: 20, eoFillStroke: 21, closeFillStroke: 22, closeEOFillStroke: 23, setGState: 24, paintFormXObjectBegin: 25, paintFormXObjectEnd: 26 };
+    // Seitenraum → Bildpunkte: Maßstab 2, y nach unten bei Seitenhöhe 100
+    const vp = [2, 0, 0, -2, 0, 200];
+    const fn = [OPS.setStrokeRGBColor, OPS.setLineWidth, OPS.save, OPS.transform, OPS.constructPath, OPS.stroke, OPS.restore, OPS.constructPath, OPS.stroke],
+      args = [[255, 0, 0], [1.5], null, [1, 0, 0, 1, 10, 0], [[OPS.moveTo, OPS.lineTo, OPS.lineTo], [0, 0, 20, 0, 20, 30]], null, null, [[OPS.rectangle], [50, 50, 10, 10]], null];
+    const r = extractVectors(fn, args, OPS, vp);
+    const first = [r.segs[0], r.segs[1], r.segs[2], r.segs[3]];
+    // erste Strecke: (0,0)+(10,0) → (10,0), (30,0) → Bild (20,200), (60,200)
+    const ok1 = r.count === 6 && first.join() === '20,200,60,200' && r.groups.length === 1 && r.groups[0].c === '#ff0000' && Math.abs(r.groups[0].w - 3) < 0.1;
+    const g = buildGrid(r.segs), near = nearSegs(r.segs, g, 40, 201, 4), far = nearSegs(r.segs, g, 500, 500, 4);
+    return { ok: ok1 && near.length >= 1 && far.length === 0, info: `${r.count} Strecken, erste ${first.join('|')} (20|200|60|200), ${r.groups.length} Gruppe, Fang nahe ${near.length}, fern ${far.length}` };
+  });
+  t('PDF: Hochformat, Linienstärke, Schraffur und Treppe', () => {
+    B.els.length = 0; const w1 = wall([0, 0], [6000, 0], 365, { typeId: 'tw-aw365' }); wall([6000, 0], [6000, 4000], 240); col([0, 4000], 400);
+    B.els.push({ id: 'tsta', storey: cur(), type: 'stair', a: [1000, 1000], dir: [1, 0], kind: 'straight', w: 1000, g: 270, side: 1 });
+    const land = planPdf(api.pdfCtx(), { paper: 'a3' }), port = planPdf(api.pdfCtx(), { paper: 'a3', orient: 'portrait', lw: 1.5 });
+    const txt = u => Array.from(u, c => String.fromCharCode(c)).join(''), tl = txt(land.bytes), tp = txt(port.bytes);
+    const mb = s => /MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(s).slice(1).map(Number);
+    const [lw0, lh0] = mb(tl), [pw0, ph0] = mb(tp), hatchN = (tl.match(/[-\d.]+ [-\d.]+ m [-\d.]+ [-\d.]+ l\nS/g) || []).length;
+    return { ok: lw0 > lh0 && ph0 > pw0 && hatchN > 30 && tp.includes('0.4') && tl.includes('(auf)') && tp.length > 0, info: `quer ${lw0}×${lh0}, hoch ${pw0}×${ph0}, ${hatchN} Schraffurlinien, „auf“ ${tl.includes('(auf)')}` };
+  });
+  t('Ansicht: von unten, Schnittbox um Auswahl', () => {
+    B.els.length = 0; const w = wall([0, 0], [6000, 0], 240); api.setSel([w.id]);
+    api.setView('bottom'); const kb = api.viewKey(), pb = api.cam.pitch; api.setView('iso');
+    api.sboxAction('sboxsel'); const b = api.cam.sbox; api.sboxAction('sboxoff');
+    return { ok: kb === 'bottom' && pb < -1.5 && b && b.x0 < 0 && b.x1 > 6000 && b.z1 > 2500 && !api.cam.sbox, info: `Unten ${kb} (Neigung ${pb.toFixed(2)}), Box ${b ? [b.x0, b.x1, b.y0, b.y1, b.z0, b.z1].join('|') : '–'}` };
+  });
+  t('Gespeicherte Wandverbindungen: Nachbarwand folgt, Verschieben löst nicht', () => {
+    B.els.length = 0; const A = wall([0, 0], [6000, 0], 240), Bw = wall([6000, 0], [6000, 4000], 240), C = wall([0, 4000], [0, 0], 240);
+    api.change(() => { Bw.a = [6500, 0]; Bw.b = [6500, 4000]; });
+    const ok1 = Math.abs(A.b[0] - 6500) < 0.1;
+    api.setSel([Bw.id]); api.transformSel(x => [x[0] + 300, x[1]], { deg: 0 }, [Bw.id]);
+    const ok2 = Math.abs(A.b[0] - 6500) < 0.1 && Math.abs(Bw.a[0] - 6800) < 0.1;
+    return { ok: ok1 && ok2 && A.jn && Array.isArray(A.jn.b), info: `Nachbar folgt ${ok1} (${A.b[0]}), nach Verschieben bleibt ${ok2}` };
+  });
+  t('Maße: Raum verschiebt Folgewand, Wandende-Abstand, Dachkante', () => {
+    B.els.length = 0; wall([0, 0], [6000, 0], 240); wall([6000, 0], [6000, 4000], 240); wall([6000, 4000], [0, 4000], 240); wall([0, 4000], [0, 0], 240);
+    const sp = { id: 'trd', storey: cur(), type: 'space', pts: [[120, 120], [5880, 120], [5880, 3880], [120, 3880]] }; B.els.push(sp);
+    const rd = api.roomDims(sp), d0 = rd[0]; api.applyDim({ op: sp.id, kind: 're', idx: 0, val: d0.val }, d0.val + 1000);
+    const w2 = B.els.filter(e => e.type === 'wall'), right = w2[1], top = w2[0], ok1 = Math.abs(right.a[0] - 7000) < 0.1 && Math.abs(top.b[0] - 7000) < 0.1;
+    B.els.length = 0; const A = wall([0, 0], [2000, 0], 240); wall([5000, -1000], [5000, 1000], 240);
+    const e1 = api.wallEndDims(A).find(m => m.kind === 'eb'); api.applyDim({ op: A.id, kind: 'eb', dir: e1.dir, val: e1.val }, 1000);
+    const ok2 = Math.abs(e1.val - 2880) < 1 && Math.abs(A.b[0] - 3880) < 0.5;
+    B.els.length = 0; const rf = { id: 'trf', storey: cur(), type: 'roof', pts: [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], t: 200, base: 2700, kind: 'flat', par: { h: 0, w: 240, o: 0 }, over: 0 }; B.els.push(rf);
+    const sd = api.slabDims(rf); api.applyDim({ op: rf.id, kind: 'se', idx: 0, rect: sd[0].rect, val: sd[0].val }, 7000);
+    const ok3 = sd.length === 4 && rf.pts[1][0] === 7000 && rf.pts[2][0] === 7000;
+    return { ok: ok1 && ok2 && ok3, info: `Raum ${ok1} (rechte Wand x=${right.a[0]}), Wandende ${ok2} (Ende x=${A.b[0]}), Dachkante ${ok3}` };
+  });
+  t('Rand folgt den Wänden und Höhen als Bezug', () => {
+    B.els.length = 0; const w1 = wall([0, 0], [6000, 0], 240), w2 = wall([6000, 0], [6000, 4000], 240), w3 = wall([6000, 4000], [0, 4000], 240), w4 = wall([0, 4000], [0, 0], 240);
+    const sl = { id: 'tbs', storey: cur(), type: 'slab', t: 250, pts: api.wallPoly(w1).slice(0, 1).concat([[6120, -120], [6120, 4120], [-120, 4120]]) }; sl.pts[0] = [-120, -120]; B.els.push(sl);
+    api.bindMake(sl); const nb = sl.bind.filter(Boolean).length;
+    api.change(() => { w2.a = [7000, 0]; w2.b = [7000, 4000]; });
+    const ok1 = nb === 4 && Math.abs(sl.pts[1][0] - 7120) < 1 && Math.abs(sl.pts[2][0] - 7120) < 1 && Math.abs(sl.pts[0][0] + 120) < 1;
+    const s0 = B.storeys.find(x => x.id === cur()); const up = { id: 'tup', name: 'OG', elev: s0.elev + s0.height, height: 2750 }; B.storeys.push(up);
+    const hw = wall([1000, 1000], [3000, 1000], 240); hw.topRef = { s: 'tup', off: -250 }; const z1 = api.zOf(hw)[1];
+    up.elev += 200; const z2 = api.zOf(hw)[1];
+    return { ok: ok1 && Math.abs(z1 - (s0.elev + s0.height - 250)) < 1 && Math.abs(z2 - z1 - 200) < 1, info: `${nb} Ecken gebunden, Rand folgt ${ok1}; OK ${z1} → ${z2} nach Geschosshöhe +200` };
+  });
+  t('Mehrere Fenster gleichzeitig bearbeiten, Griffe, Raster-Befehl', () => {
+    B.els.length = 0; const w = wall([0, 0], [10000, 0], 240), mk = (id, at) => { const f = { id, storey: cur(), type: 'window', host: w.id, at, w: 1000, h: 1200, sill: 900 }; B.els.push(f); return f; };
+    const f1 = mk('tw1', 2000), f2 = mk('tw2', 5000), f3 = mk('tw3', 8000); api.setSel([f1.id, f2.id, f3.id]);
+    api.winEdit(f1, c => { c.frame = 95; });
+    const ok1 = f1.cfg.frame === 95 && f2.cfg.frame === 95 && f3.cfg.frame === 95;
+    const fu = { id: 'thf', storey: cur(), type: 'furn', p: [3000, 3000], partId: (api.ensureParts(), Object.keys(B.parts)[0]), pv: {}, rot: 0, z: 0 }, sl = { id: 'ths', storey: cur(), type: 'slab', t: 250, pts: [[0, 0], [5000, 0], [5000, 4000], [0, 4000]] }, st0 = { id: 'tht', storey: cur(), type: 'stair', a: [0, 0], dir: [1, 0], kind: 'straight', w: 1000, g: 270, side: 1 }; B.els.push(fu, sl, st0);
+    const hs = id => { api.setSel([id]); return api.handles().map(h => h.k).join(','); };
+    const hf = hs(fu.id), hl = hs(sl.id), hst = hs(st0.id);
+    const ok2 = hf.includes('rot') && /e0,e1,e2,e3/.test(hl) && hst.includes('sd');
+    api.startCmd('gridgen'); const ok3 = true; api.makeGrid([6000, 6000], [5000]); const gN = B.grids.length;
+    return { ok: ok1 && ok2 && ok3 && gN === 5, info: `3 Fenster ${ok1}, Griffe Einbauteil [${hf}], Decke [${hl}], Treppe [${hst}], Raster ${gN} Achsen` };
+  });
+  t('Flächenfang in 3D beim Zeichnen: auf der Wandfläche', () => {
+    B.els.length = 0; wall([0, 0], [8000, 0], 240); api.setView('iso'); api.fitView(); api.startCmd('wall');
+    const s0 = api.P3([3000, -120, 1000]), r = api.snapAt(s0[0], s0[1], {}); api.startCmd('sel');
+    return { ok: !!r && /Wandfläche/.test(r.label) && Math.abs(r.p[1] + 120) < 2 && Math.abs(r.p[0] - 3000) < 400, info: r ? `${r.label} bei ${r.p.map(Math.round).join('|')}` : 'kein Fang' };
+  });
   t('Einbauteil: platzieren, Maß ändern, Fläche und Höhe', () => {
     B.els.length = 0; api.ensureParts();
     const P = Object.values(B.parts).find(p => p.name === 'Regal'), f = { id: 'tfu', storey: cur(), type: 'furn', p: [2000, 1000], partId: P.id, pv: {}, rot: 0, z: 0 }; B.els.push(f);
@@ -332,6 +437,14 @@ export async function runBuildingTests(api) {
   });
 
   // 14. IFC
+  t('IFC: Raumbegrenzung mit Fläche, Schichtaufbau am Typobjekt', () => {
+    B.els.length = 0; const iw = wall([0, 0], [6000, 0], 365, { kind: 'aw', typeId: 'tw-aw365' }); wall([6000, 0], [6000, 4000], 365, { kind: 'aw', typeId: 'tw-aw365' }); wall([6000, 4000], [0, 4000], 365, { kind: 'aw', typeId: 'tw-aw365' }); wall([0, 4000], [0, 0], 365, { kind: 'aw', typeId: 'tw-aw365' });
+    B.els.push({ id: 'tisp', storey: cur(), type: 'space', no: '1', name: 'Raum', pts: [[182.5, 182.5], [5817.5, 182.5], [5817.5, 3817.5], [182.5, 3817.5]] });
+    const ifc = ifcText(), ids = new Set([...ifc.matchAll(/^#(\d+)=/gm)].map(m => m[1])), miss = [...ifc.matchAll(/#(\d+)/g)].map(m => m[1]).filter(x => !ids.has(x));
+    const nb = (ifc.match(/IFCRELSPACEBOUNDARY\([^;]*#\d+,\.PHYSICAL\./g) || []).length, assoc = ifc.match(/IFCRELASSOCIATESMATERIAL\([^;]*\)/g) || [];
+    const onType = assoc.some(x => { const m = /\(\$,\$,\$,\((#\d+)\),/.exec(x) || /,\$,\$,\$,\((#\d+)\)/.exec(x); return m && new RegExp(`${m[1]}=IFCWALLTYPE`).test(ifc); });
+    return { ok: !miss.length && ifc.includes('IFCCONNECTIONSURFACEGEOMETRY') && ifc.includes('IFCCURVEBOUNDEDPLANE') && nb >= 4 && onType, info: `${miss.length} fehlende Bezüge, ${nb} Raumbegrenzungen mit Fläche, Schichtaufbau am Wandtyp ${onType}` };
+  });
   t('IFC: alle Bezüge vorhanden', () => {
     B.els.length = 0; const iw = wall([0, 0], [6000, 0], 365, { kind: 'aw', typeId: 'tw-aw365' }); B.els.push({ id: 'tifw', storey: cur(), type: 'window', host: iw.id, at: 3000, w: 1260, h: 1385, sill: 900, typeId: 'tf-1' });
     B.els.push({ id: 'tifr', storey: cur(), type: 'space', no: '1', name: 'Raum', pts: [[200, 182.5], [5800, 182.5], [5800, 3800], [200, 3800]] });
