@@ -210,7 +210,7 @@ const BAU_CSS = `
 .bau .ped-head, .bau .ped-list, .bau .ped-info { z-index: 2; }
 .bau.desk { display: flex; flex-direction: column; --rw: 330px; --lw: 280px; }
 .bau.desk .bau-top { display: flex; flex-direction: column; flex: none; background: var(--card); border-bottom: 1px solid var(--line); z-index: 5; position: relative; }
-.bau.desk .ped-head { position: static; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.bau.desk .ped-head { display: none; }
 .bau.desk .ped-head .bau-titlebtn { margin: 0 auto; }
 .bau.desk .bau-rib { display: block; }
 .bau .bau-rtabs { display: flex; align-items: flex-end; gap: 2px; padding: 4px 10px 0; }
@@ -218,9 +218,21 @@ const BAU_CSS = `
 .bau .bau-rtab.on { color: var(--text); border-bottom-color: var(--accent); background: var(--accent-soft); }
 .bau .bau-rtab.ctx { margin-left: 14px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .bau .bau-rtab.ctx.on { background: var(--accent-soft); }
-.bau .bau-rtab.ctx:first-of-type { margin-left: auto; }
+.bau .bau-rtab.ctx.cmd { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.bau .bau-rundo { display: flex; gap: 2px; margin-right: 8px; align-self: center; }
+.bau .bau-ru { width: 30px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text); display: grid; place-items: center; }
+.bau .bau-ru svg { width: 18px; height: 18px; }
+.bau .bau-ru:disabled { opacity: .35; }
+@media (hover: hover) { .bau .bau-ru:not(:disabled):hover { background: var(--accent-soft); } }
+.bau .bau-rtr { margin-left: auto; display: flex; align-items: center; gap: 4px; align-self: center; }
+.bau .bau-rname, .bau .bau-rst { height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text); font-size: 13px; font-weight: 650; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bau .bau-rname { color: var(--muted); font-weight: 600; }
+@media (hover: hover) { .bau .bau-rname:hover, .bau .bau-rst:hover { background: var(--accent-soft); } }
+.bau.desk .bau-stpop { top: 40px; left: auto; right: 12px; transform: none; }
+.bau .bau-rcmd { flex: 1; display: flex; align-items: center; min-width: 0; }
+.bau .bau-rcmd .ped-cmd { position: static; transform: none; flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-start; border: 0; box-shadow: none; border-radius: 0; background: transparent; padding: 0 4px; max-width: none; max-height: 100%; overflow-y: auto; }
 @media (hover: hover) { .bau .bau-rtab:not(.on):hover { background: var(--bg); } }
-.bau .bau-rpanel { display: flex; align-items: stretch; gap: 0; min-height: 88px; padding: 6px 10px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--accent-soft) 35%, var(--card)); overflow-x: auto; }
+.bau .bau-rpanel { display: flex; align-items: stretch; gap: 0; height: 100px; box-sizing: border-box; min-height: 100px; padding: 6px 10px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--accent-soft) 35%, var(--card)); overflow-x: auto; }
 .bau .bau-top.rib-off .bau-rpanel { display: none; }
 .bau .bau-rg { display: flex; flex-direction: column; justify-content: space-between; padding: 0 10px; border-right: 1px solid var(--line); }
 .bau .bau-rg:last-child { border-right: 0; }
@@ -231,7 +243,7 @@ const BAU_CSS = `
 .bau .bau-rb.on { background: var(--accent); color: #fff; }
 .bau .bau-rb:disabled { opacity: .38; }
 @media (hover: hover) { .bau .bau-rb:not(.on):not(:disabled):hover { background: var(--accent-soft); } }
-.bau.desk .bau-opt { display: flex; flex: none; align-items: center; min-height: 46px; background: var(--card); border-bottom: 1px solid var(--line); z-index: 4; position: relative; }
+.bau.desk .bau-opt { display: none; flex: none; align-items: center; min-height: 46px; background: var(--card); border-bottom: 1px solid var(--line); z-index: 4; position: relative; }
 .bau.desk .bau-opt:has(.ped-cmd[hidden]) { display: none; }
 .bau.desk .bau-opt .ped-cmd { position: static; transform: none; flex: 1; justify-content: flex-start; border: 0; box-shadow: none; border-radius: 0; background: transparent; padding: 5px 12px; max-width: none; }
 .bau.desk .bau-main { display: flex; flex: 1; min-height: 0; }

@@ -36,7 +36,6 @@ export async function openBuilding(env) {
       <button class="flbtn" data-b="undo" title="Rückgängig" aria-label="Rückgängig">${SVG(IC.undo)}</button>
       <button class="flbtn" data-b="redo" title="Wiederholen" aria-label="Wiederholen">${SVG(IC.redo)}</button>
       <button class="ped-title bau-titlebtn" data-b="stpick" title="Geschoss wechseln (Bild auf/ab)"></button>
-      <button class="flbtn primary" data-b="done" title="Fertig" aria-label="Fertig">${SVG(IC.ok)}</button>
     </div>
       <div class="bau-rib"></div>
       <div class="bau-opt"></div>
@@ -2868,15 +2867,24 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     const dis = (b.sel && !selIds().length && !sel?.grid) || (b.ul && !curUl()) ? ' disabled' : '';
     return `<button class="bau-rb${on ? ' on' : ''}" ${attr} title="${esc(b.l)}"${dis}>${SVG(IC[b.ic] || IC.more)}<span>${esc(b.l)}</span></button>`;
   };
+  let ribWasCmdT = null, ribBefore = 1;
   function renderRibbon() {
     if (!desk) return;
-    const ct = ctxTab();
+    optEl.appendChild(cmdEl); // Befehlsleiste parken, damit sie beim Neuaufbau des Menübands nicht verloren geht
+    const ct = ctxTab(), cmdName = cmd ? (TYPE_NAME[cmd.t] || MORE.find(m => m[0] === cmd.t)?.[1] || (cmd.t === 'open' ? 'Öffnung' : cmd.t)) : null;
+    // Ein neuer Befehl öffnet seinen Reiter (Optionen und Eingaben), danach geht es zum vorigen Reiter zurück
+    if (cmd && cmd.t !== ribWasCmdT) { if (ribTab !== 101) ribBefore = ribTab === 100 ? ribPrev : ribTab; ribTab = 101; }
+    if (!cmd && ribWasCmdT && ribTab === 101) ribTab = ribBefore;
+    ribWasCmdT = cmd ? cmd.t : null;
     if (ribTab === 100 && !ct) ribTab = ribPrev;
-    const tabs = [...RIB.map(([n]) => n)], idx = Math.min(ribTab, tabs.length - 1), ctxOn = ct && ribTab === 100;
-    const cur2 = ctxOn ? ct : RIB[idx];
-    ribEl.innerHTML = `<div class="bau-rtabs">${RIB.map(([n], i) => `<button class="bau-rtab${!ctxOn && i === idx ? ' on' : ''}" data-rtab="${i}">${esc(n)}</button>`).join('')}${ct ? `<button class="bau-rtab ctx${ctxOn ? ' on' : ''}" data-rtab="100">${esc(ct[0])}</button>` : ''}</div>
-      <div class="bau-rpanel">${cur2[1].map(([gn, bs]) => `<div class="bau-rg"><div class="bau-rbs">${bs.map(ribBtn).join('')}</div><small>${esc(gn)}</small></div>`).join('')}</div>`;
-    topEl.classList.toggle('rib-off', ribOff);
+    if (ribTab === 101 && !cmd) ribTab = ribBefore;
+    const tabs = [...RIB.map(([n]) => n)], idx = Math.min(ribTab, tabs.length - 1), cmdOn = !!cmd && ribTab === 101, ctxOn = ct && ribTab === 100;
+    const cur2 = ctxOn ? ct : RIB[idx], s0 = curSt();
+    ribEl.innerHTML = `<div class="bau-rtabs"><span class="bau-rundo"><button class="bau-ru" data-b="undo" title="Rückgängig (Strg+Z)" aria-label="Rückgängig">${SVG(IC.undo)}</button><button class="bau-ru" data-b="redo" title="Wiederholen (Strg+Shift+Z)" aria-label="Wiederholen">${SVG(IC.redo)}</button></span>${RIB.map(([n], i) => `<button class="bau-rtab${!ctxOn && !cmdOn && i === idx ? ' on' : ''}" data-rtab="${i}">${esc(n)}</button>`).join('')}${ct ? `<button class="bau-rtab ctx${ctxOn ? ' on' : ''}" data-rtab="100">${esc(ct[0])}</button>` : ''}${cmd ? `<button class="bau-rtab ctx cmd${cmdOn ? ' on' : ''}" data-rtab="101">${esc(cmdName)}</button>` : ''}<span class="bau-rtr"><button class="bau-rname" data-dlg="docs" title="Gebäude öffnen, neu, sichern, laden">${esc(B.name || 'Gebäude')}</button><button class="bau-rst" data-b="stpick" title="Geschoss wechseln (Bild auf/ab)">${esc(s0.name)} ▾</button></span></div>
+      <div class="bau-rpanel">${cmdOn ? '<div class="bau-rcmd"></div>' : cur2[1].map(([gn, bs]) => `<div class="bau-rg"><div class="bau-rbs">${bs.map(ribBtn).join('')}</div><small>${esc(gn)}</small></div>`).join('')}</div>`;
+    const slot = ribEl.querySelector('.bau-rcmd'); if (slot) slot.appendChild(cmdEl);
+    root.querySelectorAll('[data-b="undo"]').forEach(b => { b.disabled = !undo.length; }); root.querySelectorAll('[data-b="redo"]').forEach(b => { b.disabled = !redo.length; });
+    topEl.classList.toggle('rib-off', ribOff && !cmdOn);
     topEl.style.setProperty('--top-h', `${topEl.offsetHeight}px`);
   }
   function renderStatus() {
@@ -2923,7 +2931,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     moreEl.hidden = !moreOpen;
     $('[data-b="view"]').innerHTML = SVG(cam.plan ? IC.iso : IC.plan);
     $('[data-b="view"]').title = cam.plan ? '3D (V)' : 'Grundriss (V)';
-    $('[data-b="undo"]').disabled = !undo.length; $('[data-b="redo"]').disabled = !redo.length;
+    root.querySelectorAll('[data-b="undo"]').forEach(b => { b.disabled = !undo.length; }); root.querySelectorAll('[data-b="redo"]').forEach(b => { b.disabled = !redo.length; });
     renderList(); renderCmd(); renderInfo(); renderDlg(); renderRibbon(); renderStatus();
   }
   function setCurrent(id, keepSel) {
@@ -3594,7 +3602,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (!ctxm.hidden && !e.target.closest('.bau-ctxm')) ctxm.hidden = true;
     const hb = e.target.closest('[data-hist]'); if (hb) { const k = +hb.dataset.hist; ctxm.hidden = true; for (let i = 0; i < k; i++) if (!undoRedo('undo')) break; env.toast(`${k} Schritt${k === 1 ? '' : 'e'} zurück.`); return; }
     const rt = e.target.closest('[data-rtab]');
-    if (rt) { const v = +rt.dataset.rtab; if (e.detail > 1 && v === ribTab) ribOff = !ribOff; else { if (v === 100 && ribTab !== 100) ribPrev = ribTab; ribTab = v; if (ribOff && e.detail <= 1) ribOff = false; } try { localStorage.setItem('biege.bau.rib', String(ribTab === 100 ? ribPrev : ribTab)); localStorage.setItem('biege.bau.riboff', ribOff ? '1' : '0'); } catch {} renderRibbon(); return; }
+    if (rt) { const v = +rt.dataset.rtab; if (e.detail > 1 && v === ribTab) ribOff = !ribOff; else { if ((v === 100 || v === 101) && ribTab < 100) ribPrev = ribTab; if (v === 100 && ribTab === 101) ribPrev = ribBefore; ribTab = v; if (ribOff && e.detail <= 1) ribOff = false; } try { localStorage.setItem('biege.bau.rib', String(ribTab >= 100 ? ribPrev : ribTab)); localStorage.setItem('biege.bau.riboff', ribOff ? '1' : '0'); } catch {} renderRibbon(); return; }
     const lh = e.target.closest('[data-lsort]');
     if (lh && dlg?.kind === 'list') { dlg.dir = dlg.sort === lh.dataset.lsort ? -(dlg.dir || 1) : 1; dlg.sort = lh.dataset.lsort; renderDlg(); return; }
     const lr = e.target.closest('[data-lrow]');

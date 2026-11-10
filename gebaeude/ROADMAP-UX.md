@@ -495,3 +495,8 @@ Im Maßfeld von Stütze, Wanddurchbruch (Abstand zur nächsten Wandfläche/Achse
 - **Ausrichten** (Menüband Start/Ändern, Knopf „Ausrichten“): mehrere Bauteile wählen, das zuerst gewählte bleibt stehen; linke, rechte, obere, untere Kanten oder Mitte (waagerecht/senkrecht) des Umrisses werden angeglichen (`alignSel`). Öffnungen folgen ihrer Wand, Treppen-Deckenöffnungen werden nachgeführt.
 - **Drehen/Spiegeln** gilt jetzt auch für Treppe (Richtung, Wendeseite), Dach (Kantenfolge beim Spiegeln) und Rasterdecke (Ursprung, Raster bei 90°).
 - Weiter offen: siehe Abschnitt 17 (Phase 1–7); Selbsttest 45/45.
+
+## Nachtrag v290: Kopfleiste und Optionsleiste ins Menüband
+- **Kopfleiste** (Projektmanager, Gebäude, Rückgängig, Wiederholen, Geschoss, Fertig) entfällt am Desktop. Rückgängig/Wiederholen sitzen links in der Reiterzeile, Gebäudename (öffnet das Gebäude-Menü) und Geschoss-Wechsler rechts. „Fertig“ (App schließen) ist überall gestrichen; auf Telefon und iPad bleibt die schmale Kopfleiste ohne diesen Knopf.
+- **Befehlsoptionen** (früher die Zusatzleiste unter dem Menüband) erscheinen als eigener Reiter mit dem Namen des Befehls („Decke“, „Wand“ …) und werden beim Start eines Befehls geöffnet; nach Ende des Befehls geht es zum vorigen Reiter zurück. Die Menübandfläche hat feste Höhe, der Plan springt und zeichnet sich dadurch nicht mehr neu.
+- Ist das Menüband eingeklappt, öffnet ein laufender Befehl es, solange er läuft.

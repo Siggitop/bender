@@ -426,3 +426,6 @@ Siehe ROADMAP-UX, Nachtrag v286.
 - **Bibliothek**: Bauteile liegen zusätzlich in einer gerätweiten Bibliothek (Dateiablage `partlib`), Austausch als Datei (mit Netzdaten).
 - **GLB**: Farbe je Dreieck aus dem Werkstoff (Originalfarben, überschreibbar), Ausschneiden mit Abziehkörpern bis 6000 Dreiecke (das Netz sollte geschlossen sein).
 - Weiter offen: Texturen der GLB, Fangen im Editor auf Mitten/Rundungen, Bibliothek über Geräte hinweg (nur per Datei), Symbole für Einbauteile als eigene Plandarstellung.
+
+## 40. Version 290: Kopfleiste entfernt, Befehlsoptionen als Menüband-Reiter
+Siehe ROADMAP-UX, Nachtrag v290.
