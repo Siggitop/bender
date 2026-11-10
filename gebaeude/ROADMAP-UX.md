@@ -519,3 +519,25 @@ Jetzt (`wallPoly`): Innenkante trifft Innenkante, Außenkante trifft Außenkante
 - **Anzeige:** Umschalter „Vektor / Beides / Bild“ (Palette und Unterlagen-Dialog). Vektoren bleiben in jedem Zoom scharf; sehr dunkle Striche nehmen die Textfarbe des Themas an, weiße Striche und Flächen entfallen. Text und Schraffuren der PDF kommen nur über das Bild („Beides“, „Bild“).
 - **Fangen:** Endpunkte und Linien der PDF (nur nahe dem Zeiger, über ein Raster aus Zellen; höchstens 40 Strecken) wirken wie Endpunkte, Kanten und Schnittpunkte: „Unterlage Endpunkt“, „auf Unterlage“, Schnitte, Verlängerungen, Lot. Das gilt auch beim Kalibrieren.
 - Grenzen: höchstens 600.000 Strecken (danach Hinweis „gekürzt“), nur Seite 1, Text nicht als Vektor, gescannte PDFs haben keine Vektoren (Hinweis, nur Bild). Weiterhin lädt pdf.js beim ersten PDF aus dem Internet (cdnjs).
+
+## Nachtrag v296 bis v300: Abarbeitung der verbleibenden Punkte
+Stand nach Auswahl durch den Nutzer; alles andere wurde verworfen.
+
+| Punkt | Stand |
+|---|---|
+| PDF: Schraffuren, Treppen, Hochformat, Linienstärken (v296) | **fertig:** Schraffur je Werkstoff (Mauerwerk 45°, Stahlbeton gekreuzt, Dämmung gestrichelt, Ständerwerk senkrecht, Stützen), Treppen mit Stufen, Lauflinie, Pfeil und „auf“, Papier A4/A3 quer oder hoch, Linienstärke fein/normal/kräftig. |
+| IFC: Raumbegrenzung mit Geometrie, Schichtaufbau am Typobjekt (v297) | **fertig:** Je Raumkante und berührendem Bauteil eine `IFCRELSPACEBOUNDARY` mit `IFCCONNECTIONSURFACEGEOMETRY` (senkrechte `IFCCURVEBOUNDEDPLANE` über die Überdeckung). `IFCMATERIALLAYERSET` hängt am Typobjekt (`IfcWallType` …), nicht mehr an den Exemplaren. |
+| Ansicht: von unten, Würfel ziehen, Schnittbox (v298) | **fertig:** Ansicht „Unten“ (Würfel, Leiste, Menüband, Ziehen bis −90°); Ziehen am Würfel dreht die Ansicht; Schnittbox (Dialog „Schnittbox“: um Auswahl, um Geschoss, sechs Grenzen) schneidet im Fragment-Shader, Umriss gestrichelt, in gespeicherten Ansichten enthalten. |
+| Maße: Raum, Dach, Wandende-Abstände (v299) | **fertig bis auf Festsetzen beim Raum:** Dachkanten wie Deckenkanten (festsetzbar); Abstand ab Wandanfang/-ende bis zur nächsten Fläche (festsetzbar); Raummaße verschieben die Wand an der Folgekante, Nachbarwände wandern mit. **Raummaße lassen sich nicht festsetzen** (der Raumumriss wird verzögert nachgeführt). |
+| Höhen als Bezug plus Versatz (v299) | **fertig für Wände und Stützen:** Oberkante/Unterkante als „OK Rohdecke <Geschoss> + Versatz“ (`topRef`, `baseRef`); folgt, wenn sich Geschosshöhen ändern. Nicht für Träger, Decken, Dächer. |
+| Allgemeine Wandverbindungen speichern (v299) | **fertig:** `w.jn` hält die verbundenen Enden; Änderungen (Maße, Eingaben) ziehen die Nachbarenden mit. Verschieben, Kopieren, Drehen, Ausrichten lösen die Verbindung nicht auf, sondern berechnen sie neu. T-Stöße werden nicht gespeichert. |
+| Decken- und Dachränder folgen den Wänden (v299) | **fertig als Bindung:** Schalter „Rand folgt den Wänden“ bindet jeden Eckpunkt an die nächste Wandecke (bis 300 mm). Keine automatische Neuermittlung des Umrisses. |
+| Einheitliche Griffe (v300) | **teilweise:** Drehgriff für Stütze, Einbauteil und Treppenrichtung; Kantengriffe (Kante parallel verschieben) für Decke und Dach. Nicht vereinheitlicht: Aussehen und Verhalten aller übrigen Griffe. |
+| Flächenfang in 3D beim Zeichnen (v300) | **fertig:** In 3D rastet der Zeiger beim Zeichnen auf senkrechten Flächen (Wand, Stütze) ein; Punkt liegt auf der Fläche. |
+| Mehrere Fenster, gemeinsame Werte (v300) | **fertig:** Der Fenster-Editor gilt für alle gewählten Fenster (Größe, Aufbau, Vorlagen). Gemeinsame Werte für Stützen (B, T, Höhe, Drehung), Träger, Einbauteile, Wand+Stütze gemischt. |
+| „Raster erzeugen“ als Befehls-Reiter (v300) | **fertig:** eigener Reiter mit Abständen, Vorschau und „Erzeugen“. Einheitliche Bedienelemente: nur die Eingabefelder im Befehls-Reiter angeglichen. |
+| Aufteilung von `building.js` mit ausdrücklichem Zustand | **nicht gemacht.** `openBuilding` hält den ganzen Zustand in einer Hülle (rund 4.500 Zeilen); eine Aufteilung berührt fast jede Zeile und braucht eine eigene, schrittweise Umstellung (Kontextobjekt wie bei Listen und PDF). |
+
+## Nachtrag v301: Fang an der Vektorunterlage beim Kalibrieren
+- **Ursache:** Die Befehle Kalibrieren, Plan ausrichten und Unterlage verschieben nahmen den Punkt unter dem Zeiger ohne jeden Fang (nur Ortho). Der Fang an den PDF-Vektoren (v295) wirkte deshalb nur bei anderen Befehlen.
+- **Jetzt:** Diese Befehle fangen wie alle anderen (Endpunkte, Mitten, Linien, Schnitte, Fluchten, Ortho ab dem ersten Punkt). Neu: **Mitten** der PDF-Linien („Unterlage Mitte“, folgt dem Schalter „Mitten“); Endpunkte folgen dem Schalter „Endpunkte und Ecken“.

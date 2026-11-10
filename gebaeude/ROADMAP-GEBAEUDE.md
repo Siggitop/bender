@@ -441,3 +441,9 @@ Siehe ROADMAP-UX, Nachtrag v294.
 
 ## 44. Version 295: PDF als Vektorunterlage
 Siehe ROADMAP-UX, Nachtrag v295.
+
+## 45. Versionen 296 bis 300: PDF, IFC, Ansicht, Maße, Höhenbezug, Verbindungen, Griffe, Mehrfachbearbeitung
+Siehe ROADMAP-UX, Nachtrag v296 bis v300.
+
+## 46. Version 301: Fang an der Vektorunterlage beim Kalibrieren, Mitten
+Siehe ROADMAP-UX, Nachtrag v301.

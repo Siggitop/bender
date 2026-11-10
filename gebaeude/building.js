@@ -1534,7 +1534,8 @@ void main() { if (uBox > 0.5 && (vW.x < uBmin.x || vW.x > uBmax.x || vW.y < uBmi
       const k = i * 4, A = w(e.segs[k], e.segs[k + 1]), Bq = w(e.segs[k + 2], e.segs[k + 3]);
       if (len(sub(A, Bq)) < 1) return;
       lines.push({ a: A, b: Bq, label: 'Unterlage' });
-      [[A, e.segs[k], e.segs[k + 1]], [Bq, e.segs[k + 2], e.segs[k + 3]]].forEach(([p, px, py]) => { const key = `${Math.round(px)},${Math.round(py)}`; if (seen.has(key) || Math.hypot(px - xi, py - yi) > rI) return; seen.add(key); pts.push({ p, label: 'Unterlage Endpunkt' }); });
+      if (snapCfg.mid) { const mi = [(e.segs[k] + e.segs[k + 2]) / 2, (e.segs[k + 1] + e.segs[k + 3]) / 2]; if (Math.hypot(mi[0] - xi, mi[1] - yi) <= rI) pts.push({ p: mul(add(A, Bq), 0.5), label: 'Unterlage Mitte', kind: 'mid' }); }
+      if (snapCfg.end) [[A, e.segs[k], e.segs[k + 1]], [Bq, e.segs[k + 2], e.segs[k + 3]]].forEach(([p, px, py]) => { const key = `${Math.round(px)},${Math.round(py)}`; if (seen.has(key) || Math.hypot(px - xi, py - yi) > rI) return; seen.add(key); pts.push({ p, label: 'Unterlage Endpunkt' }); });
     });
     return { pts, lines };
   }
@@ -2261,7 +2262,7 @@ void main() { if (uBox > 0.5 && (vW.x < uBmin.x || vW.x > uBmax.x || vW.y < uBmi
     const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair', 'mirror'].includes(t) ? lp : null;
     const extra = ['wall', 'slab', 'roof', 'ceil'].includes(t) && cmd.pts.length > 1 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [];
     const raw = t === 'cal' || t === 'ualign' || t === 'umove' && !cmd.pts.length;
-    const s = raw ? { p: calOrtho(onPlane(x, y)) } : snapAt(x, y, { from: cmd.mid || (cmd.from && !cmd.from.a) ? null : (cmd.from?.a || from), extra, skip: (t === 'move' || t === 'copy') && cmd.pts.length ? new Set(selIds()) : null });
+    const s = raw ? (snapAt(x, y, { from: cmd.pts?.length === 1 ? cmd.pts[0] : null }) || { p: calOrtho(onPlane(x, y)) }) : snapAt(x, y, { from: cmd.mid || (cmd.from && !cmd.from.a) ? null : (cmd.from?.a || from), extra, skip: (t === 'move' || t === 'copy') && cmd.pts.length ? new Set(selIds()) : null });
     if (!s?.p) { env.toast('In dieser Ansicht lässt sich nicht zeichnen. Grundriss oder 3D von schräg oben.'); return; }
     if (cmd.from && !cmd.from.a) { cmd.from.a = s.p; renderUi(); draw(); return; }
     if (cmd.from?.a) cmd.from = null;
@@ -4315,7 +4316,7 @@ void main() { if (uBox > 0.5 && (vW.x < uBmin.x || vW.x > uBmax.x || vW.y < uBmi
     const t = cmd.t;
     if (t === 'open') { const o = opAt(x, y); return o ? { op: o } : null; }
     if (t === 'space' || t === 'tiles' || t === 'split' || (t === 'ceil' && cmd.mode === 'room')) return null;
-    if (t === 'cal' || t === 'ualign' || (t === 'umove' && !cmd.pts.length)) { const p = calOrtho(onPlane(x, y)); return p ? { p } : null; }
+    if (t === 'cal' || t === 'ualign' || (t === 'umove' && !cmd.pts.length)) { const s2 = snapAt(x, y, { from: cmd.pts?.length === 1 ? cmd.pts[0] : null }); return s2?.p ? s2 : null; }
     if (t === 'measure') { if (cmd.mode === 'pick' || (cmd.mode === 'dist' && cmd.pts.length >= 2) || cmd.closed) return null; return snapAt(x, y, { from: cmd.pts.at(-1), extra: cmd.mode === 'area' && cmd.pts.length > 2 ? [{ p: cmd.pts[0], label: 'Startpunkt' }] : [] }); }
     if (t === 'gstart' || t === 'gridgen') return null;
     const from = ['wall', 'beam', 'slab', 'roof', 'ceil', 'grid', 'move', 'copy', 'stair', 'mirror'].includes(t) && cmd.pts.length ? cmd.pts.at(-1) : null;
