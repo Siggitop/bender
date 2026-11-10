@@ -304,6 +304,12 @@ export async function runBuildingTests(api) {
     f.pv = { B: '1500' }; const w1 = (() => { const q = api.furnPoly(f); return Math.abs(q[1][0] - q[0][0]); })(); f.rot = 90; const q2 = api.furnPoly(f), h2 = Math.abs(q2[2][1] - q2[0][1]);
     return { ok: Math.abs(w0 - 1000) < 1 && Math.abs(w1 - 1500) < 1 && Math.abs(z[1] - z[0] - 2000) < 1 && Math.abs(h2 - 1500) < 1, info: `Breite ${w0} → ${w1}, Höhe ${z[1] - z[0]}, gedreht ${h2}` };
   });
+  t('Rasterdecke: Griffe auf Deckenhöhe, Rasterstart an gewählter Ecke', () => {
+    B.els.length = 0; const ce = { id: 'tce', storey: cur(), type: 'ceil', pts: [[0, 0], [5000, 0], [5000, 4000], [0, 4000]], z: 2600, t: 20, gx: 625, gy: 625, ox: 0, oy: 0, off: [] }; B.els.push(ce);
+    api.setSelEl(ce.id); const hz = api.handleZ(ce), z0 = api.zOf(ce)[0];
+    ce.pts.splice(1, 0, [2500, 0], [2600, 0]); const nc = api.gCorners(ce).length; api.gstartPick(ce, 2 + 2);
+    return { ok: Math.abs(hz - z0) < 1 && hz > 2000 && ce.start?.k === 4 && nc === 4, info: `Griffhöhe ${hz} (Decken-UK ${z0}), Start an Ecke ${ce.start ? ce.start.k + 1 : '–'}` };
+  });
   t('Einbauteil: Fangen an Wand und Ecke', () => {
     B.els.length = 0; api.ensureParts(); const P = Object.values(B.parts).find(p => p.name === 'Regal');
     wall([0, 0], [6000, 0], 240); wall([0, 0], [0, 4000], 240);

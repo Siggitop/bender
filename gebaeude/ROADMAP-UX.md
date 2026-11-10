@@ -500,3 +500,7 @@ Im Maßfeld von Stütze, Wanddurchbruch (Abstand zur nächsten Wandfläche/Achse
 - **Kopfleiste** (Projektmanager, Gebäude, Rückgängig, Wiederholen, Geschoss, Fertig) entfällt am Desktop. Rückgängig/Wiederholen sitzen links in der Reiterzeile, Gebäudename (öffnet das Gebäude-Menü) und Geschoss-Wechsler rechts. „Fertig“ (App schließen) ist überall gestrichen; auf Telefon und iPad bleibt die schmale Kopfleiste ohne diesen Knopf.
 - **Befehlsoptionen** (früher die Zusatzleiste unter dem Menüband) erscheinen als eigener Reiter mit dem Namen des Befehls („Decke“, „Wand“ …) und werden beim Start eines Befehls geöffnet; nach Ende des Befehls geht es zum vorigen Reiter zurück. Die Menübandfläche hat feste Höhe, der Plan springt und zeichnet sich dadurch nicht mehr neu.
 - Ist das Menüband eingeklappt, öffnet ein laufender Befehl es, solange er läuft.
+
+## Nachtrag v291: Griffe auf Bauteilhöhe, Rasterstart an jeder Ecke
+- Griffe, Anzeige und Antippen eines gewählten Bauteils liegen auf seiner Höhe (`handleZ`): Rasterdecke an der Unterkante, Träger an der Oberkante, Dach an der Traufe. Vorher lagen sie auf dem Geschossboden, der „Rasterstart“-Griff saß in 3D am Wandfuß.
+- Befehl „Rasterstart“: alle echten Ecken (Zwischenpunkte auf geraden Strecken zählen nicht, `gCorners`) erscheinen nummeriert auf Deckenhöhe, mit großer Trefferfläche. In der Befehlsleiste wählt eine Knopfreihe 1…n die Ecke ohne Anklicken, auch verdeckte. Die Nummern in der Palette zählen dieselben Ecken.

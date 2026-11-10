@@ -521,6 +521,23 @@ export async function openBuilding(env) {
     }
     return { full, cut };
   }
+  // Echte Ecken einer Deckenkontur (ohne Zwischenpunkte auf geraden Strecken): Indizes in e.pts, Anzeige-Nummern 1…n
+  function gCorners(e) {
+    const P = e.pts, N = P.length, idx = [];
+    for (let i = 0; i < N; i++) {
+      const a = P[(i + N - 1) % N], b = P[i], c = P[(i + 1) % N], u = sub(b, a), v = sub(c, b);
+      if (len(u) < 1 || len(v) < 1) continue;
+      const cs = dot(u, v) / (len(u) * len(v));
+      if (cs < Math.cos(8 * Math.PI / 180)) idx.push(i);
+    }
+    return idx.length >= 3 ? idx : P.map((_, i) => i);
+  }
+  const cornerNo = (e, k) => { const i = gCorners(e).indexOf(k); return i < 0 ? k + 1 : i + 1; };
+  function gstartPick(e, k) {
+    const S = ceilStrips(e), c = e.pts[k], m = centroid(e.pts), rx = m[0] > c[0] ? S.l : S.r, ry = m[1] > c[1] ? S.u : S.o;
+    change(() => setCeilStart(e, k, Math.round(rx), Math.round(ry)));
+    cmd = null; sel = { ids: [e.id] }; renderUi(); draw();
+  }
   // Rasterstart: von Ecke k aus beginnt die erste volle Platte nach rx bzw. ry (Randstreifen)
   function setCeilStart(e, k, rx, ry) {
     const c = e.pts[k], m = centroid(e.pts), sx = Math.sign(m[0] - c[0]) || 1, sy = Math.sign(m[1] - c[1]) || 1;
@@ -2003,12 +2020,10 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     if (t === 'gstart') {
       const e = elById(cmd.el);
       if (!e) { endCmd(); return; }
-      let k = -1, bd = touch ? 34 : 22;
-      e.pts.forEach((q, i) => { const s2 = P2(q), d = Math.hypot(s2[0] - x, s2[1] - y); if (d < bd) { bd = d; k = i; } });
-      if (k < 0) { env.toast('Eine Ecke der Rasterdecke antippen.'); return; }
-      const S = ceilStrips(e), c = e.pts[k], m = centroid(e.pts), rx = m[0] > c[0] ? S.l : S.r, ry = m[1] > c[1] ? S.u : S.o;
-      change(() => setCeilStart(e, k, Math.round(rx), Math.round(ry)));
-      cmd = null; sel = { ids: [e.id] }; renderUi(); draw();
+      let k = -1, bd = touch ? 40 : 28; const zc = zRange(e)[0];
+      gCorners(e).forEach(i => { const s2 = P2(e.pts[i], zc), d = Math.hypot(s2[0] - x, s2[1] - y); if (d < bd) { bd = d; k = i; } });
+      if (k < 0) { env.toast('Eine nummerierte Ecke antippen oder in der Leiste wählen.'); return; }
+      gstartPick(e, k);
       return;
     }
     if (t === 'open') {
@@ -2190,6 +2205,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
     dirty = true; renderUi(); draw();
     if (h?.head) { const i = infoEl.querySelector('[data-gname]'); if (i) { i.focus(); i.select(); } }
   }
+  // Höhe, auf der die Griffe eines Bauteils liegen: Rasterdecke und Dach oben, Träger an der Oberkante, sonst Geschossboden
+  const handleZ = e => (e?.type === 'ceil' ? zRange(e)[0] : e?.type === 'beam' ? zRange(e)[1] : e?.type === 'roof' ? roofGeo(e).zE : curSt().elev);
   function handles() {
     const e = selEl(), g = selGrid(), H2 = [];
     if (e?.type === 'wall' || e?.type === 'beam') H2.push({ k: 'a', p: e.a }, { k: 'b', p: e.b }, { k: 'm', p: mul(add(e.a, e.b), 0.5), move: true });
@@ -2206,7 +2223,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
   function handleAt(x, y) {
     const tol = touch ? 22 : 12;
     let best = null;
-    for (const h of handles()) { const s = P2(h.p), d = Math.hypot(s[0] - x, s[1] - y); if (d < tol && (!best || d < best.d)) best = { ...h, d }; }
+    for (const h of handles()) { const s = P2(h.p, handleZ(selEl())), d = Math.hypot(s[0] - x, s[1] - y); if (d < tol && (!best || d < best.d)) best = { ...h, d }; }
     return best;
   }
   function dragStart(h) {
@@ -2522,7 +2539,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (cmd.t === 'cal' && pts.length === 1 && hover?.p) dimLine(pts[0], hover.p, fmt(len(sub(hover.p, pts[0]))), mark, z);
       if (cmd.t === 'cal' && pts.length === 2) dimLine(pts[0], pts[1], `${fmt(cmd.have)} → ${fmt(num(cmd.real))}`, mark, z);
     }
-    if (!cmd) handles().forEach(h => { const s = P2(h.p, z); ctx.fillStyle = h.grid ? mark : card; ctx.strokeStyle = h.grid ? card : acc; ctx.lineWidth = 2; ctx.beginPath(); if (h.move) ctx.rect(s[0] - 6, s[1] - 6, 12, 12); else ctx.arc(s[0], s[1], 6, 0, 7); ctx.fill(); ctx.stroke(); if (h.grid) tag(s[0], s[1] - 20, 'Rasterstart', mark); });
+    if (!cmd) handles().forEach(h => { const s = P2(h.p, handleZ(selEl())); ctx.fillStyle = h.grid ? mark : card; ctx.strokeStyle = h.grid ? card : acc; ctx.lineWidth = 2; ctx.beginPath(); if (h.move) ctx.rect(s[0] - 6, s[1] - 6, 12, 12); else ctx.arc(s[0], s[1], 6, 0, 7); ctx.fill(); ctx.stroke(); if (h.grid) tag(s[0], s[1] - 20, 'Rasterstart', mark); });
+    if (cmd?.t === 'gstart') { const ge = elById(cmd.el); if (ge?.pts) { const zc = zRange(ge)[0]; gCorners(ge).forEach((i, n) => { const q = ge.pts[i], s2 = P2(q, zc), on = ge.start?.k === i; ctx.fillStyle = on ? mark : card; ctx.strokeStyle = on ? card : acc; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(s2[0], s2[1], 13, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = on ? '#fff' : acc; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(n + 1), s2[0], s2[1] + 0.5); }); } }
     if (cmd) {
       // erfasste Punkte als kleine Kreuze, Spurlinien gestrichelt zum Bezugspunkt
       ctx.strokeStyle = acc; ctx.lineWidth = 1.2;
@@ -3012,7 +3030,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       case 'mirror': h = P(c.pts.length ? 'Zweiten Punkt der Spiegelachse tippen' : `${selIds().length} Bauteil${selIds().length > 1 ? 'e' : ''} spiegeln: ersten Punkt der Spiegelachse tippen`) + G(`<button data-b="mirkeep" class="bau-tg${c.keep ? ' on' : ''}" title="Original bleibt stehen, das Spiegelbild kommt dazu">Original behalten</button>`) + helpers + cancel; break;
       case 'split': h = P('Teilungspunkt auf der Wand tippen') + cancel; break;
       case 'tiles': h = P('Platten antippen: herausnehmen oder wieder einsetzen') + done; break;
-      case 'gstart': h = P('Ecke der Rasterdecke antippen, von der das Raster beginnt') + cancel; break;
+      case 'gstart': { const ce = elById(c.el); h = P('Ecke antippen, von der das Raster beginnt') + (ce?.pts ? G(...gCorners(ce).map((i, n) => `<button data-gcorner="${i}" class="bau-tg${ce.start?.k === i ? ' on' : ''}" title="Ecke ${n + 1} als Rasterstart">${n + 1}</button>`)) : '') + cancel; break; }
       case 'cal': h = P(c.pts.length < 2 ? `Kalibrieren: ${c.pts.length ? 'zweiten' : 'ersten'} Punkt auf dem Plan tippen` : 'Echter Abstand') + (c.pts.length === 2 ? `${fld('real', c.real, 'Abstand')}<button data-b="calok" class="on">Übernehmen</button>` : '') + `<span class="bau-cgrp"><button data-b="ortho" class="bau-tg${orthoOn ? ' on' : ''}" title="Zweiter Punkt nur waagerecht oder senkrecht zum ersten (F8)">Ortho</button><button data-b="ualign" title="Plan drehen, bis eine Linie gerade liegt">Plan ausrichten</button></span>` + cancel; break;
       case 'ualign': h = P(c.pts.length ? 'Zweiten Punkt auf derselben Linie tippen' : 'Plan ausrichten: zwei Punkte auf einer Linie tippen, die waagerecht oder senkrecht liegen soll') + cancel; break;
       case 'umove': h = P(c.pts.length ? 'Zielpunkt tippen (fängt an Achsen und Wänden)' : 'Unterlage verschieben: Punkt auf dem Plan tippen') + cancel; break;
@@ -3130,7 +3148,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
         case 'ceil': {
           const S = ceilStrips(e), T = ceilTiles(e);
           h = `<h4>Rasterdecke</h4><div class="ped-grid">${fld('ecz', e.z, 'UK')}</div>
-            <small>Platten ${e.gx} × ${e.gy} · ${T.full.length} voll, ${T.cut.length} Zuschnitt · Ränder ${[S.l, S.r, S.u, S.o].map(v => fmt(v || 0)).join(' / ')} mm${e.start ? ` · Start an Ecke ${e.start.k + 1}` : ' · mittig'}</small>
+            <small>Platten ${e.gx} × ${e.gy} · ${T.full.length} voll, ${T.cut.length} Zuschnitt · Ränder ${[S.l, S.r, S.u, S.o].map(v => fmt(v || 0)).join(' / ')} mm${e.start ? ` · Start an Ecke ${cornerNo(e, e.start.k)}` : ' · mittig'}</small>
             <div class="ped-acts"><button data-b="ceildlg" class="on">Raster einstellen …</button></div>${acts()}`; break;
         }
         case 'space':
@@ -3400,8 +3418,8 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
           <div class="ped-grid">${fld('dgx', e.gx, 'X')}${fld('dgy', e.gy, 'Y')}<button data-b="ctrot">Drehen</button></div>
           <div class="ped-grid">${fld('dcz', e.z, 'UK')}${fld('dct', e.t || 20, 'Dicke')}</div>
           <h5>Rasterstart</h5>
-          <div class="ped-acts"><button data-b="gstart"${cmd?.t === 'gstart' ? ' class="on"' : ''}>${e.start ? `Ecke ${e.start.k + 1} · andere Ecke` : 'Ecke wählen'}</button><button data-b="cequal">Randstreifen gleich</button></div>
-          ${e.start ? `<div class="ped-grid">${fld('drx', e.start.rx, 'Rand X')}${fld('dry', e.start.ry, 'Rand Y')}</div><p class="ped-hint">Ab Ecke ${e.start.k + 1}: so breit ist die erste, angeschnittene Platte in X und Y, danach kommen volle Platten. 0 = volle Platte direkt an der Ecke. Oder das orange Quadrat im Grundriss ziehen.</p>`
+          <div class="ped-acts"><button data-b="gstart"${cmd?.t === 'gstart' ? ' class="on"' : ''}>${e.start ? `Ecke ${cornerNo(e, e.start.k)} · andere Ecke` : 'Ecke wählen'}</button><button data-b="cequal">Randstreifen gleich</button></div>
+          ${e.start ? `<div class="ped-grid">${fld('drx', e.start.rx, 'Rand X')}${fld('dry', e.start.ry, 'Rand Y')}</div><p class="ped-hint">Ab Ecke ${cornerNo(e, e.start.k)}: so breit ist die erste, angeschnittene Platte in X und Y, danach kommen volle Platten. 0 = volle Platte direkt an der Ecke. Oder das orange Quadrat im Grundriss ziehen.</p>`
             : '<p class="ped-hint">Das Raster ist mittig verteilt (gleiche Randstreifen). Für einen festen Start eine Ecke wählen und die Randstreifen eingeben, oder das orange Quadrat im Grundriss ziehen.</p>'}
           <h5>Randstreifen</h5><table class="bau-kv"><tr><td>links</td>${cell(S.l)}<td>rechts</td>${cell(S.r)}</tr><tr><td>unten</td>${cell(S.u)}<td>oben</td>${cell(S.o)}</tr></table>
           ${[S.l, S.r, S.u, S.o].some(warn) ? '<p class="ped-hint warn">Zuschnitt schmaler als ein Drittel der Platte: schlecht zu montieren. Rasterstart verschieben oder „Randstreifen gleich“.</p>' : ''}
@@ -3622,6 +3640,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       if (b.dataset.seg?.startsWith('dwtop:') || b.dataset.seg?.startsWith('dwbot:')) { const [k, v] = b.dataset.seg.split(':'), key = k === 'dwtop' ? 'top' : 'bot'; winEdit(we, c => { c[key] = v === '0' ? null : { h: c[key]?.h || (key === 'top' ? 500 : 400), split: v === '2' }; }); dlg.field = null; return; }
     }
     if (!b.closest('.bau-stpop') && b.dataset.b !== 'stpick') stPop.hidden = true;
+    if (b.dataset.gcorner !== undefined && cmd?.t === 'gstart') { const e0 = elById(cmd.el); if (e0) gstartPick(e0, +b.dataset.gcorner); return; }
     if (b.dataset.st) { setCurrent(b.dataset.st); stPop.hidden = true; return; }
     if (b.dataset.vren) { viewRen = b.dataset.vren; renderList(); const i = listEl.querySelector('[data-vname]'); i?.focus(); i?.select(); return; }
     if (b.dataset.selty) { const ids = selIds().filter(id => elById(id)?.type === b.dataset.selty); sel = ids.length ? { ids } : null; dirty = true; renderUi(); draw(); return; }
@@ -4152,7 +4171,7 @@ void main() { vec3 n = normalize(vN); float d = abs(dot(n, uL)); vec3 col = mix(
       const keep = { B, cur, sel, cmd, hover, undo: [...undo], redo: [...redo], dlg, cutH: cam.cutH };
       clearTimeout(saveT); testing = true;
       B = newBuilding('Selbsttest'); fixB(); cur = B.storeys[0].id; sel = null; cmd = null; dlg = null; cam.cutH = null;
-      const api = { get B() { return B; }, cur: () => cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType, syncSigs, updateRooms, describeStep, roomSeed, wallPoly, transformSel, rotF, mirF, moveEl, wallDims, colDims, lockApply, alignSel, furnPoly, furnRes, furnSnap, roomOfF, roomMates, openParts, closeParts, partsApi, ensureParts, saveView, gotoView, setView, cam, wallPieces: wallPieces, slabDims, applyDim: (hh, v) => applyOpDim(hh, v), change: fn => change(fn), listCtx, pdfCtx, leavesOf, doorPlates, twoLeaves, fixLeaves, buildGeom: () => { dirty = true; buildGeometry(); }, triCount: () => triN, maxTriZ: () => lastMaxZ, geomSum: () => lastGeomSum, geomStats: () => ({ hits: gcHits, miss: gcMiss }), clearGeomCache: () => { gcache.clear(); gcHits = 0; gcMiss = 0; }, ulAlign, curUl: () => curUl(), ulAdd: u => { B.underlays.push(u); } };
+      const api = { get B() { return B; }, cur: () => cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType, syncSigs, updateRooms, describeStep, roomSeed, wallPoly, transformSel, rotF, mirF, moveEl, wallDims, colDims, lockApply, alignSel, furnPoly, furnRes, furnSnap, handleZ, gstartPick, gCorners, setSelEl: id => { sel = { ids: [id] }; }, handles, roomOfF, roomMates, openParts, closeParts, partsApi, ensureParts, saveView, gotoView, setView, cam, wallPieces: wallPieces, slabDims, applyDim: (hh, v) => applyOpDim(hh, v), change: fn => change(fn), listCtx, pdfCtx, leavesOf, doorPlates, twoLeaves, fixLeaves, buildGeom: () => { dirty = true; buildGeometry(); }, triCount: () => triN, maxTriZ: () => lastMaxZ, geomSum: () => lastGeomSum, geomStats: () => ({ hits: gcHits, miss: gcMiss }), clearGeomCache: () => { gcache.clear(); gcHits = 0; gcMiss = 0; }, ulAlign, curUl: () => curUl(), ulAdd: u => { B.underlays.push(u); } };
       api.setB = o => { B = o; fixB(); cur = [...B.storeys].sort((a, c) => a.elev - c.elev)[0].id; sigs.clear(); roomsStale.clear(); return B; };
       api.setCur = id => { cur = id; };
       api.setSel = ids => { sel = ids?.length ? { ids } : null; };

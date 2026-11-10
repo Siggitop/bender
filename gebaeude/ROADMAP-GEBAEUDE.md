@@ -429,3 +429,6 @@ Siehe ROADMAP-UX, Nachtrag v286.
 
 ## 40. Version 290: Kopfleiste entfernt, Befehlsoptionen als Menüband-Reiter
 Siehe ROADMAP-UX, Nachtrag v290.
+
+## 41. Version 291: Griffe auf Bauteilhöhe, Rasterstart an jeder Ecke
+Siehe ROADMAP-UX, Nachtrag v291.
