@@ -33,8 +33,8 @@ function listTable(which, ctx, all) {
     cols = [['nr', 'Nr.'], ['storey', 'Geschoss'], ['art', 'Art'], ['type', 'Typ'], ['t', 'Dicke mm', 1, 0], ['area', 'Fläche m²', 1, 1], ['vol', 'Volumen m³', 1, 1]];
     els.filter(e => e.type === 'slab').forEach(e => { const holes = B.els.filter(x => x.type === 'hole' && x.host === e.id).reduce((s, h) => s + h.w * h.d / 1e6, 0), a = Math.abs(area2(e.pts)) / 1e6 - holes; add(e, { nr: TX(`D${rows.length + 1}`), storey: sn(e), art: TX(e.base ? 'Bodenplatte' : 'Decke'), type: tn(e), t: MM(e.t), area: M2(a), vol: M3(a * e.t / 1000) }); });
   } else if (which === 'furn') {
-    cols = [['nr', 'Nr.'], ['storey', 'Geschoss'], ['name', 'Einbauteil'], ['size', 'Größe mm'], ['z', 'Höhe ab Boden', 1, 0]];
-    els.filter(e => e.type === 'furn').forEach(e => add(e, { nr: TX(`E${rows.length + 1}`), storey: sn(e), name: TX(ctx.partName(e)), size: TX(ctx.furnSize(e)), z: MM(e.z || 0) }));
+    cols = [['nr', 'Nr.'], ['storey', 'Geschoss'], ['room', 'Raum'], ['name', 'Einbauteil'], ['size', 'Größe mm'], ['z', 'Höhe ab Boden', 1, 0]];
+    els.filter(e => e.type === 'furn').forEach(e => add(e, { nr: TX(`E${rows.length + 1}`), storey: sn(e), room: TX(ctx.roomOf(e)), name: TX(ctx.partName(e)), size: TX(ctx.furnSize(e)), z: MM(e.z || 0) }));
   } else {
     cols = [['name', 'Typ'], ['cat', 'Art'], ['build', 'Aufbau / Maß'], ['n', 'Exemplare', 1, 0], ['qty', 'Menge']];
     const CAT = { wall: 'Wand', slab: 'Decke', column: 'Stütze', window: 'Fenster', door: 'Tür' };

@@ -152,20 +152,23 @@ const PART_COLORS = [['#c8ccd2', 'Metall hell'], ['#8d949c', 'Metall dunkel'], [
 // ---------- GLB-Netz als Grundkörper ----------
 // m = { tri: Float32Array (9 Zahlen je Dreieck: 3 Ecken), col:[r,g,b], mn:[x,y,z], mx:[x,y,z] } in Millimetern, z nach oben, Minimum im Ursprung
 function meshFromGlb(g) {
-  // glTF: y oben → Gebäude: z oben (x, y, z) → (x, -z, y)
-  const n = g.idx.length, tri = new Float32Array(n * 3), P = g.pos;
-  for (let i = 0; i < n; i++) { const k = g.idx[i] * 3; tri[i * 3] = P[k]; tri[i * 3 + 1] = -P[k + 2]; tri[i * 3 + 2] = P[k + 1]; }
+  // glTF: y oben → Gebäude: z oben (x, y, z) → (x, -z, y). Je Dreieck 12 Zahlen: 3 Ecken (x,y,z) und die Farbe aus dem Werkstoff
+  const n = g.idx.length / 3, tri = new Float32Array(n * 12), P = g.pos, C = g.col;
+  for (let t = 0; t < n; t++) {
+    for (let v = 0; v < 3; v++) { const k = g.idx[t * 3 + v] * 3, o = t * 12 + v * 3; tri[o] = P[k]; tri[o + 1] = -P[k + 2]; tri[o + 2] = P[k + 1]; }
+    const k0 = g.idx[t * 3] * 3; tri[t * 12 + 9] = C?.length ? C[k0] : 0.7; tri[t * 12 + 10] = C?.length ? C[k0 + 1] : 0.7; tri[t * 12 + 11] = C?.length ? C[k0 + 2] : 0.7;
+  }
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < tri.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], tri[i + k]); mx[k] = Math.max(mx[k], tri[i + k]); }
-  for (let i = 0; i < tri.length; i += 3) for (let k = 0; k < 3; k++) tri[i + k] -= mn[k];
-  const c = g.col?.length ? [g.col[0], g.col[1], g.col[2]] : [0.7, 0.7, 0.7];
+  for (let t = 0; t < n; t++) for (let v = 0; v < 3; v++) for (let k = 0; k < 3; k++) { const x = tri[t * 12 + v * 3 + k]; if (x < mn[k]) mn[k] = x; if (x > mx[k]) mx[k] = x; }
+  for (let t = 0; t < n; t++) for (let v = 0; v < 3; v++) for (let k = 0; k < 3; k++) tri[t * 12 + v * 3 + k] -= mn[k];
+  const c = C?.length ? [C[0], C[1], C[2]] : [0.7, 0.7, 0.7];
   return { tri, col: c, size: [0, 1, 2].map(k => mx[k] - mn[k]) };
 }
 // Netze liegen nicht im Gebäude-JSON (Undo/Speichern bleiben klein), sondern im Speicher (MESHES) und in der Dateiablage (building-store, Schlüssel „mesh-<key>“)
 const MESHES = new Map();
 const setMesh = (key, f32) => { MESHES.set(key, f32); };
 const getMesh = key => MESHES.get(key);
-function meshKey(f32) { let h = 2166136261 >>> 0; const u = new Uint32Array(f32.buffer, f32.byteOffset, f32.length); for (let i = 0; i < u.length; i++) { h ^= u[i]; h = Math.imul(h, 16777619) >>> 0; } return `${h.toString(36)}-${f32.length}`; }
+function meshKey(f32) { let h = 2166136261 >>> 0; const u = new Uint32Array(f32.buffer, f32.byteOffset, f32.length); for (let i = 0; i < u.length; i++) { h ^= u[i]; h = Math.imul(h, 16777619) >>> 0; } return `${h.toString(36)}-${f32.length}c`; }
 // m aus meshFromGlb → Verweis fürs Bauteil; die Daten selbst kommen in MESHES
 function packMesh(m) { const key = meshKey(m.tri); setMesh(key, m.tri); return { key, col: m.col.map(v => Math.round(v * 1000) / 1000), size: m.size.map(v => Math.round(v * 10) / 10) }; }
 
@@ -195,14 +198,20 @@ function buildPart(part, pv = {}) {
     if (pr.op !== 'sub' && pr.col) lastCol = col; else if (pr.op !== 'sub') lastCol = col;
     if (pr.kind === 'mesh') {
       if (!pr.mesh) continue;
-      const T = getMesh(pr.mesh.key); if (!T) continue; const sz = pr.mesh.size, sx = sz[0] ? (q.w || sz[0]) / sz[0] : 1, sy = sz[1] ? (q.d || sz[1]) / sz[1] : 1, sz2 = sz[2] ? (q.h || sz[2]) / sz[2] : 1;
-      const c = pr.col ? hexRgb(pr.col) : pr.mesh.col, a = (q.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), cx = q.x + (sz[0] * sx) / 2, cy = q.y + (sz[1] * sy) / 2;
+      const T = getMesh(pr.mesh.key); if (!T) continue;
+      const ST = pr.mesh.key.endsWith('c') ? 12 : 9, sz = pr.mesh.size, sx = sz[0] ? (q.w || sz[0]) / sz[0] : 1, sy = sz[1] ? (q.d || sz[1]) / sz[1] : 1, sz2 = sz[2] ? (q.h || sz[2]) / sz[2] : 1;
+      const over = pr.col ? hexRgb(pr.col) : null, a = (q.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), cx = q.x + (sz[0] * sx) / 2, cy = q.y + (sz[1] * sy) / 2;
+      const later = (part.prims || []).slice((part.prims || []).indexOf(pr) + 1).some(x => x.op === 'sub' && !x.off), csg = later && T.length / ST <= 6000;
+      if (later && !csg) errors[pr.id || pr.name] = 'Zu viele Dreiecke zum Ausschneiden (über 6000): das Netz wird nur hinzugefügt';
       for (let r = 0; r < reps; r++) {
-        for (let i = 0; i < T.length; i += 9) {
+        const polys = [];
+        for (let i = 0; i < T.length; i += ST) {
           const V = [0, 3, 6].map(o => { const px = q.x + dx * r + T[i + o] * sx, py = q.y + dy * r + T[i + o + 1] * sy, pz = q.z + dz * r + T[i + o + 2] * sz2, ox = cx + dx * r, oy = cy + dy * r; return [ox + (px - ox) * ca - (py - oy) * sa, oy + (px - ox) * sa + (py - oy) * ca, pz]; });
-          const nn = unit(cross(sub(V[1], V[0]), sub(V[2], V[0])));
-          V.forEach(v => loose.push(v[0], v[1], v[2], nn[0], nn[1], nn[2], c[0], c[1], c[2]));
+          const c = over || (ST === 12 ? [T[i + 9], T[i + 10], T[i + 11]] : pr.mesh.col);
+          if (csg) { const P = mkPoly(V, c); if (P) polys.push(P); }
+          else { const nn = unit(cross(sub(V[1], V[0]), sub(V[2], V[0]))); V.forEach(v => loose.push(v[0], v[1], v[2], nn[0], nn[1], nn[2], c[0], c[1], c[2])); }
         }
+        if (csg && polys.length) solid = solid.length ? csgUnion(solid, polys) : polys;
       }
       continue;
     }

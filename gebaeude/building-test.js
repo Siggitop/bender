@@ -286,9 +286,16 @@ export async function runBuildingTests(api) {
     return { ok, info: `Quader ${Math.round(box)} (6000000), Zylinder ${Math.round(cyl)}, Keil ${Math.round(wed)} (200000), Ausschnitt ${Math.round(cut)} (875000), Wiederholung ${Math.round(pr)} (1500000)` };
   });
   t('GLB-Netz als Grundkörper: Größe und Skalierung', () => {
-    const g = { pos: new Float32Array([0, 0, 0, 100, 0, 0, 0, 200, 0, 0, 0, 50]), idx: new Uint32Array([0, 1, 2, 0, 1, 3]), col: new Float32Array([0.5, 0.5, 0.5]) }, m = meshFromGlb(g), r = packMesh(m);
+    const g = { pos: new Float32Array([0, 0, 0, 100, 0, 0, 0, 200, 0, 0, 0, 50]), idx: new Uint32Array([0, 1, 2, 0, 1, 3]), col: new Float32Array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.9, 0.1, 0.1]) }, m = meshFromGlb(g), r = packMesh(m);
     const P = { id: 'g', name: 'g', params: [], prims: [prim({ kind: 'mesh', mesh: r, w: '200', d: '', h: '', col: '' })] }, res = buildPart(P);
-    return { ok: m.size[0] === 100 && m.size[1] === 50 && m.size[2] === 200 && res.tris === 2 && Math.abs(res.mx[0] - 200) < 0.01, info: `Größe ${m.size.join(' × ')}, Dreiecke ${res.tris}, Breite skaliert auf ${res.mx[0]}` };
+    return { ok: m.size[0] === 100 && m.size[1] === 50 && m.size[2] === 200 && res.tris === 2 && Math.abs(res.mx[0] - 200) < 0.01 && Math.abs(buildPart({ ...P, prims: [{ ...P.prims[0], col: '' }] }).out[6] - 0.5) < 0.01, info: `Größe ${m.size.join(' × ')}, Dreiecke ${res.tris}, Breite skaliert auf ${res.mx[0]}` };
+  });
+  t('GLB-Netz ausschneiden: Würfel halbiert', () => {
+    const V = [[0, 0, 0], [100, 0, 0], [100, 100, 0], [0, 100, 0], [0, 0, 100], [100, 0, 100], [100, 100, 100], [0, 100, 100]], F = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [1, 2, 6, 5], [3, 0, 4, 7]];
+    const pos = [], idx = []; V.forEach(([x, y, z]) => pos.push(x, z, -y)); F.forEach(([a, b, c, d]) => idx.push(a, b, c, a, c, d));
+    const m = meshFromGlb({ pos: new Float32Array(pos), idx: new Uint32Array(idx), col: new Float32Array(24).fill(0.6) }), r = packMesh(m);
+    const P = { id: 'c', name: 'c', params: [], prims: [prim({ kind: 'mesh', mesh: r, col: '' }), prim({ op: 'sub', x: '50', y: '-1', z: '-1', w: '60', d: '102', h: '102' })] }, res = buildPart(P);
+    return { ok: Math.abs(vol(res.out) - 500000) < 50 && Math.abs(res.mx[0] - 50) < 0.1, info: `Rauminhalt ${Math.round(vol(res.out))} (500000), Breite ${res.mx[0]}` };
   });
   t('Einbauteil: platzieren, Maß ändern, Fläche und Höhe', () => {
     B.els.length = 0; api.ensureParts();
@@ -296,6 +303,22 @@ export async function runBuildingTests(api) {
     const fp0 = api.furnPoly(f), w0 = Math.abs(fp0[1][0] - fp0[0][0]), z = api.zOf(f);
     f.pv = { B: '1500' }; const w1 = (() => { const q = api.furnPoly(f); return Math.abs(q[1][0] - q[0][0]); })(); f.rot = 90; const q2 = api.furnPoly(f), h2 = Math.abs(q2[2][1] - q2[0][1]);
     return { ok: Math.abs(w0 - 1000) < 1 && Math.abs(w1 - 1500) < 1 && Math.abs(z[1] - z[0] - 2000) < 1 && Math.abs(h2 - 1500) < 1, info: `Breite ${w0} → ${w1}, Höhe ${z[1] - z[0]}, gedreht ${h2}` };
+  });
+  t('Einbauteil: Fangen an Wand und Ecke', () => {
+    B.els.length = 0; api.ensureParts(); const P = Object.values(B.parts).find(p => p.name === 'Regal');
+    wall([0, 0], [6000, 0], 240); wall([0, 0], [0, 4000], 240);
+    const f = { id: 'tfs', storey: cur(), type: 'furn', p: [2000, 400], partId: P.id, pv: {}, rot: 0, z: 0 };
+    const s1 = api.furnSnap([2000, 420], f), f2 = { ...f, rot: 0 };
+    const s2 = api.furnSnap([620, 340], f2);
+    return { ok: Math.abs(s1.p[1] - 320) < 1.5 && Math.abs(s1.rot - 180) < 0.5 && Math.abs(s2.p[0] - 620) < 1.5 && Math.abs(s2.p[1] - 320) < 1.5, info: `an Wand: ${s1.p.join('|')} Drehung ${s1.rot} (${s1.label}); in der Ecke: ${s2.p.join('|')} (${s2.label})` };
+  });
+  t('Einbauteil: gehört zum Raum und wandert mit', () => {
+    B.els.length = 0; api.ensureParts(); const P = Object.values(B.parts).find(p => p.name === 'Regal');
+    const sp = { id: 'tsp', storey: cur(), type: 'space', no: '1.02', name: 'Labor', pts: [[0, 0], [4000, 0], [4000, 4000], [0, 4000]] }, f = { id: 'tfr', storey: cur(), type: 'furn', p: [1000, 1000], partId: P.id, pv: {}, rot: 0, z: 0 }; B.els.push(sp, f);
+    const r1 = api.roomOfF(f)?.id === 'tsp', m = api.roomMates([sp.id]).includes(f.id);
+    f.space = 'none'; const r2 = api.roomOfF(f) === null; delete f.space;
+    api.transformSel(api.rotF([0, 0], 90), { deg: 90 }, [sp.id]);
+    return { ok: r1 && m && r2 && Math.abs(f.p[0] + 1000) < 1 && Math.abs(f.p[1] - 1000) < 1, info: `automatisch ${r1}, mit Raum gewählt ${m}, „keinem Raum“ ${r2}, nach Drehung ${f.p.join('|')}` };
   });
   t('Einbauteil: Liste und IFC', () => {
     const ifc = ifcText(), l = listTable('furn', api.listCtx(), true);

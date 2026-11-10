@@ -416,3 +416,13 @@ Siehe ROADMAP-UX, Nachtrag v286.
 - **GLB**: eigene Kopie des Lesers (`building-glb.js`), bis 150k Dreiecke, nur Grundfarbe, y-oben wird z-oben. Die Netzdaten liegen in der Dateiablage (`mesh-<Schlüssel>`) und im Export der Gebäudedatei, nicht im Gebäude-JSON (Rückgängig bleibt schnell).
 - Vorlagen beim ersten Aufruf: Regal, Gasflaschenschrank, Digestorium. Selbsttests ergänzt (Formeln, Rauminhalte, Einbauteil, GLB).
 - Offen: Bauteilbibliothek über Gebäude hinweg (bisher je Gebäude, Austausch über die Gebäudedatei), Abziehen von GLB-Netzen, Fangen im Editor, Ansicht im Plan (Symbol statt Draufsicht), Farben je GLB-Material.
+
+## 39. Versionen 288 und 289: Fangen, Raumzuordnung, Editor-Griffe, Bibliothek
+- **Fangen beim Platzieren und Ziehen** (`furnSnap`): Drehung zur nächsten Wand (Rückseite zur Wand, abschaltbar mit „Zur Wand drehen“), Ecke auf Ecke, Kante bündig an Wand, Stütze, Schacht und andere Einbauteile; in der Ecke gleichzeitig an zwei Wänden. Beim Ziehen bleibt die Drehung. Hinweistext am Zeiger („Ecke“, „Bündig an Kante“ …).
+- **Maße am Einbauteil**: Abstände zu Wänden/Achsen wie bei Stützen, antippbar, auch festsetzbar.
+- **Raumzuordnung** (`roomOfF`): automatisch der Raum, in dem der Bezugspunkt liegt, oder von Hand („Keinem Raum“ / bestimmter Raum). Anzeige in der Info-Leiste, Spalte „Raum“ in der Liste, IFC `IFCRELREFERENCEDINSPATIALSTRUCTURE`. Verschieben, Kopieren, Drehen, Spiegeln eines Raums nimmt seine Einbauteile mit (`roomMates`).
+- **Planansicht**: Umriss, betonte Vorderkante und Name des Einbauteils.
+- **Editor**: Griffe am gewählten Körper (Kreise verschieben, Quadrate ändern die Größe) mit Fang an Kanten anderer Körper und 5-mm-Raster (Alt = ohne), Maßzahlen an den Kanten springen ins Feld; Formelfelder bleiben Formeln (`B-S+25`). Ein Ziehvorgang ist ein Undo-Schritt.
+- **Bibliothek**: Bauteile liegen zusätzlich in einer gerätweiten Bibliothek (Dateiablage `partlib`), Austausch als Datei (mit Netzdaten).
+- **GLB**: Farbe je Dreieck aus dem Werkstoff (Originalfarben, überschreibbar), Ausschneiden mit Abziehkörpern bis 6000 Dreiecke (das Netz sollte geschlossen sein).
+- Weiter offen: Texturen der GLB, Fangen im Editor auf Mitten/Rundungen, Bibliothek über Geräte hinweg (nur per Datei), Symbole für Einbauteile als eigene Plandarstellung.

@@ -52,6 +52,9 @@ const CSS = `
 .bau-pe .pe-par .pe-d { grid-column: 1 / 3; font-size: 11px; height: 24px; }
 .bau-pe .pe-par button { height: 28px; padding: 0; }
 .bau-pe .pe-hint { color: var(--muted, #777); font-size: 11.5px; line-height: 1.4; margin: 6px 0; }
+.bau-pe canvas.pe-ov { pointer-events: none; }
+.bau-pe .pe-lib { position: absolute; top: 48px; right: 10px; z-index: 5; width: 300px; max-height: 60%; overflow: auto; background: var(--card, #fff); border: 1px solid var(--line, #d8dbe0); border-radius: 12px; box-shadow: 0 10px 34px rgba(0,0,0,.22); padding: 10px; }
+.bau-pe .pe-lib .pe-row { cursor: default; }
 .bau-pe .pe-info { position: absolute; left: 10px; bottom: 10px; padding: 6px 10px; border-radius: 9px; background: var(--card, #fff); border: 1px solid var(--line, #d8dbe0); font-size: 12px; color: var(--muted, #777); pointer-events: none; }
 .bau-pe .pe-vbar { position: absolute; top: 10px; left: 10px; display: flex; gap: 5px; flex-wrap: wrap; }
 .bau-pe .pe-vbar button { height: 28px; padding: 0 9px; font-size: 12px; }
@@ -72,9 +75,9 @@ export function openPartEditor({ root, B, partId, api }) {
   if (!document.getElementById('bau-pe-css')) { const st = document.createElement('style'); st.id = 'bau-pe-css'; st.textContent = CSS; document.head.appendChild(st); }
   const el = document.createElement('div');
   el.className = 'bau-pe';
-  el.innerHTML = `<div class="pe-head"></div><div class="pe-body"><div class="pe-left"></div><div class="pe-view"><canvas></canvas><div class="pe-vbar"></div><div class="pe-info"></div></div><div class="pe-right"></div></div>`;
+  el.innerHTML = `<div class="pe-head"></div><div class="pe-body"><div class="pe-left"></div><div class="pe-view"><canvas class="pe-gl"></canvas><canvas class="pe-ov"></canvas><div class="pe-vbar"></div><div class="pe-info"></div></div><div class="pe-right"></div></div>`;
   root.appendChild(el);
-  const $ = s => el.querySelector(s), cv = $('canvas');
+  const $ = s => el.querySelector(s), cv = $('canvas.pe-gl'), ov = $('canvas.pe-ov');
   const S = { pid: partId, sel: null, cut: true, yaw: -1.05, pitch: 0.5, dist: 3000, ctr: [0, 0, 500], dirty: true };
   const part = () => B().parts?.[S.pid];
   const pv = () => ({});
@@ -88,7 +91,7 @@ export function openPartEditor({ root, B, partId, api }) {
     const P = part(), parts = Object.values(B().parts || {}).sort((a, b) => a.name.localeCompare(b.name, 'de'));
     $('.pe-head').innerHTML = `<select data-a="pick" title="Bauteil wählen">${parts.map(p => `<option value="${p.id}"${p.id === S.pid ? ' selected' : ''}>${esc(p.name || 'Ohne Namen')}</option>`).join('')}</select>
       <input class="pe-name" data-pname value="${esc(P?.name || '')}" placeholder="Name des Bauteils" aria-label="Name">
-      <button data-a="new">Neu</button><button data-a="dup">Kopie</button><button data-a="del">Löschen</button>
+      <button data-a="new">Neu</button><button data-a="dup">Kopie</button><button data-a="del">Löschen</button><button data-a="lib" title="Bauteile über Gebäude hinweg sammeln und als Datei austauschen">Bibliothek</button>
       <span class="pe-sp"></span><button data-a="undo" title="Rückgängig (Strg+Z)">↶</button><button data-a="redo" title="Wiederholen">↷</button>
       <button class="pri" data-a="close">Fertig</button>`;
     $('.pe-vbar').innerHTML = [['iso', 'Iso'], ['front', 'Vorne'], ['top', 'Oben'], ['right', 'Rechts'], ['back', 'Hinten'], ['left', 'Links']].map(([k, t]) => `<button data-a="view:${k}">${t}</button>`).join('') + `<button data-a="fit">Einpassen</button><button data-a="cut" class="${S.cut ? 'on' : ''}" title="Abzugskörper als rote Rahmen zeigen">Ausschnitte</button>`;
@@ -117,13 +120,13 @@ export function openPartEditor({ root, B, partId, api }) {
       <label class="pe-f">Name<input data-pt="name" value="${esc(p.name)}"></label>
       ${isMesh ? '' : `<div class="pe-seg" style="margin:8px 0"><button data-a="op:add" class="${p.op !== 'sub' ? 'on' : ''}">Addieren</button><button data-a="op:sub" class="${p.op === 'sub' ? 'on' : ''}">Abziehen</button></div>`}
       ${p.kind === 'cyl' ? `<label class="pe-f">Achse<select data-pt="axis"><option value="z"${(p.axis || 'z') === 'z' ? ' selected' : ''}>senkrecht (z)</option><option value="x"${p.axis === 'x' ? ' selected' : ''}>liegend in x</option><option value="y"${p.axis === 'y' ? ' selected' : ''}>liegend in y</option></select></label>` : ''}
-      <h5>Lage (Ecke links vorne unten)</h5><div class="pe-grid">${f('x', 'x')}${f('y', 'y')}${f('z', 'z')}${f('rot', 'Drehung um z (°)')}</div>
+      <div class="pe-hint">Im Bild: Kreise verschieben, Quadrate ändern die Größe, beides rastet an Kanten anderer Körper ein (Alt = ohne Fang). Die Zahlen an den Kanten springen ins Feld.</div><h5>Lage (Ecke links vorne unten)</h5><div class="pe-grid">${f('x', 'x')}${f('y', 'y')}${f('z', 'z')}${f('rot', 'Drehung um z (°)')}</div>
       <h5>${isMesh ? 'Größe (leer = Originalgröße)' : 'Größe'}</h5><div class="pe-grid">${f('w', 'Breite (x)')}${f('d', 'Tiefe (y)')}${f('h', 'Höhe (z)')}</div>
       <h5>Wiederholen</h5><div class="pe-grid">${f('n', 'Anzahl')}${f('dx', 'Abstand x')}${f('dy', 'Abstand y')}${f('dz', 'Abstand z')}</div>
       ${p.kind === 'wedge' ? '<div class="pe-hint">Keil: die Schräge steigt in +x an. Mit der Drehung um z zeigt sie in andere Richtungen.</div>' : ''}
       ${p.kind === 'cyl' ? '<div class="pe-hint">Zylinder füllt den Quader aus Lage und Größe (bei ungleicher Breite und Tiefe eine Ellipse).</div>' : ''}
       <h5>${p.op === 'sub' ? 'Farbe der Schnittflächen' : 'Farbe'}</h5>
-      <div class="pe-sw">${PART_COLORS.map(([h, t]) => `<button data-a="col:${h}" style="background:${h}" title="${t}" class="${(p.col || '').toLowerCase() === h ? 'on' : ''}"></button>`).join('')}</div>`;
+      ${isMesh ? `<div class="pe-acts"><button data-a="orig" class="${p.col ? '' : 'on'}">Originalfarben</button></div>` : ''}<div class="pe-sw">${PART_COLORS.map(([h, t]) => `<button data-a="col:${h}" style="background:${h}" title="${t}" class="${(p.col || '').toLowerCase() === h ? 'on' : ''}"></button>`).join('')}</div>`;
   }
   function render() {
     renderHead(); renderLeft(); renderRight(); draw();
@@ -175,9 +178,92 @@ export function openPartEditor({ root, B, partId, api }) {
     gl.useProgram(prog); gl.uniformMatrix4fv(gl.getUniformLocation(prog, 'uM'), false, M);
     const aP = gl.getAttribLocation(prog, 'aPos'), aN = gl.getAttribLocation(prog, 'aNor'), aC = gl.getAttribLocation(prog, 'aCol'), uF = gl.getUniformLocation(prog, 'uFlat');
     const bind = b => { gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 3, gl.FLOAT, false, 36, 0); gl.enableVertexAttribArray(aN); gl.vertexAttribPointer(aN, 3, gl.FLOAT, false, 36, 12); gl.enableVertexAttribArray(aC); gl.vertexAttribPointer(aC, 3, gl.FLOAT, false, 36, 24); };
-    gl.uniform1f(uF, 0); bind(buf); if (nTri) gl.drawArrays(gl.TRIANGLES, 0, nTri);
+    S.M = M; gl.uniform1f(uF, 0); bind(buf); if (nTri) gl.drawArrays(gl.TRIANGLES, 0, nTri);
     gl.uniform1f(uF, 1); bind(bufL); if (nLine) gl.drawArrays(gl.LINES, 0, nLine);
     gl.disable(gl.DEPTH_TEST); bind(bufS); if (nSel) gl.drawArrays(gl.LINES, 0, nSel);
+    overlay(dpr);
+  }
+  // ---------- Griffe, Maße, Fangen ----------
+  const AXN = ['x', 'y', 'z'], SZN = ['w', 'd', 'h'], AXC = ['#d23b3b', '#2f9e50', '#2f6fd0'];
+  function proj(p) {
+    const M = S.M; if (!M) return null;
+    const x = M[0] * p[0] + M[4] * p[1] + M[8] * p[2] + M[12], y = M[1] * p[0] + M[5] * p[1] + M[9] * p[2] + M[13], w = M[3] * p[0] + M[7] * p[1] + M[11] * p[2] + M[15];
+    if (w <= 0) return null;
+    const r = cv.getBoundingClientRect(); return [(x / w * 0.5 + 0.5) * r.width, (1 - (y / w * 0.5 + 0.5)) * r.height];
+  }
+  const mmpx = () => S.dist * Math.tan(FOV / 2) * 2 / Math.max(1, cv.clientHeight);
+  function handleList() {
+    const P = part(), p = selPrim(); if (!P || !p || p.off) return [];
+    const { o } = primNums(P, p, pv()), c = [o.x + o.w / 2, o.y + o.d / 2, o.z + o.h / 2], half = [o.w / 2, o.d / 2, o.h / 2], off = mmpx() * 26, L = [];
+    for (let i = 0; i < 3; i++) {
+      const e = [0, 0, 0]; e[i] = 1;
+      const mv = [c[0] + e[0] * (half[i] + off), c[1] + e[1] * (half[i] + off), c[2] + e[2] * (half[i] + off)], fc = [c[0] + e[0] * half[i], c[1] + e[1] * half[i], c[2] + e[2] * half[i]];
+      L.push({ kind: 'move', axis: i, w: mv, from: fc });
+      if (!(o.rot % 360)) L.push({ kind: 'size', axis: i, w: fc });
+    }
+    L.forEach(h => { h.s = proj(h.w); });
+    return L.filter(h => h.s);
+  }
+  function overlay(dpr) {
+    const w = cv.width, h = cv.height; if (ov.width !== w || ov.height !== h) { ov.width = w; ov.height = h; }
+    const g = ov.getContext('2d'); g.clearRect(0, 0, w, h); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    S.labelHits = [];
+    const P = part(), p = selPrim(); if (!P || !p || p.off) return;
+    const { o } = primNums(P, p, pv());
+    // Maße an den Kanten (antippbar: springt ins Feld)
+    const labs = [['w', o.w, [o.x + o.w / 2, o.y, o.z]], ['d', o.d, [o.x, o.y + o.d / 2, o.z]], ['h', o.h, [o.x, o.y, o.z + o.h / 2]]];
+    g.font = '600 11px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    labs.forEach(([k, v, wp]) => { const sp = proj(wp); if (!sp) return; const t = fmtN(v), tw = g.measureText(t).width + 10; g.fillStyle = 'rgba(255,255,255,.92)'; g.strokeStyle = 'rgba(10,124,189,.7)'; g.beginPath(); g.roundRect(sp[0] - tw / 2, sp[1] - 9, tw, 18, 6); g.fill(); g.stroke(); g.fillStyle = '#0a5c8c'; g.fillText(t, sp[0], sp[1] + 0.5); S.labelHits.push({ k, x: sp[0], y: sp[1], w: tw }); });
+    handleList().forEach(hd => {
+      const col = AXC[hd.axis];
+      if (hd.kind === 'move') { const f = proj(hd.from); if (f) { g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.moveTo(f[0], f[1]); g.lineTo(hd.s[0], hd.s[1]); g.stroke(); } g.fillStyle = col; g.beginPath(); g.arc(hd.s[0], hd.s[1], 7, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke(); }
+      else { g.fillStyle = '#fff'; g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.rect(hd.s[0] - 5, hd.s[1] - 5, 10, 10); g.fill(); g.stroke(); }
+    });
+    if (S.snapMsg) { g.font = '600 12px system-ui'; g.fillStyle = '#d9480f'; g.textAlign = 'left'; g.fillText(S.snapMsg, 14, cv.clientHeight - 44); }
+  }
+  function rayAt(px, py) {
+    const r = cv.getBoundingClientRect(), asp = r.width / r.height, nx = (px - r.left) / r.width * 2 - 1, ny = 1 - (py - r.top) / r.height * 2, eye = camEye();
+    const f = vnorm(vsub(S.ctr, eye)), rt = vnorm(vcross(f, [0, 0, 1])), up2 = vcross(rt, f), th = Math.tan(FOV / 2);
+    return { o: eye, d: vnorm([f[0] + rt[0] * nx * th * asp + up2[0] * ny * th, f[1] + rt[1] * nx * th * asp + up2[1] * ny * th, f[2] + rt[2] * nx * th * asp + up2[2] * ny * th]) };
+  }
+  // Parameter t auf der Achse (P0 + t·A), der dem Mausstrahl am nächsten liegt
+  function axisT(P0, A, ray) { const w0 = vsub(P0, ray.o), b = vdot(A, ray.d), d = vdot(A, w0), e = vdot(ray.d, w0), den = 1 - b * b; return Math.abs(den) < 1e-6 ? 0 : (b * e - d) / den; }
+  function snapCands(i) {
+    const P = part(), out = [0];
+    P.prims.forEach(q => { if (q.off || q.id === S.sel) return; const { o } = primNums(P, q, pv()); if ((o.rot || 0) % 90) return; const lo = [o.x, o.y, o.z][i], sz = [o.w, o.d, o.h][i]; out.push(lo, lo + sz, lo + sz / 2); });
+    return out;
+  }
+  function setExpr(p, f, orig, start, val) { const isNum = orig.trim() !== '' && Number.isFinite(Number(orig.replace(',', '.'))); const v = Math.round(val * 10) / 10; if (isNum || orig.trim() === '') { p[f] = String(v); return; } const dl = Math.round((val - start) * 10) / 10; p[f] = Math.abs(dl) < 0.05 ? orig : `${orig}${dl >= 0 ? '+' : '-'}${Math.abs(dl)}`; }
+  function startDrag(hd, e) {
+    const P = part(), p = selPrim(), { o } = primNums(P, p, pv()), f = hd.kind === 'move' ? AXN[hd.axis] : SZN[hd.axis], i = hd.axis, ax = [0, 0, 0]; ax[i] = 1;
+    const base = hd.kind === 'move' ? [o.x + o.w / 2, o.y + o.d / 2, o.z + o.h / 2] : [o.x + (i === 0 ? o.w : o.w / 2), o.y + (i === 1 ? o.d : o.d / 2), o.z + (i === 2 ? o.h : o.h / 2)];
+    const D = { hd, f, i, ax, orig: String(p[f] ?? ''), start: o[f === 'x' || f === 'y' || f === 'z' ? f : f], size: [o.w, o.d, o.h][i], pos: [o.x, o.y, o.z][i], t0: axisT(base, ax, rayAt(e.clientX, e.clientY)), base, n: 0, id: p.id };
+    api.begin(); S.drag = D;
+  }
+  function dragMove(e) {
+    const D = S.drag, P = part(), p = P?.prims.find(q => q.id === D.id); if (!p) return;
+    const t = axisT(D.base, D.ax, rayAt(e.clientX, e.clientY)) - D.t0, tol = mmpx() * 9, cands = snapCands(D.i); D.n++;
+    let val = (D.hd.kind === 'move' ? D.pos : D.size) + t, msg = '';
+    if (!e.altKey) {
+      const edges = D.hd.kind === 'move' ? [[val, 0], [val + D.size, D.size]] : [[D.pos + val, D.pos]];
+      let best = null; edges.forEach(([at, ref]) => cands.forEach(c => { const dd = Math.abs(c - at); if (dd < tol && (!best || dd < best.dd)) best = { dd, c, ref }; }));
+      if (best) { val = D.hd.kind === 'move' ? best.c - best.ref : best.c - D.pos; msg = `Fang an Kante bei ${fmtN(best.c)} mm`; }
+      else val = Math.round(val / 5) * 5;
+    }
+    if (D.hd.kind === 'size' && val < 1) val = 1;
+    S.snapMsg = msg; setExpr(p, D.f, D.orig, D.hd.kind === 'move' ? D.pos : D.size, val);
+    S.dirty = true; renderRight(); draw();
+  }
+  function endDrag() {
+    const D = S.drag; S.drag = null; S.snapMsg = '';
+    if (!D) return;
+    if (D.n < 2) { api.cancelBegin(); S.dirty = true; render(); return; }
+    api.end(); S.dirty = true; render();
+  }
+  function hitHandle(px, py) {
+    const r = cv.getBoundingClientRect(), x = px - r.left, y = py - r.top;
+    const L = S.labelHits?.find(l => Math.abs(l.x - x) < l.w / 2 && Math.abs(l.y - y) < 10); if (L) return { label: L.k };
+    return handleList().map(h => ({ h, d: Math.hypot(h.s[0] - x, h.s[1] - y) })).filter(q => q.d < 11).sort((a, b) => a.d - b.d)[0]?.h || null;
   }
   function fit() {
     const P = part(); if (!P) return;
@@ -212,9 +298,10 @@ export function openPartEditor({ root, B, partId, api }) {
     return best?.id || null;
   }
   const ptr = new Map(); let moved = 0, pinch0 = 0;
-  cv.addEventListener('pointerdown', e => { cv.setPointerCapture?.(e.pointerId); ptr.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, btn: e.button, shift: e.shiftKey }); moved = 0; if (ptr.size === 2) { const [a, b] = [...ptr.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); } });
+  cv.addEventListener('pointerdown', e => { if (e.button === 0 && !e.shiftKey && ptr.size === 0) { const hh = hitHandle(e.clientX, e.clientY); if (hh?.label) { const inp = el.querySelector(`[data-pf=${hh.label}]`); inp?.focus(); inp?.select(); return; } if (hh) { cv.setPointerCapture?.(e.pointerId); startDrag(hh, e); return; } } cv.setPointerCapture?.(e.pointerId); ptr.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, btn: e.button, shift: e.shiftKey }); moved = 0; if (ptr.size === 2) { const [a, b] = [...ptr.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); } });
   cv.addEventListener('pointermove', e => {
-    const p = ptr.get(e.pointerId); if (!p) return;
+    if (S.drag) { dragMove(e); return; }
+    const p = ptr.get(e.pointerId); if (!p) { const hh = hitHandle(e.clientX, e.clientY); cv.style.cursor = hh ? 'pointer' : ''; return; }
     const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
     if (ptr.size === 2) { const [a, b] = [...ptr.values()], d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0 > 0) S.dist = Math.max(100, Math.min(60000, S.dist * pinch0 / d)); pinch0 = d; draw(); return; }
     if (p.btn === 2 || p.shift || e.shiftKey || p.btn === 1) {
@@ -223,13 +310,23 @@ export function openPartEditor({ root, B, partId, api }) {
     } else { S.yaw -= dx * 0.008; S.pitch = Math.max(-1.5, Math.min(1.5, S.pitch + dy * 0.008)); }
     draw();
   });
-  const up = e => { const p = ptr.get(e.pointerId); ptr.delete(e.pointerId); pinch0 = 0; if (p && moved < 5 && p.btn === 0 && !p.shift && ptr.size === 0) { S.sel = pick(e.clientX, e.clientY); S.dirty = true; render(); } };
-  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptr.delete(e.pointerId); });
+  const up = e => { if (S.drag) { endDrag(); return; } const p = ptr.get(e.pointerId); ptr.delete(e.pointerId); pinch0 = 0; if (p && moved < 5 && p.btn === 0 && !p.shift && ptr.size === 0) { S.sel = pick(e.clientX, e.clientY); S.dirty = true; render(); } };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { if (S.drag) endDrag(); ptr.delete(e.pointerId); });
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => { e.preventDefault(); S.dist = Math.max(100, Math.min(60000, S.dist * Math.exp(e.deltaY * 0.0012))); draw(); }, { passive: false });
   new ResizeObserver(() => draw()).observe(cv);
 
   // ---------- Bedienung ----------
+  let libEl = null;
+  const closeLib = () => { libEl?.remove(); libEl = null; };
+  async function toggleLib(force) {
+    if (libEl && !force) { closeLib(); return; }
+    const list = await api.libList();
+    if (!libEl) { libEl = document.createElement('div'); libEl.className = 'pe-lib'; $('.pe-view').appendChild(libEl); }
+    libEl.innerHTML = `<h5>Bibliothek (gilt für alle Gebäude)</h5>${list.length ? list.map(q => `<div class="pe-row"><span class="pe-n">${esc(q.name)}</span><button data-a="libget:${q.id}">Holen</button><button data-a="libdel:${q.id}" title="Aus der Bibliothek löschen">×</button></div>`).join('') : '<div class="pe-hint">Noch leer. „In Bibliothek sichern“ legt das aktuelle Bauteil ab.</div>'}
+      <div class="pe-acts"><button data-a="libsave" class="pri">Aktuelles Bauteil sichern</button></div>
+      <h5>Datei</h5><div class="pe-acts"><button data-a="pexp">Bauteil als Datei sichern</button><button data-a="pimp">Datei laden …</button></div>`;
+  }
   async function addGlb() {
     const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.glb,model/gltf-binary';
     inp.onchange = async () => {
@@ -247,6 +344,13 @@ export function openPartEditor({ root, B, partId, api }) {
     const b = e.target.closest('[data-a]'); if (!b) return;
     const [a, v] = b.dataset.a.split(':'), P = part(), p = selPrim();
     if (a === 'close') { api.close(); return; }
+    if (a === 'lib') { toggleLib(); return; }
+    if (a === 'libsave') { await api.libSave(S.pid); await toggleLib(true); return; }
+    if (a === 'libget') { const id = await api.libGet(v); if (id) { S.pid = id; S.sel = null; S.dirty = true; closeLib(); render(); fit(); } return; }
+    if (a === 'libdel') { await api.libDel(v); await toggleLib(true); return; }
+    if (a === 'pexp') { await api.exportPart(S.pid); return; }
+    if (a === 'pimp') { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json'; inp.onchange = async () => { const f = inp.files?.[0]; if (!f) return; const id = await api.importPart(f); if (id) { S.pid = id; S.sel = null; S.dirty = true; closeLib(); render(); fit(); } }; inp.click(); return; }
+    if (a === 'orig' && selPrim()) { edit(() => { selPrim().col = ''; }); return; }
     if (a === 'undo') { api.undo(); S.dirty = true; render(); return; }
     if (a === 'redo') { api.redo(); S.dirty = true; render(); return; }
     if (a === 'new') { const id = api.newPart(); if (id) { S.pid = id; S.sel = null; S.dirty = true; render(); fit(); } return; }
