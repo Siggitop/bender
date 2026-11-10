@@ -33,13 +33,14 @@ const IC = {
   eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a10.6 10.6 0 0 0 5.4-1.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
   chev: '<path d="m9 6 6 6-6 6"/>',
+  furn: '<path d="M5 3h14v18H5z"/><path d="M5 9h14M5 15h14M12 3v18"/>',
   house: '<path d="M4 21V5l8-3v19"/><path d="M12 9h8v12"/><path d="M2 21h20"/><path d="M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2"/>',
   pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
   copy: '<rect x="9" y="9" width="11" height="12" rx="1"/><path d="M5 15V4a1 1 0 0 1 1-1h9"/>',
 };
-const TYPE_NAME = { wall: 'Wand', column: 'Stütze', beam: 'Träger', slab: 'Decke', roof: 'Dach', ceil: 'Rasterdecke', space: 'Raum', shaft: 'Schacht', stair: 'Treppe', door: 'Tür', window: 'Fenster', opening: 'Wanddurchbruch', hole: 'Deckendurchbruch' };
+const TYPE_NAME = { wall: 'Wand', column: 'Stütze', beam: 'Träger', slab: 'Decke', roof: 'Dach', ceil: 'Rasterdecke', space: 'Raum', shaft: 'Schacht', stair: 'Treppe', furn: 'Einbauteil', door: 'Tür', window: 'Fenster', opening: 'Wanddurchbruch', hole: 'Deckendurchbruch' };
 // Layer: je Bauteilart ein- und ausblendbar
-const LAYERS = [['wall', 'Wände'], ['column', 'Stützen'], ['beam', 'Träger'], ['slab', 'Decken, Bodenplatten'], ['stair', 'Treppen'], ['roof', 'Dächer'], ['ceil', 'Rasterdecken'], ['space', 'Räume'], ['shaft', 'Schächte'], ['ops', 'Türen, Fenster, Durchbrüche'], ['grid', 'Achsen'], ['under', 'Planunterlage'], ['terrain', 'Gelände']];
+const LAYERS = [['wall', 'Wände'], ['column', 'Stützen'], ['beam', 'Träger'], ['slab', 'Decken, Bodenplatten'], ['stair', 'Treppen'], ['roof', 'Dächer'], ['ceil', 'Rasterdecken'], ['space', 'Räume'], ['shaft', 'Schächte'], ['furn', 'Einbauteile'], ['ops', 'Türen, Fenster, Durchbrüche'], ['grid', 'Achsen'], ['under', 'Planunterlage'], ['terrain', 'Gelände']];
 const ROOM_NAMES = ['Wohnen', 'Essen', 'Kochen', 'Wohnen/Essen', 'Schlafen', 'Kind', 'Arbeiten', 'Bad', 'Dusche', 'WC', 'Flur', 'Diele', 'Abstellraum', 'Hausanschluss', 'Technik', 'Heizung', 'Keller', 'Waschen', 'Büro', 'Besprechung', 'Teeküche', 'Treppenhaus', 'Aufzug', 'Archiv', 'Server', 'Lager', 'Empfang', 'Sanitär'];
 const TILE_PRESETS = [[625, 625], [625, 1250], [600, 600], [1200, 600]];
 const WALL_PRESETS = [365, 300, 240, 175, 115, 100];
@@ -59,11 +60,11 @@ const WIN_TPL = [
   ['hs', 'Hebeschiebetür', { w: 2760, h: 2260, sill: 0 }, { cols: [null, null], ops: { main: ['f', 's'] } }],
 ];
 const WALL_SEG = [['aw', 'Außen'], ['iwt', 'Tragend'], ['iwn', 'Innen'], ['tb', 'Trockenbau']];
-const TYPE_COL = { wall: '#d2bf98', column: '#7f98b6', beam: '#c39a64', slab: '#a9b6c6', roof: '#d0694f', ceil: '#cfc7a8', space: '#5fbf87', shaft: '#f0a050', stair: '#a995d8', door: '#4fa3e0', window: '#4fa3e0', opening: '#4fa3e0', hole: '#4fa3e0' };
+const TYPE_COL = { wall: '#d2bf98', column: '#7f98b6', beam: '#c39a64', slab: '#a9b6c6', roof: '#d0694f', ceil: '#cfc7a8', space: '#5fbf87', shaft: '#f0a050', stair: '#a995d8', furn: '#9aa3ad', door: '#4fa3e0', window: '#4fa3e0', opening: '#4fa3e0', hole: '#4fa3e0' };
 const WALL_OPS = ['door', 'window', 'opening'], OPS = [...WALL_OPS, 'hole'];
 const OP_DEF = { door: { w: 1010, h: 2135, sill: 0 }, window: { w: 1260, h: 1385, sill: 900 }, opening: { w: 300, h: 300, sill: 2300 }, hole: { w: 600, d: 400 } };
 const JUST = [['l', 'Links'], ['c', 'Mitte'], ['r', 'Rechts']];
-const MORE = [['stair', 'Treppe'], ['roof', 'Dach'], ['ceil', 'Rasterdecke'], ['space', 'Raum'], ['shaft', 'Schacht'], ['grid', 'Achse']];
+const MORE = [['furn', 'Einbauteil'], ['stair', 'Treppe'], ['roof', 'Dach'], ['ceil', 'Rasterdecke'], ['space', 'Raum'], ['shaft', 'Schacht'], ['grid', 'Achse']];
 // Bauteile über der Schnittebene: im Grundriss nur gestrichelt
 const ABOVE = ['beam', 'roof', 'ceil', 'shaft', 'stair'];
 const layerOf = e => (OPS.includes(e.type) ? 'ops' : e.type);

@@ -5,6 +5,7 @@ import { SCHEMA, migrate } from './building-schema.js';
 import { LISTS, listTable, listView, csvOf, xlsxSheet } from './building-lists.js';
 import { makeXlsx, unzipCheck } from './building-xlsx.js';
 import { planPdf } from './building-pdf.js';
+import { buildPart, evalExpr, prim, meshFromGlb, packMesh } from './building-parts.js';
 export async function runBuildingTests(api) {
   const { B, cur, num, parseSpacing, detectRoom, wallOutline, wallPieces, opDims, gridGroups, gridFams, gridFollowers, applyFollow, setGap, ifcText, colPoly, zOf, editType, relinkAll, newTypeFrom, applyType, syncSigs, updateRooms, describeStep, roomSeed, ulAlign, transformSel, rotF, mirF, moveEl, saveView, gotoView, setView, cam, leavesOf, doorPlates, twoLeaves, fixLeaves } = api;
   const R = [];
@@ -251,6 +252,54 @@ export async function runBuildingTests(api) {
     B.els.length = 0; const sl = { id: 'tsd', storey: cur(), type: 'slab', pts: [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], t: 250 }; B.els.push(sl);
     const D = api.slabDims(sl), d0 = D[0]; api.applyDim({ op: sl.id, kind: 'se', idx: 0, rect: d0.rect, val: d0.val }, 7000);
     return { ok: d0.rect && D.length === 4 && sl.pts[1][0] === 7000 && sl.pts[2][0] === 7000 && sl.pts[0][0] === 0 && sl.pts[3][0] === 0, info: `Rechteck ${d0.rect ? 'erkannt' : 'nicht erkannt'}, Punkte ${sl.pts.map(p => p.join('|')).join(' ')}` };
+  });
+
+  t('Festes Maß: Stütze hält Abstand zur Wand, Wandlänge bleibt', () => {
+    B.els.length = 0; const w = wall([0, 0], [6000, 0], 240), c = col([1000, 1000]);
+    const d0 = api.colDims(c).find(m => m.kind === 'y-'); c.locks = { 'y-': d0.val }; w.locks = { wl: 6000 };
+    api.change(() => { w.a = [0, 500]; w.b = [7000, 500]; });
+    const len1 = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]);
+    return { ok: Math.abs(c.p[1] - 1500) < 1 && Math.abs(len1 - 6000) < 0.1, info: `Stütze y=${c.p[1]} (soll 1500), Wandlänge ${Math.round(len1)} (soll 6000)` };
+  });
+
+  t('Ausrichten: Stützen an linker Kante, Treppe drehen/spiegeln', () => {
+    B.els.length = 0; const c1 = col([1000, 500]), c2 = col([2500, 3000], 400), c3 = col([4000, 800]);
+    api.setSel([c1.id, c2.id, c3.id]); const n = api.alignSel('l');
+    const okA = n === 2 && c2.p[0] - 200 === 850 && c3.p[0] - 150 === 850;
+    const stair = { id: 'tst1', storey: cur(), type: 'stair', a: [0, 0], dir: [1, 0], kind: 'straight', w: 1000, g: 270, side: 1 }; B.els.push(stair);
+    api.setSel([stair.id]); api.transformSel(api.rotF([0, 0], 90), { deg: 90 }); const okR = Math.abs(stair.dir[0]) < 0.01 && Math.abs(stair.dir[1] - 1) < 0.01;
+    api.transformSel(api.mirF([0, 0], [1, 0]), { mirror: true, ax: 0 }); const okM = stair.side === -1 && Math.abs(stair.dir[1] + 1) < 0.01;
+    return { ok: okA && okR && okM, info: `ausgerichtet ${n} (${okA}), Treppe gedreht ${okR}, gespiegelt ${okM}` };
+  });
+
+  const vol = out => { let v = 0; for (let i = 0; i < out.length; i += 27) { const a = [out[i], out[i + 1], out[i + 2]], b = [out[i + 9], out[i + 10], out[i + 11]], c = [out[i + 18], out[i + 19], out[i + 20]]; v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6; } return v; };
+  t('Formeln: Parameter, Klammern, Funktionen', () => {
+    const v = evalExpr('B-2*S+max(10;5)', { B: 1000, S: 25 }); let bad = false; try { evalExpr('B+', { B: 1 }); } catch { bad = true; } let bad2 = false; try { evalExpr('X*2', {}); } catch { bad2 = true; }
+    return { ok: v === 960 && evalExpr('(2+3)*4/5') === 4 && evalExpr('1,5*2') === 3 && bad && bad2, info: `B-2*S+max(10;5)=${v}` };
+  });
+  t('Bauteil: Rauminhalt Quader, Zylinder, Keil, Ausschnitt', () => {
+    const mk = (prims, params = []) => ({ id: 'x', name: 'x', params, prims });
+    const box = vol(buildPart(mk([prim({ w: '100', d: '200', h: '300' })])).out), cyl = vol(buildPart(mk([prim({ kind: 'cyl', w: '200', d: '200', h: '100' })])).out), wed = vol(buildPart(mk([prim({ kind: 'wedge', w: '100', d: '50', h: '80' })])).out);
+    const cut = vol(buildPart(mk([prim({ w: '100', d: '100', h: '100' }), prim({ op: 'sub', x: '25', y: '25', z: '25', w: '50', d: '50', h: '50' })])).out);
+    const pr = vol(buildPart(mk([prim({ w: 'B', d: '100', h: '100', n: '3', dx: '200' })], [{ k: 'B', v: '50' }])).out);
+    const ok = Math.abs(box - 6e6) < 1 && Math.abs(cyl - Math.PI * 1e4 * 100) / (Math.PI * 1e6) < 0.02 && Math.abs(wed - 0.5 * 100 * 80 * 50) < 1 && Math.abs(cut - (1e6 - 125000)) < 5 && Math.abs(pr - 3 * 50 * 1e4) < 1;
+    return { ok, info: `Quader ${Math.round(box)} (6000000), Zylinder ${Math.round(cyl)}, Keil ${Math.round(wed)} (200000), Ausschnitt ${Math.round(cut)} (875000), Wiederholung ${Math.round(pr)} (1500000)` };
+  });
+  t('GLB-Netz als Grundkörper: Größe und Skalierung', () => {
+    const g = { pos: new Float32Array([0, 0, 0, 100, 0, 0, 0, 200, 0, 0, 0, 50]), idx: new Uint32Array([0, 1, 2, 0, 1, 3]), col: new Float32Array([0.5, 0.5, 0.5]) }, m = meshFromGlb(g), r = packMesh(m);
+    const P = { id: 'g', name: 'g', params: [], prims: [prim({ kind: 'mesh', mesh: r, w: '200', d: '', h: '', col: '' })] }, res = buildPart(P);
+    return { ok: m.size[0] === 100 && m.size[1] === 50 && m.size[2] === 200 && res.tris === 2 && Math.abs(res.mx[0] - 200) < 0.01, info: `Größe ${m.size.join(' × ')}, Dreiecke ${res.tris}, Breite skaliert auf ${res.mx[0]}` };
+  });
+  t('Einbauteil: platzieren, Maß ändern, Fläche und Höhe', () => {
+    B.els.length = 0; api.ensureParts();
+    const P = Object.values(B.parts).find(p => p.name === 'Regal'), f = { id: 'tfu', storey: cur(), type: 'furn', p: [2000, 1000], partId: P.id, pv: {}, rot: 0, z: 0 }; B.els.push(f);
+    const fp0 = api.furnPoly(f), w0 = Math.abs(fp0[1][0] - fp0[0][0]), z = api.zOf(f);
+    f.pv = { B: '1500' }; const w1 = (() => { const q = api.furnPoly(f); return Math.abs(q[1][0] - q[0][0]); })(); f.rot = 90; const q2 = api.furnPoly(f), h2 = Math.abs(q2[2][1] - q2[0][1]);
+    return { ok: Math.abs(w0 - 1000) < 1 && Math.abs(w1 - 1500) < 1 && Math.abs(z[1] - z[0] - 2000) < 1 && Math.abs(h2 - 1500) < 1, info: `Breite ${w0} → ${w1}, Höhe ${z[1] - z[0]}, gedreht ${h2}` };
+  });
+  t('Einbauteil: Liste und IFC', () => {
+    const ifc = ifcText(), l = listTable('furn', api.listCtx(), true);
+    return { ok: ifc.includes('IFCFURNISHINGELEMENT') && l.rows.length === 1, info: `IFC ${ifc.includes('IFCFURNISHINGELEMENT')}, Listenzeilen ${l.rows.length}` };
   });
 
   // 14. IFC

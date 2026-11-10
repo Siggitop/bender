@@ -487,3 +487,11 @@ Warum nicht alles bis zum Schluss: Die offenen Punkte in 4 und 5 berühren das Z
 - **4.5 Öffnungen mit wählbarem Bezug – fertig:** Bei Fenster, Tür und Wanddurchbruch wählt „Lage messen ab“ **Wandanfang** oder **Wandende**. Mit Wandende zeigt die Palette „bis Wandende“, und wird die Wand länger oder kürzer (Maß, Ziehen am Griff, Eingabe), **bleibt der Abstand zum Wandende**; ändert man die Lage selbst, gilt die Eingabe. Standard bleibt Wandanfang.
 - **5.1 Maße der Decke – fertig für Decken und Bodenplatten:** Länge jeder Kante als antippbares Maß außen neben der Kante. Bei rechtwinkligen Vierecken verschiebt die Eingabe die gegenüberliegende Kante mit (Rechteck bleibt Rechteck), sonst nur die Endecke der Kante.
 - Selbsttest Gebäude **43 von 43**, Prüfmodelle 16/16, Leistungsmessung ohne Überschreitung.
+
+## Nachtrag v285: Maße festsetzen (5.2, erste Version)
+Im Maßfeld von Stütze, Wanddurchbruch (Abstand zur nächsten Wandfläche/Achse), Wand (Länge, Dicke) und Deckenkante gibt es „Maß festsetzen“ (Schloss). Gespeichert als `o.locks` (Schlüssel `x+ x- y+ y- wl wt se<i>`), kein Schema-Schritt nötig. `lockApply()` stellt die Maße nach jeder Änderung (`change`, Ziehen) in bis zu 3 Runden her; bleibt ein Widerspruch, meldet die App „Festes Maß kollidiert“. Neu eingegebenes Maß ersetzt den festen Wert. Kopien und Geschoss-Kopien übernehmen keine Schlösser. Nicht abgedeckt: Undo/Redo stellt den gespeicherten Stand 1:1 wieder her (ohne erneutes Anwenden), keine Ketten-Lösung über mehr als 3 Runden, Öffnungen ohne Schloss.
+
+## Nachtrag v286: Ausrichten, Drehen/Spiegeln erweitert
+- **Ausrichten** (Menüband Start/Ändern, Knopf „Ausrichten“): mehrere Bauteile wählen, das zuerst gewählte bleibt stehen; linke, rechte, obere, untere Kanten oder Mitte (waagerecht/senkrecht) des Umrisses werden angeglichen (`alignSel`). Öffnungen folgen ihrer Wand, Treppen-Deckenöffnungen werden nachgeführt.
+- **Drehen/Spiegeln** gilt jetzt auch für Treppe (Richtung, Wendeseite), Dach (Kantenfolge beim Spiegeln) und Rasterdecke (Ursprung, Raster bei 90°).
+- Weiter offen: siehe Abschnitt 17 (Phase 1–7); Selbsttest 45/45.

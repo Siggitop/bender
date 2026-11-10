@@ -402,3 +402,17 @@ Reiter im Projektbrowser korrigiert, Doppelflügeltür mit ungleichen Flügeln (
 ## 35. Version 284: Öffnungsbezug, Deckenmaße
 
 Öffnungen messen wahlweise ab Wandanfang oder Wandende (Abstand zum Ende bleibt bei Längenänderung), antippbare Kantenlängen an Decken und Bodenplatten. Siehe [ROADMAP-UX.md](ROADMAP-UX.md), Abschnitt 17, Nachtrag.
+
+## 36. Version 285: Maße festsetzen
+Siehe ROADMAP-UX, Nachtrag v285. Selbsttest 44/44.
+
+## 37. Version 286: Ausrichten, Drehen/Spiegeln für Treppe, Dach, Decke
+Siehe ROADMAP-UX, Nachtrag v286.
+
+## 38. Version 287: Bauteil-Baukasten und Einbauteile
+- **Bauteile** (`B.parts`, Datei `building-parts.js`): Körper aus Quader, Zylinder (senkrecht/liegend), Keil und GLB-Netz; je Körper Addieren oder Abziehen (CSG über BSP, Reihenfolge von oben nach unten), Lage, Größe, Drehung um z, Wiederholen (Anzahl, Abstand) und Farbe. Maße sind Formeln mit Parametern (`B-2*S`, `min`, `max`, `abs`, `round`, `sqrt`).
+- **Editor** (`building-partedit.js`): Vollbild mit Körperliste, Parametertabelle, Eigenschaften, 3D-Ansicht (Umlaufen, Schwenken, Zoom, Klick wählt Körper, Abzugskörper als rote Rahmen, Ansichten). Änderungen laufen über `change()`, also Rückgängig und Speichern wie überall. Aufruf: Menüband Start, Einbauteil, „Bauteile bearbeiten …“ (oder am gewählten Einbauteil).
+- **Einbauteil** (`type: 'furn'`): `{p, partId, pv (Maße dieses Exemplars), rot, z}`. Platzieren, verschieben, drehen, spiegeln, kopieren, Ausrichten, Liste „Einbauteile“, IFC (`IFCFURNISHINGELEMENT`, Dreiecksnetz), Layer „Einbauteile“.
+- **GLB**: eigene Kopie des Lesers (`building-glb.js`), bis 150k Dreiecke, nur Grundfarbe, y-oben wird z-oben. Die Netzdaten liegen in der Dateiablage (`mesh-<Schlüssel>`) und im Export der Gebäudedatei, nicht im Gebäude-JSON (Rückgängig bleibt schnell).
+- Vorlagen beim ersten Aufruf: Regal, Gasflaschenschrank, Digestorium. Selbsttests ergänzt (Formeln, Rauminhalte, Einbauteil, GLB).
+- Offen: Bauteilbibliothek über Gebäude hinweg (bisher je Gebäude, Austausch über die Gebäudedatei), Abziehen von GLB-Netzen, Fangen im Editor, Ansicht im Plan (Symbol statt Draufsicht), Farben je GLB-Material.
